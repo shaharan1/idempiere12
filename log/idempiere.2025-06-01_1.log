@@ -1,0 +1,169 @@
+*** 2025-06-01 17:37:50.661 idempiere Log (CLogFile) ***
+17:37:50.660 Adempiere.startup: iDempiere(r) Release 12_2024-12-24 -Smart Suite ERP, CRM and SCM- (c) 1999-2025 iDempiere(r); Implementation: iDempiere - Supported by iDempiere community [28]
+17:37:50.662 Ini.loadProperties: C:\Users\Ashraful\sources\idempiere\idempiere.properties #29 [28]
+17:37:51.171-----------> Activator.createHazelCastInstance: Starting hazelcast with configuration from file hazelcast.xml [28]
+17:37:51.319-----------> AddressPicker: [LOCAL] [adempiere.idempiere/localhost:5432] [5.3.7] Ignoring TCP_KEEPCOUNT. It seems your JDK does not support jdk.net.ExtendedSocketOptions on this OS. Try upgrading to the latest JDK or check with your JDK vendor.Alternatively, on Linux, configure tcp_keepalive_probes in the kernel (affecting default keep-alive configuration for all sockets): For more info see https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/. If this isn't dealt with, idle connections could be closed prematurely. [28]
+17:37:51.320-----------> AddressPicker: [LOCAL] [adempiere.idempiere/localhost:5432] [5.3.7] Ignoring TCP_KEEPIDLE. It seems your JDK does not support jdk.net.ExtendedSocketOptions on this OS. Try upgrading to the latest JDK or check with your JDK vendor.Alternatively, on Linux, configure tcp_keepalive_time in the kernel (affecting default keep-alive configuration for all sockets): For more info see https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/. If this isn't dealt with, idle connections could be closed prematurely. [28]
+17:37:51.320-----------> AddressPicker: [LOCAL] [adempiere.idempiere/localhost:5432] [5.3.7] Ignoring TCP_KEEPINTERVAL. It seems your JDK does not support jdk.net.ExtendedSocketOptions on this OS. Try upgrading to the latest JDK or check with your JDK vendor.Alternatively, on Linux, configure tcp_keepalive_intvl in the kernel (affecting default keep-alive configuration for all sockets): For more info see https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/. If this isn't dealt with, idle connections could be closed prematurely. [28]
+17:37:51.750-----------> CPSubsystem: [192.168.31.24]:5701 [adempiere.idempiere/localhost:5432] [5.3.7] CP Subsystem is not enabled. CP data structures will operate in UNSAFE mode! Please note that UNSAFE mode will not provide strong consistency guarantees. [28]
+17:37:52.070-----------> Node: [192.168.31.24]:5701 [adempiere.idempiere/localhost:5432] [5.3.7] No join method is enabled! Starting standalone. [28]
+17:37:52.356-----------> DB.isBuildOK: Build Version Error 
+
+The program assumes build version 12.0.0.qualifier, but database has build version ${env.ADEMPIERE_VERSION} 20080428-1232. 
+This is likely to cause hard to fix errors. 
+Please contact administrator. [28]
+17:37:55.238-----------> EMail.setFrom: you @ company.org: javax.mail.internet.AddressException: Local address contains control or whitespace in string ``you @ company.org'' [28]
+17:37:55.240-----------> EMail.addTo: you @ company.org: javax.mail.internet.AddressException: Local address contains control or whitespace in string ``you @ company.org'' [28]
+17:37:55.241-----------> EMail.isValid: From is invalid=null [28]
+17:37:55.241-----------> EMail.isValid: From is invalid=null [28]
+17:37:55.244-----------> MClient.sendEMail: Could NOT Send Email: Server started: iDempiere (DESKTOP-C9P00I9:192.168.56.1) to you @ company.org: Invalid Data (System) [28]
+17:37:57.486           LoggedSessionListener.contextInitialized: iDempiere context initialized for 10.0.1 [28]
+17:38:35.931-----------> MClient.createEMail: From EMail incomplete: MUser[10,Name=System,EMailUserID=null] (System) [328]
+17:38:35.989-----------> MClient.createEMail: From EMail incomplete: MUser[10,Name=System,EMailUserID=null] (System) [328]
+17:38:37.152-----------> Fact.isAcctBalanced: NO - Diff=0.01 - Fact[MAllocationHdr[101-13208: Approval Amount=2.2 (#1)],AcctSchema[200000-Second Schema GardenWorld Euro],PostType=A] [33]
+17:38:37.192-----------> Fact.isAcctBalanced: NO - Diff=-0.01 - Fact[X_C_BankStatement[100,Name=2002-02-22],AcctSchema[200000-Second Schema GardenWorld Euro],PostType=A] [33]
+17:38:37.282-----------> Doc_InOut.createFacts: No Costs for Oak Tree [33]
+17:38:37.314-----------> Fact.isAcctBalanced: NO - Diff=-0.01 - Fact[MInvoice[103-200002,GrandTotal=161.12 (#3)],AcctSchema[200000-Second Schema GardenWorld Euro],PostType=A] [33]
+17:38:38.201-----------> Fact.isAcctBalanced: NO - Diff=-0.01 - Fact[MInvoice[106-10000003,GrandTotal=3657.5 (#6)],AcctSchema[200000-Second Schema GardenWorld Euro],PostType=A] [33]
+17:38:38.924-----------> FactLine.setAmtSource: Source DR Precision 201.8750 -> 201.88 [33]
+17:38:38.925-----------> FactLine.setAmtSource: Source CR Precision 201.8750 -> 201.88 [33]
+17:40:01.684-----------> PackInApplicationActivator.getFilesToProcess: Processing migration [330]
+18:03:25.440-----------> MWFActivity.run: MWFNode[184-(DocAuto),Action=DocumentAction=--] [416]
+java.lang.Exception: @NoLines@
+	at org.compiere.wf.MWFActivity.performWork(MWFActivity.java:1134)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:941)
+	at org.compiere.wf.MWFProcess.startNext(MWFProcess.java:436)
+	at org.compiere.wf.MWFProcess.checkActivities(MWFProcess.java:291)
+	at org.compiere.wf.MWFActivity.setWFState(MWFActivity.java:320)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:958)
+	at org.compiere.wf.MWFProcess.startWork(MWFProcess.java:598)
+	at org.compiere.wf.MWorkflow.start(MWorkflow.java:775)
+	at org.adempiere.util.ProcessUtil.startWorkFlow(ProcessUtil.java:335)
+	at org.compiere.apps.AbstractProcessCtl.startWorkflow(AbstractProcessCtl.java:344)
+	at org.compiere.apps.AbstractProcessCtl.run(AbstractProcessCtl.java:172)
+	at org.adempiere.webui.apps.WProcessCtl.process(WProcessCtl.java:226)
+	at org.adempiere.webui.apps.AbstractProcessDialog$ProcessDialogRunnable.doRun(AbstractProcessDialog.java:1371)
+	at org.adempiere.util.ContextRunnable.run(ContextRunnable.java:53)
+	at org.adempiere.webui.apps.DesktopRunnable.run(DesktopRunnable.java:66)
+
+18:03:25.444===========> MWFActivity.saveError: SaveError - Update return 0 instead of 1 - [WFP_90a11fa6-0aac-49ea-ab23-8687f1b78bd7] - AD_WF_Activity.AD_WF_Activity_ID=1000001 [416]
+18:03:25.446===========> MWFActivity.saveError: SaveError - Update return 0 instead of 1 - [WFP_90a11fa6-0aac-49ea-ab23-8687f1b78bd7] - AD_WF_Activity.AD_WF_Activity_ID=1000001 [416]
+18:03:25.451===========> MWFEventAudit.saveError: SaveError - Update return 0 instead of 1 - [WFP_90a11fa6-0aac-49ea-ab23-8687f1b78bd7] - AD_WF_EventAudit.AD_WF_EventAudit_ID=1000001 [416]
+18:03:25.451===========> MWFEventAudit.saveError: SaveError - Update return 0 instead of 1 - [WFP_90a11fa6-0aac-49ea-ab23-8687f1b78bd7] - AD_WF_EventAudit.AD_WF_EventAudit_ID=1000001 [416]
+18:04:54.504-----------> FactLine.setAmtSource: Source DR Precision 2.2950 -> 2.30 [544]
+18:04:54.506-----------> FactLine.setAmtSource: Source CR Precision 2.2950 -> 2.30 [544]
+18:04:54.567-----------> MWFActivity.run: MWFNode[186-(DocComplete),Action=DocumentAction=CO] [544]
+org.adempiere.exceptions.AdempiereException: Failed when processing document - No account defined for this organization / currency 
+
+Create an account on the bank account window for the organization / currency, the POS payments will be created on the defined account
+	at org.compiere.model.MOrder.createInvoice(MOrder.java:2568)
+	at org.compiere.model.MOrder.completeIt(MOrder.java:2201)
+	at org.compiere.process.DocumentEngine.completeIt(DocumentEngine.java:560)
+	at org.compiere.process.DocumentEngine.processIt(DocumentEngine.java:329)
+	at org.compiere.process.DocumentEngine.processIt(DocumentEngine.java:292)
+	at org.compiere.model.MOrder.processIt(MOrder.java:1499)
+	at org.compiere.wf.MWFActivity.performWork(MWFActivity.java:1095)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:941)
+	at org.compiere.wf.MWFProcess.startNext(MWFProcess.java:436)
+	at org.compiere.wf.MWFProcess.checkActivities(MWFProcess.java:291)
+	at org.compiere.wf.MWFActivity.setWFState(MWFActivity.java:320)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:958)
+	at org.compiere.wf.MWFProcess.startNext(MWFProcess.java:436)
+	at org.compiere.wf.MWFProcess.checkActivities(MWFProcess.java:291)
+	at org.compiere.wf.MWFActivity.setWFState(MWFActivity.java:320)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:958)
+	at org.compiere.wf.MWFProcess.startWork(MWFProcess.java:598)
+	at org.compiere.wf.MWorkflow.start(MWorkflow.java:775)
+	at org.adempiere.util.ProcessUtil.startWorkFlow(ProcessUtil.java:335)
+	at org.compiere.apps.AbstractProcessCtl.startWorkflow(AbstractProcessCtl.java:344)
+	at org.compiere.apps.AbstractProcessCtl.run(AbstractProcessCtl.java:172)
+	at org.adempiere.webui.apps.WProcessCtl.process(WProcessCtl.java:226)
+	at org.adempiere.webui.apps.AbstractProcessDialog$ProcessDialogRunnable.doRun(AbstractProcessDialog.java:1371)
+	at org.adempiere.util.ContextRunnable.run(ContextRunnable.java:53)
+	at org.adempiere.webui.apps.DesktopRunnable.run(DesktopRunnable.java:66)
+
+18:04:54.568===========> MWFActivity.saveError: SaveError - Update return 0 instead of 1 - [WFP_8fed52d0-323f-4556-8db1-686f345d03a8] - AD_WF_Activity.AD_WF_Activity_ID=1000007 [544]
+18:04:54.568===========> MWFActivity.saveError: SaveError - Update return 0 instead of 1 - [WFP_8fed52d0-323f-4556-8db1-686f345d03a8] - AD_WF_Activity.AD_WF_Activity_ID=1000007 [544]
+18:04:54.571===========> MWFEventAudit.saveError: SaveError - Update return 0 instead of 1 - [WFP_8fed52d0-323f-4556-8db1-686f345d03a8] - AD_WF_EventAudit.AD_WF_EventAudit_ID=1000007 [544]
+18:04:54.571===========> MWFEventAudit.saveError: SaveError - Update return 0 instead of 1 - [WFP_8fed52d0-323f-4556-8db1-686f345d03a8] - AD_WF_EventAudit.AD_WF_EventAudit_ID=1000007 [544]
+18:05:20.645===========> MOrderLine.saveError: Error - Reserved Quantity=1 [593]
+18:05:20.645-----------> MOrder.save: beforeSave failed - MOrder[1000000-80003,IsSOTrx=true,C_DocType_ID=135, GrandTotal=59.77] [593]
+18:05:20.646-----------> GridTable.saveWarning: Error - Reserved Quantity=1 [593]
+18:05:30.238===========> MOrderLine.saveError: Error - Reserved Quantity=1 [593]
+18:05:30.238-----------> MOrder.save: beforeSave failed - MOrder[1000000-80003,IsSOTrx=true,C_DocType_ID=135, GrandTotal=59.77] [593]
+18:05:30.238-----------> GridTable.saveWarning: Error - Reserved Quantity=1 [593]
+18:05:51.243===========> MOrderLine.saveError: Error - Reserved Quantity=1 [465]
+18:05:51.243-----------> MOrder.save: beforeSave failed - MOrder[1000000-80003,IsSOTrx=true,C_DocType_ID=135, GrandTotal=59.77] [465]
+18:05:51.244-----------> GridTable.saveWarning: Error - Reserved Quantity=1 [465]
+18:07:56.215-----------> AbstractWebApp.sessionDestroyed: Failed to cleanup session [311]
+java.lang.NullPointerException: Cannot invoke "javax.servlet.http.HttpSession.removeAttribute(String)" because the return value of "org.zkoss.zk.ui.Session.getNativeSession()" is null
+	at org.zkoss.zk.ui.http.SessionAgent.remove(SessionAgent.java:43)
+	at org.zkoss.zk.ui.http.SimpleSessionCache.remove(SimpleSessionCache.java:45)
+	at org.zkoss.zk.ui.impl.AbstractWebApp.sessionDestroyed(AbstractWebApp.java:379)
+	at org.zkoss.zk.ui.http.WebManager.sessionDestroyed(WebManager.java:527)
+	at org.zkoss.zk.ui.http.HttpSessionListener23.sessionDestroyed(HttpSessionListener23.java:55)
+	at org.eclipse.jetty.ee8.nested.SessionHandler$CoreSessionManager.lambda$onSessionDestroyed$1(SessionHandler.java:689)
+	at org.eclipse.jetty.server.handler.ContextHandler$ScopedContext.run(ContextHandler.java:1305)
+	at org.eclipse.jetty.server.handler.ContextHandler$ScopedContext.run(ContextHandler.java:1292)
+	at org.eclipse.jetty.ee8.nested.SessionHandler$CoreSessionManager.onSessionDestroyed(SessionHandler.java:692)
+	at org.eclipse.jetty.session.AbstractSessionManager.invalidate(AbstractSessionManager.java:798)
+	at org.eclipse.jetty.session.DefaultSessionIdManager.expireAll(DefaultSessionIdManager.java:417)
+	at org.eclipse.jetty.session.AbstractSessionManager.scavenge(AbstractSessionManager.java:1128)
+	at org.eclipse.jetty.session.DefaultSessionIdManager.scavenge(DefaultSessionIdManager.java:452)
+	at org.eclipse.jetty.session.HouseKeeper.scavenge(HouseKeeper.java:237)
+	at org.eclipse.jetty.session.HouseKeeper$Runner.run(HouseKeeper.java:53)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:842)
+
+18:07:56.225-----------> ZkAtmosphereHandler.getSession: Could not find session: /webui/zkau/comet [372]
+18:07:56.743-----------> ZkAtmosphereHandler.getSession: Could not find session: /webui/zkau/comet [460]
+18:07:57.268-----------> ZkAtmosphereHandler.getSession: Could not find session: /webui/zkau/comet [372]
+18:13:51.072-----------> FactLine.setAmtSource: Source DR Precision 2.2950 -> 2.30 [351]
+18:13:51.073-----------> FactLine.setAmtSource: Source CR Precision 2.2950 -> 2.30 [351]
+18:13:51.115-----------> MWFActivity.run: MWFNode[186-(DocComplete),Action=DocumentAction=CO] [351]
+org.adempiere.exceptions.AdempiereException: Failed when processing document - No account defined for this organization / currency 
+
+Create an account on the bank account window for the organization / currency, the POS payments will be created on the defined account
+	at org.compiere.model.MOrder.createInvoice(MOrder.java:2568)
+	at org.compiere.model.MOrder.completeIt(MOrder.java:2201)
+	at org.compiere.process.DocumentEngine.completeIt(DocumentEngine.java:560)
+	at org.compiere.process.DocumentEngine.processIt(DocumentEngine.java:329)
+	at org.compiere.process.DocumentEngine.processIt(DocumentEngine.java:292)
+	at org.compiere.model.MOrder.processIt(MOrder.java:1499)
+	at org.compiere.wf.MWFActivity.performWork(MWFActivity.java:1095)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:941)
+	at org.compiere.wf.MWFProcess.startNext(MWFProcess.java:436)
+	at org.compiere.wf.MWFProcess.checkActivities(MWFProcess.java:291)
+	at org.compiere.wf.MWFActivity.setWFState(MWFActivity.java:320)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:958)
+	at org.compiere.wf.MWFProcess.startNext(MWFProcess.java:436)
+	at org.compiere.wf.MWFProcess.checkActivities(MWFProcess.java:291)
+	at org.compiere.wf.MWFActivity.setWFState(MWFActivity.java:320)
+	at org.compiere.wf.MWFActivity.run(MWFActivity.java:958)
+	at org.compiere.wf.MWFProcess.startWork(MWFProcess.java:598)
+	at org.compiere.wf.MWorkflow.start(MWorkflow.java:775)
+	at org.adempiere.util.ProcessUtil.startWorkFlow(ProcessUtil.java:335)
+	at org.compiere.apps.AbstractProcessCtl.startWorkflow(AbstractProcessCtl.java:344)
+	at org.compiere.apps.AbstractProcessCtl.run(AbstractProcessCtl.java:172)
+	at org.adempiere.webui.apps.WProcessCtl.process(WProcessCtl.java:226)
+	at org.adempiere.webui.apps.AbstractProcessDialog$ProcessDialogRunnable.doRun(AbstractProcessDialog.java:1371)
+	at org.adempiere.util.ContextRunnable.run(ContextRunnable.java:53)
+	at org.adempiere.webui.apps.DesktopRunnable.run(DesktopRunnable.java:66)
+
+18:13:51.116===========> MWFActivity.saveError: SaveError - Update return 0 instead of 1 - [WFP_e0b1fcb3-372f-4728-a9c7-828e6172bc59] - AD_WF_Activity.AD_WF_Activity_ID=1000011 [351]
+18:13:51.116===========> MWFActivity.saveError: SaveError - Update return 0 instead of 1 - [WFP_e0b1fcb3-372f-4728-a9c7-828e6172bc59] - AD_WF_Activity.AD_WF_Activity_ID=1000011 [351]
+18:13:51.118===========> MWFEventAudit.saveError: SaveError - Update return 0 instead of 1 - [WFP_e0b1fcb3-372f-4728-a9c7-828e6172bc59] - AD_WF_EventAudit.AD_WF_EventAudit_ID=1000011 [351]
+18:13:51.118===========> MWFEventAudit.saveError: SaveError - Update return 0 instead of 1 - [WFP_e0b1fcb3-372f-4728-a9c7-828e6172bc59] - AD_WF_EventAudit.AD_WF_EventAudit_ID=1000011 [351]
+18:15:32.842===========> MOrderLine.saveError: Error - Reserved Quantity=1 [591]
+18:15:32.842-----------> MOrder.save: beforeSave failed - MOrder[1000000-80003,IsSOTrx=true,C_DocType_ID=135, GrandTotal=59.77] [591]
+18:15:32.842-----------> GridTable.saveWarning: Error - Reserved Quantity=1 [591]
+18:15:57.636===========> MOrderLine.saveError: DeleteError - Reserved Quantity=1.00 [623]
+18:15:57.636-----------> MOrderLine.delete: beforeDelete failed [623]
+18:15:57.636-----------> GridTable.saveWarning: DeleteError - Reserved Quantity=1.00 [623]
+18:15:57.658===========> MOrderLine.saveError: Error - Reserved Quantity=1 [623]
+18:15:57.659-----------> MOrder.save: beforeSave failed - MOrder[1000000-80003,IsSOTrx=true,C_DocType_ID=135, GrandTotal=59.77] [623]
+18:15:57.659-----------> GridTable.saveWarning: Error - Reserved Quantity=1 [623]

@@ -1,0 +1,21 @@
+*** 2025-06-02 13:04:01.244 idempiere Log (CLogFile) ***
+13:04:01.243 Adempiere.startup: iDempiere(r) Release 12_2024-12-24 -Smart Suite ERP, CRM and SCM- (c) 1999-2025 iDempiere(r); Implementation: iDempiere - Supported by iDempiere community [28]
+13:04:01.245 Ini.loadProperties: C:\Users\Ashraful\sources\idempiere\idempiere.properties #29 [28]
+13:04:01.640-----------> Activator.createHazelCastInstance: Starting hazelcast with configuration from file hazelcast.xml [28]
+13:04:01.812-----------> AddressPicker: [LOCAL] [adempiere.idempiere/localhost:5432] [5.3.7] Ignoring TCP_KEEPCOUNT. It seems your JDK does not support jdk.net.ExtendedSocketOptions on this OS. Try upgrading to the latest JDK or check with your JDK vendor.Alternatively, on Linux, configure tcp_keepalive_probes in the kernel (affecting default keep-alive configuration for all sockets): For more info see https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/. If this isn't dealt with, idle connections could be closed prematurely. [28]
+13:04:01.825-----------> AddressPicker: [LOCAL] [adempiere.idempiere/localhost:5432] [5.3.7] Ignoring TCP_KEEPIDLE. It seems your JDK does not support jdk.net.ExtendedSocketOptions on this OS. Try upgrading to the latest JDK or check with your JDK vendor.Alternatively, on Linux, configure tcp_keepalive_time in the kernel (affecting default keep-alive configuration for all sockets): For more info see https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/. If this isn't dealt with, idle connections could be closed prematurely. [28]
+13:04:01.825-----------> AddressPicker: [LOCAL] [adempiere.idempiere/localhost:5432] [5.3.7] Ignoring TCP_KEEPINTERVAL. It seems your JDK does not support jdk.net.ExtendedSocketOptions on this OS. Try upgrading to the latest JDK or check with your JDK vendor.Alternatively, on Linux, configure tcp_keepalive_intvl in the kernel (affecting default keep-alive configuration for all sockets): For more info see https://tldp.org/HOWTO/html_single/TCP-Keepalive-HOWTO/. If this isn't dealt with, idle connections could be closed prematurely. [28]
+13:04:02.264-----------> CPSubsystem: [192.168.31.82]:5701 [adempiere.idempiere/localhost:5432] [5.3.7] CP Subsystem is not enabled. CP data structures will operate in UNSAFE mode! Please note that UNSAFE mode will not provide strong consistency guarantees. [28]
+13:04:02.510-----------> Node: [192.168.31.82]:5701 [adempiere.idempiere/localhost:5432] [5.3.7] No join method is enabled! Starting standalone. [28]
+13:04:02.778-----------> DB.isBuildOK: Build Version Error 
+
+The program assumes build version 12.0.0.qualifier, but database has build version ${env.ADEMPIERE_VERSION} 20080428-1232. 
+This is likely to cause hard to fix errors. 
+Please contact administrator. [28]
+13:04:05.481-----------> EMail.setFrom: you @ company.org: javax.mail.internet.AddressException: Local address contains control or whitespace in string ``you @ company.org'' [28]
+13:04:05.484-----------> EMail.addTo: you @ company.org: javax.mail.internet.AddressException: Local address contains control or whitespace in string ``you @ company.org'' [28]
+13:04:05.485-----------> EMail.isValid: From is invalid=null [28]
+13:04:05.485-----------> EMail.isValid: From is invalid=null [28]
+13:04:05.489-----------> MClient.sendEMail: Could NOT Send Email: Server started: iDempiere (DESKTOP-C9P00I9:192.168.56.1) to you @ company.org: Invalid Data (System) [28]
+13:04:07.764           LoggedSessionListener.contextInitialized: iDempiere context initialized for 10.0.1 [28]
+13:06:11.754-----------> PackInApplicationActivator.getFilesToProcess: Processing migration [327]
