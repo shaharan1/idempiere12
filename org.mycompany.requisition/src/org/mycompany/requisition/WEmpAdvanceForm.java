@@ -1,0 +1,578 @@
+package org.mycompany.requisition;
+
+import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+
+import org.adempiere.webui.panel.ADForm;
+import org.adempiere.webui.session.SessionManager;
+import org.compiere.util.CLogger;
+import org.compiere.util.Env;
+import org.compiere.util.KeyNamePair;
+import org.zkoss.util.media.AMedia;
+import org.zkoss.zul.Window;
+import org.zkoss.zul.Iframe;
+import org.zkoss.zk.ui.event.EventListener;
+import org.zkoss.zk.ui.Component;
+import org.zkoss.zk.ui.event.Event;
+import org.zkoss.zk.ui.event.EventListener;
+import org.zkoss.zk.ui.event.Events;
+import org.zkoss.zk.ui.util.Clients;
+import org.zkoss.zul.Button;
+import org.zkoss.zul.Checkbox;
+import org.zkoss.zul.Column;
+import org.zkoss.zul.Columns;
+import org.zkoss.zul.Combobox;
+import org.zkoss.zul.Comboitem;
+import org.zkoss.zul.Datebox;
+import org.zkoss.zul.Decimalbox;
+import org.zkoss.zul.Div;
+import org.zkoss.zul.Filedownload;
+import org.zkoss.zul.Grid;
+import org.zkoss.zul.Hlayout;
+import org.zkoss.zul.Label;
+import org.zkoss.zul.Listbox;
+import org.zkoss.zul.Listcell;
+import org.zkoss.zul.Listhead;
+import org.zkoss.zul.Listheader;
+import org.zkoss.zul.Listitem;
+import org.zkoss.zul.Messagebox;
+import org.zkoss.zul.Row;
+import org.zkoss.zul.Rows;
+import org.zkoss.zul.Textbox;
+
+/**
+ * Employee Fund Requisition form -> creates an AP Invoice (charge lines).
+ * Styled after the Primitek "AP Invoice" screen (lavender header, red
+ * mandatory labels). Header data is auto-filled from the LOGGED-IN user.
+ * AD_Form.Classname = org.mycompany.requisition.WEmpAdvanceForm
+ */
+public class WEmpAdvanceForm extends ADForm implements EventListener<Event> {
+
+	private static final long serialVersionUID = 3L;
+	private static final CLogger log = CLogger.getCLogger(WEmpAdvanceForm.class);
+	private static final DecimalFormat AMT_FMT = new DecimalFormat("#,##0.00");
+
+	// ---- Primitek style palette
+	private static final String HEADER_BG = "#EDEBFB";      // lavender header band
+	private static final String LABEL_BLACK = "font-weight:bold;color:#111827;font-size:12px;";
+	private static final String LABEL_RED = "font-weight:bold;color:#C0392B;font-size:12px;";
+	private static final String CARD = "background:#fff;border:1px solid #d9d9e8;border-radius:6px;padding:12px 16px;";
+	private static final String BTN_PRIMARY = "background:#2b3a91;color:#fff;border:0;border-radius:4px;"
+			+ "padding:8px 22px;font-weight:600;cursor:pointer;";
+	private static final String BTN_GHOST = "background:#fff;color:#374151;border:1px solid #d1d5db;"
+			+ "border-radius:4px;padding:8px 22px;font-weight:600;cursor:pointer;";
+
+	// header (read-only, auto-filled from logged in user)
+	private final Textbox orgBox = new Textbox();
+	private final Datebox dateBox = new Datebox();
+	private final Textbox empIdBox = new Textbox();
+	private final Textbox nameBox = new Textbox();
+	private final Textbox desigBox = new Textbox();
+	private final Textbox deptBox = new Textbox();
+	private final Textbox sectionBox = new Textbox();
+
+	// line entry
+	private final Combobox segmentList = new Combobox();
+	private final Combobox chargeList = new Combobox();
+	private final Textbox remarkBox = new Textbox();
+	private final Decimalbox amountBox = new Decimalbox();
+	private final Button addBtn = new Button("+ Add");
+
+	// list + footer
+	private final Listbox lineList = new Listbox();
+	private final Label countLabel = new Label("0 line(s)");
+	private final Label totalLabel = new Label("0.00");
+	private final Button generateBtn = new Button("Generate");
+	private final Button cancelBtn = new Button("Close");
+
+	private final Map<Listitem, Checkbox> checks = new HashMap<>();
+
+	private int currentBPartnerId = 0;
+	private int fixedChargeId = 0;
+	private String fixedChargeName = "";
+
+	@Override
+	protected void initForm() {
+		try {
+			buildUI();
+			loadDefaults();
+		} catch (Exception e) {
+			log.log(Level.SEVERE, e.getMessage(), e);
+			notify(e);
+		}
+	}
+
+	// =================================================================== UI
+
+	private void buildUI() {
+		Div root = div("background:#f3f4f6;padding:14px;");
+		appendChild(root);
+
+		// ---------- header card (lavender, Primitek AP Invoice style)
+		Div header = div(CARD + "background:" + HEADER_BG + ";");
+		Rows hr = new Rows();
+		header.appendChild(newGrid(hr));
+
+		orgBox.setReadonly(true);
+		orgBox.setWidth("100%");
+		dateBox.setFormat("dd/MM/yyyy");
+		dateBox.setWidth("100%");
+		for (Textbox t : new Textbox[] { empIdBox, nameBox, desigBox, deptBox, sectionBox }) {
+			t.setReadonly(true);
+			t.setWidth("100%");
+		}
+
+		addRow(hr, lbl("Org", false), orgBox, lbl("Date", true), dateBox);
+		addRow(hr, lbl("Employee ID", false), empIdBox, lbl("Name", false), nameBox);
+		addRow(hr, lbl("Designation", false), desigBox, lbl("Department", false), deptBox);
+		addRow(hr, lbl("Section", false), sectionBox, new Label(), new Label());
+		root.appendChild(header);
+		root.appendChild(spacer(12));
+
+		// ---------- line entry card
+		Div lines = div(CARD);
+		Rows lr = new Rows();
+		lines.appendChild(newGrid(lr));
+
+		segmentList.setWidth("100%");
+		segmentList.setReadonly(true);
+		chargeList.setWidth("100%");
+		chargeList.setReadonly(true);
+		chargeList.setDisabled(true); // only one fixed value: Advance to Employee
+		remarkBox.setMultiline(true);
+		remarkBox.setRows(3);
+		remarkBox.setWidth("100%");
+		remarkBox.setPlaceholder("Enter detailed remark...");
+		amountBox.setFormat("#,##0.00");
+		amountBox.setWidth("100%");
+		amountBox.addEventListener(Events.ON_OK, this);
+		addBtn.setStyle(BTN_PRIMARY);
+		addBtn.addEventListener(Events.ON_CLICK, this);
+
+		addRow(lr, lbl("Segment", true), segmentList, lbl("Charge", true), chargeList);
+
+		Row remarkRow = new Row();
+		Label rl = lbl("Remark", true);
+		remarkRow.appendChild(rl);
+		Div remarkCell = div("");
+		remarkCell.appendChild(remarkBox);
+		remarkRow.appendChild(remarkCell);
+		Div amtWrap = div("display:flex;flex-direction:column;");
+		amtWrap.appendChild(lbl("Amount", true));
+		amtWrap.appendChild(amountBox);
+		remarkRow.appendChild(amtWrap);
+		remarkRow.appendChild(new Div());
+		lr.appendChild(remarkRow);
+
+		Hlayout addWrap = new Hlayout();
+		addWrap.setStyle("justify-content:flex-end;margin-top:8px;width:100%;");
+		addWrap.appendChild(addBtn);
+		lines.appendChild(addWrap);
+		root.appendChild(lines);
+		root.appendChild(spacer(12));
+
+		// ---------- list card
+		Div listCard = div(CARD);
+		Listhead head = new Listhead();
+		head.appendChild(header("Select", "60px"));
+		head.appendChild(header("SL", "45px"));
+		head.appendChild(header("Segment", "18%"));
+		head.appendChild(header("Charge", "22%"));
+		head.appendChild(header("Remark", null));
+		head.appendChild(header("Amount", "120px"));
+		head.appendChild(header("", "45px"));
+		lineList.appendChild(head);
+		lineList.setEmptyMessage("No lines added yet");
+		lineList.setHeight("220px");
+		lineList.setWidth("100%");
+		listCard.appendChild(lineList);
+		root.appendChild(listCard);
+		root.appendChild(spacer(12));
+
+		// ---------- footer
+		Div foot = div(CARD + "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;");
+		countLabel.setStyle("color:#6b7280;font-size:13px;");
+		Div right = div("display:flex;align-items:center;gap:20px;");
+		Div tot = div("text-align:right;");
+		Label tc = new Label("GRAND TOTAL");
+		tc.setStyle("font-size:11px;font-weight:600;color:#6b7280;");
+		totalLabel.setStyle("font-size:22px;font-weight:700;color:#2b3a91;display:block;");
+		tot.appendChild(tc);
+		tot.appendChild(totalLabel);
+		cancelBtn.setStyle(BTN_GHOST);
+		generateBtn.setStyle(BTN_PRIMARY);
+		cancelBtn.addEventListener(Events.ON_CLICK, this);
+		generateBtn.addEventListener(Events.ON_CLICK, this);
+		right.appendChild(tot);
+		right.appendChild(cancelBtn);
+		right.appendChild(generateBtn);
+		foot.appendChild(countLabel);
+		foot.appendChild(right);
+		root.appendChild(foot);
+	}
+
+	private Div div(String style) {
+		Div d = new Div();
+		if (style != null && !style.isEmpty())
+			d.setStyle(style);
+		return d;
+	}
+
+	private Div spacer(int px) {
+		return div("height:" + px + "px;");
+	}
+
+	private Grid newGrid(Rows rows) {
+		Grid g = new Grid();
+		Columns cols = new Columns();
+		for (String w : new String[] { "13%", "37%", "13%", "37%" }) {
+			Column c = new Column();
+			c.setWidth(w);
+			cols.appendChild(c);
+		}
+		g.appendChild(cols);
+		g.appendChild(rows);
+		g.setStyle("background:transparent;border:0;");
+		return g;
+	}
+
+	private void addRow(Rows rows, Component... comps) {
+		Row r = new Row();
+		for (Component c : comps)
+			r.appendChild(c);
+		rows.appendChild(r);
+	}
+
+	private Label lbl(String text, boolean mandatory) {
+		Label l = new Label(mandatory ? text + " *" : text);
+		l.setStyle(mandatory ? LABEL_RED : LABEL_BLACK);
+		return l;
+	}
+
+	private Listheader header(String text, String width) {
+		Listheader h = new Listheader(text);
+		if (width != null)
+			h.setWidth(width);
+		return h;
+	}
+
+	// ============================================================== defaults
+
+	private void loadDefaults() {
+		// Org - fixed default per requirement
+		String org = EmpAdvanceService.getOrgName(Env.getCtx());
+		orgBox.setValue(org == null || org.isEmpty() ? EmpAdvanceService.DEFAULT_ORG_NAME : org);
+		dateBox.setValue(new Date());
+
+		// Logged-in user's employee data
+		EmpAdvanceService.EmpInfo e = EmpAdvanceService.getCurrentUserEmployee(Env.getCtx());
+		currentBPartnerId = e.bpartnerId;
+		empIdBox.setValue(nz(e.code));
+		nameBox.setValue(nz(e.name));
+		desigBox.setValue(nz(e.designation));
+		deptBox.setValue(nz(e.department));
+		sectionBox.setValue(nz(e.section));
+
+		// Segment list + default based on Role
+		segmentList.getChildren().clear();
+		Comboitem blank = new Comboitem("");
+		blank.setValue(Integer.valueOf(0));
+		segmentList.appendChild(blank);
+		for (KeyNamePair kp : EmpAdvanceService.getSegments(Env.getCtx())) {
+			Comboitem ci = new Comboitem(kp.getName());
+			ci.setValue(Integer.valueOf(kp.getKey()));
+			segmentList.appendChild(ci);
+		}
+		KeyNamePair def = EmpAdvanceService.getDefaultSegmentForRole(Env.getCtx());
+		if (def != null) {
+			for (Object o : segmentList.getItems()) {
+				Comboitem ci = (Comboitem) o;
+				if (ci.getValue() != null && ((Integer) ci.getValue()).intValue() == def.getKey()) {
+					segmentList.setSelectedItem(ci);
+					break;
+				}
+			}
+		}
+
+		// Charge - fixed to "Advance to Employee" only
+		KeyNamePair charge = EmpAdvanceService.getAdvanceCharge(Env.getCtx());
+		fixedChargeId = charge.getKey();
+		fixedChargeName = charge.getName();
+		chargeList.getChildren().clear();
+		Comboitem onlyCharge = new Comboitem(fixedChargeName);
+		onlyCharge.setValue(Integer.valueOf(fixedChargeId));
+		chargeList.appendChild(onlyCharge);
+		chargeList.setSelectedItem(onlyCharge);
+
+		if (currentBPartnerId <= 0)
+			notifyWarn("No employee record linked to your user account. Please contact Admin.");
+	}
+
+	// ================================================================ events
+
+	@Override
+	public void onEvent(Event e) {
+		Component c = e.getTarget();
+		try {
+			if (c == addBtn || (c == amountBox && Events.ON_OK.equals(e.getName()))) {
+				addLine();
+			} else if (c == generateBtn) {
+				generate();
+			} else if (c == cancelBtn) {
+				SessionManager.getAppDesktop().closeActiveWindow();
+			}
+		} catch (Exception ex) {
+			log.log(Level.SEVERE, ex.getMessage(), ex);
+			notify(ex);
+		}
+	}
+
+	private void addLine() {
+		Comboitem seg = segmentList.getSelectedItem();
+		int segId = (seg == null || seg.getValue() == null) ? 0 : (Integer) seg.getValue();
+		String segName = (seg == null) ? "" : seg.getLabel();
+
+		BigDecimal amt = amountBox.getValue();
+		if (amt == null || amt.signum() <= 0)
+			throw new IllegalStateException("Amount must be greater than zero");
+		if (remarkBox.getValue() == null || remarkBox.getValue().trim().isEmpty())
+			throw new IllegalStateException("Remark is required");
+
+		AdvanceLine line = new AdvanceLine(segId, segName, fixedChargeId, fixedChargeName,
+				remarkBox.getValue().trim(), amt);
+
+		final Listitem li = new Listitem();
+		li.setValue(line);
+
+		Checkbox chk = new Checkbox();
+		Listcell chkCell = new Listcell();
+		chkCell.appendChild(chk);
+		li.appendChild(chkCell);
+		checks.put(li, chk);
+
+		li.appendChild(new Listcell(String.valueOf(lineList.getItemCount() + 1)));
+		li.appendChild(new Listcell(segName));
+		li.appendChild(new Listcell(fixedChargeName));
+		li.appendChild(new Listcell(line.remark));
+		Listcell ac = new Listcell(AMT_FMT.format(amt));
+		ac.setStyle("text-align:right;font-weight:600;");
+		li.appendChild(ac);
+
+		Button del = new Button("\u2715");
+		del.setStyle("background:#fee2e2;color:#b91c1c;border:0;border-radius:4px;padding:2px 8px;cursor:pointer;");
+		del.addEventListener(Events.ON_CLICK, new EventListener<Event>() {
+			@Override
+			public void onEvent(Event event) {
+				checks.remove(li);
+				lineList.removeChild(li);
+				renumber();
+				refreshTotal();
+			}
+		});
+		Listcell dc = new Listcell();
+		dc.appendChild(del);
+		li.appendChild(dc);
+
+		lineList.appendChild(li);
+
+		remarkBox.setValue("");
+		amountBox.setValue((BigDecimal) null);
+		refreshTotal();
+	}
+
+	private void renumber() {
+		int n = 1;
+		for (Object o : lineList.getItems()) {
+			Listitem item = (Listitem) o;
+			((Listcell) item.getChildren().get(1)).setLabel(String.valueOf(n++));
+		}
+	}
+
+	private List<AdvanceLine> collectAll() {
+		List<AdvanceLine> lines = new ArrayList<>();
+		for (Object o : lineList.getItems())
+			lines.add((AdvanceLine) ((Listitem) o).getValue());
+		return lines;
+	}
+
+	/** Only the lines whose checkbox is ticked. If none ticked, all lines are used. */
+	private List<AdvanceLine> collectSelected() {
+		List<AdvanceLine> lines = new ArrayList<>();
+		for (Object o : lineList.getItems()) {
+			Listitem item = (Listitem) o;
+			Checkbox chk = checks.get(item);
+			if (chk != null && chk.isChecked())
+				lines.add((AdvanceLine) item.getValue());
+		}
+		return lines.isEmpty() ? collectAll() : lines;
+	}
+
+	private void refreshTotal() {
+		List<AdvanceLine> l = collectAll();
+		totalLabel.setValue(AMT_FMT.format(EmpAdvanceService.sum(l)));
+		countLabel.setValue(l.size() + " line(s)");
+	}
+
+	private void generate() {
+		if (dateBox.getValue() == null)
+			throw new IllegalStateException("Date is required");
+		if (currentBPartnerId <= 0)
+			throw new IllegalStateException("No employee linked to your login - cannot proceed");
+		final List<AdvanceLine> lines = collectSelected();
+		if (lines.isEmpty())
+			throw new IllegalStateException("Add at least one line");
+
+		showSummaryConfirm(lines);
+	}
+
+	/** Step 1: show a summary popup of the lines that will be submitted (SL/Segment/Charge/Remark/Amount). */
+	private void showSummaryConfirm(final List<AdvanceLine> lines) {
+		final Window win = new Window("Confirm Employee Fund Requisition", "modal", true);
+		win.setWidth("620px");
+		win.setStyle("padding:14px;");
+
+		Listbox summary = new Listbox();
+		Listhead sh = new Listhead();
+		sh.appendChild(header("SL", "40px"));
+		sh.appendChild(header("Segment", "18%"));
+		sh.appendChild(header("Charge", "22%"));
+		sh.appendChild(header("Remark", null));
+		sh.appendChild(header("Amount", "110px"));
+		summary.appendChild(sh);
+		summary.setHeight("200px");
+		summary.setWidth("100%");
+
+		int n = 1;
+		for (AdvanceLine l : lines) {
+			Listitem li = new Listitem();
+			li.appendChild(new Listcell(String.valueOf(n++)));
+			li.appendChild(new Listcell(l.segmentName));
+			li.appendChild(new Listcell(l.chargeName));
+			li.appendChild(new Listcell(l.remark));
+			Listcell ac = new Listcell(AMT_FMT.format(l.amount));
+			ac.setStyle("text-align:right;");
+			li.appendChild(ac);
+			summary.appendChild(li);
+		}
+		win.appendChild(summary);
+
+		Div totRow = div("text-align:right;margin-top:8px;");
+		Label totLbl = new Label("Grand Total: " + AMT_FMT.format(EmpAdvanceService.sum(lines)));
+		totLbl.setStyle("font-weight:700;color:#2b3a91;font-size:15px;");
+		totRow.appendChild(totLbl);
+		win.appendChild(totRow);
+
+		Hlayout btns = new Hlayout();
+		btns.setStyle("justify-content:flex-end;margin-top:14px;gap:10px;");
+		Button ok = new Button("OK");
+		ok.setStyle(BTN_PRIMARY);
+		Button cancel = new Button("Cancel");
+		cancel.setStyle(BTN_GHOST);
+		btns.appendChild(cancel);
+		btns.appendChild(ok);
+		win.appendChild(btns);
+
+		cancel.addEventListener(Events.ON_CLICK, new EventListener<Event>() {
+			@Override
+			public void onEvent(Event event) {
+				win.detach();
+			}
+		});
+		ok.addEventListener(Events.ON_CLICK, new EventListener<Event>() {
+			@Override
+			public void onEvent(Event event) {
+				win.detach();
+				doCreateAndAskPdf(lines);
+			}
+		});
+
+		win.doModal();
+	}
+
+	/** Step 2: actually create the AP Invoice, then ask Yes/No to view the PDF. */
+	private void doCreateAndAskPdf(List<AdvanceLine> lines) {
+		final EmpAdvanceService.InvoiceResult result = EmpAdvanceService.createApInvoice(Env.getCtx(),
+				currentBPartnerId, new Timestamp(dateBox.getValue().getTime()), lines);
+
+		Messagebox.show("Employee Fund Requisition created.\nID: " + result.documentNo
+						+ "\n\nDo you want to view the PDF?",
+				"Employee Fund Requisition", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
+				new EventListener<Event>() {
+					@Override
+					public void onEvent(Event event) throws Exception {
+						if (Messagebox.ON_YES.equals(event.getName())) {
+							showPdfInline(result.invoiceId, result.documentNo);
+						}
+						resetLines();
+					}
+				});
+	}
+
+	/** Step 3: show the PDF INSIDE the app (not a download) - browser's own viewer gives print/download icons. */
+	private void showPdfInline(int invoiceId, String docNo) {
+		try {
+			byte[] pdf = EmpAdvanceService.getInvoicePdf(Env.getCtx(), invoiceId);
+			AMedia media = new AMedia(docNo + ".pdf", "pdf", "application/pdf", pdf);
+
+			final Window win = new Window("Employee Fund Requisition - " + docNo, "modal", true);
+			win.setWidth("820px");
+			win.setHeight("650px");
+			win.setStyle("padding:0;");
+
+			Iframe frame = new Iframe();
+			frame.setContent(media);
+			frame.setWidth("100%");
+			frame.setHeight("600px");
+			win.appendChild(frame);
+
+			Hlayout btns = new Hlayout();
+			btns.setStyle("justify-content:flex-end;padding:8px;gap:8px;");
+			Button close = new Button("Close");
+			close.setStyle(BTN_GHOST);
+			close.addEventListener(Events.ON_CLICK, new EventListener<Event>() {
+				@Override
+				public void onEvent(Event event) {
+					win.detach();
+				}
+			});
+			btns.appendChild(close);
+			win.appendChild(btns);
+
+			win.doModal();
+		} catch (Exception ex) {
+			log.log(Level.SEVERE, ex.getMessage(), ex);
+			notify(ex);
+		}
+	}
+
+	private void resetLines() {
+		checks.clear();
+		while (lineList.getItemCount() > 0)
+			lineList.removeItemAt(0);
+		refreshTotal();
+	}
+
+	// ================================================================ helpers
+
+	private void notify(Exception e) {
+		String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+		Clients.showNotification(msg, "error", null, "middle_center", 5000);
+	}
+
+	private void notifyWarn(String msg) {
+		Clients.showNotification(msg, "warning", null, "middle_center", 5000);
+	}
+
+	private static String nz(String s) {
+		return s == null ? "" : s;
+	}
+}

@@ -1,0 +1,490 @@
+[Account_Value],[Account_Name],[Account_Description],[Account_Type],[Account_Sign],[Account_Document],[Account_Summary],[Default_Account],[Account_Parent]
+100000,Assets,Assets,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+110000,Non Current Assets,Non Current Assets,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+111000,"Property, Plant & Equipment","Property, Plant & Equipment",Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+111001,Land & Land Development,Land & Land Development,Asset,,Yes,No,LAND_DEVELOPMENT_ACCT,DEFAULTS_NOT_CONFIGURED
+111002,Building & Building Improvements,Building & Building Improvements,Asset,,Yes,No,BUILDING_IMPROVEMENTS_ACCT,DEFAULTS_NOT_CONFIGURED
+111003,Plant & Machinery,Plant & Machinery,Asset,,Yes,No,PLANT_MACHINERY_ACCT,DEFAULTS_NOT_CONFIGURED
+111004,Furniture & Fixture,Furniture & Fixture,Asset,,Yes,No,FURNITUR_FIXTURE_ACCT,DEFAULTS_NOT_CONFIGURED
+111005,Office Equipment,Office Equipment,Asset,,Yes,No,OFFICE_EQUIPMENT_ACCT,DEFAULTS_NOT_CONFIGURED
+111006,Automobile & Vehicles,Automobile & Vehicles,Asset,,Yes,No,AUTOMOBILE_VEHICLES_ACCT,DEFAULTS_NOT_CONFIGURED
+111007,Vehicles Lease to Employee,Vehicles Lease to Employee,Asset,,Yes,No,VEHICLES_LEASE_TO_EMPLOYEE_ACCT,DEFAULTS_NOT_CONFIGURED
+111500,Accumulated Depreciation,Accumulated Depreciation,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+111501,Accumulated Depreciation on Land & Land Development,Accumulated Depreciation on Land & Land Development,Asset,,Yes,No,ACCUMULATED_DEPRECIATION_ON_LAND_DEVELOPMENT_ACCT,DEFAULTS_NOT_CONFIGURED
+111502,Accumulated Depreciation on Building & Building Improvement,Accumulated Depreciation on Building & Building Improvement,Asset,,Yes,No,ACCUMULATED DEPRECIATION ON BUILDING & BUILDING IMPROVEMENT,DEFAULTS_NOT_CONFIGURED
+111503,Accumulated Depreciation on Plant & Machinery,Accumulated Depreciation on Plant & Machinery,Asset,,Yes,No,ACCUMULATED DEPRECIATION ON PLANT & MACHINERY,DEFAULTS_NOT_CONFIGURED
+111504,Accumulated Depreciation on Furniture & Fixture,Accumulated Depreciation on Furniture & Fixture,Asset,,Yes,No,ACCUMULATED DEPRECIATION ON FURNITURE & FIXTURE,DEFAULTS_NOT_CONFIGURED
+111505,Accumulated Depreciation on Office Equipment,Accumulated Depreciation on Office Equipment,Asset,,Yes,No,ACCUMULATED DEPRECIATION ON OFFICE EQUIPMENT,DEFAULTS_NOT_CONFIGURED
+111506,Accumulated Depreciation on Automobile & Vehicles,Accumulated Depreciation on Automobile & Vehicles,Asset,,Yes,No,ACCUMULATED DEPRECIATION ON AUTOMOBILE & VEHICLES,DEFAULTS_NOT_CONFIGURED
+112000,"BASF - Property, Plant & Equipment","BASF - Property, Plant & Equipment",Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+119100,Capital Work In Progress,Capital Work In Progress,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+119101,Capital Work In Progress- Land & Land Development,Capital Work In Progress- Land & Land Development,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119102,Capital Work In Progress- Building & Building Improvements,Capital Work In Progress- Building & Building Improvements,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119103,Capital Work In Progress- Machinery,Capital Work In Progress- Machinery,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119104,Capital Work In Progress- Furniture & Fixture,Capital Work In Progress- Furniture & Fixture,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119105,Capital Work In Progress- Office Equipment,Capital Work In Progress- Office Equipment,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119106,Project Asset,Project Asset,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119107,Project WIP,Project WIP,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119109,Asset in Transit- Land and Land Development,Asset in Transit- Land and Land Development,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119110,Asset in Transit- Building & Building Improvements,Asset in Transit- Building & Building Improvements,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119111,Asset in Transit- Machinery,Asset in Transit- Machinery,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119112,Asset in Transit- Furniture and Fixture,Asset in Transit- Furniture and Fixture,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119113,Asset in Transit- Office Equipment,Asset in Transit- Office Equipment,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119114,Asset in Transit- Automobile & Vehicles,Asset in Transit- Automobile & Vehicles,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119115,Asset in Transit- Vehicles Lease to Employee,Asset in Transit- Vehicles Lease to Employee,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119200,Long Term Investments,Long Term Investments,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+119201,Investment in Other Company Shares,Investment in Other Company Shares,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119202,Investment in FDR,Investment in FDR,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119203,Accounts Receivable (Construction),Accounts Receivable (Construction),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119300,Inter Company Current Account,Inter Company Current Account,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+119301,Inter Company Current Account (Principal),Inter Company Current Account (Principal),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119302,Inter Company Current Account (Interest),Inter Company Current Account (Interest),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119400,Intangible Assets,Intangible Assets,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+119401,Patent,Patent,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119402,Trademark,Trademark,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119403,Franchises,Franchises,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119404,Product Research & Development,Product Research & Development,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119500,Deferred Expenses,Deferred Expenses,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+119501,Deferred Income Tax Assets,Deferred Income Tax Assets,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119502,Deferred Revenue Expenses,Deferred Revenue Expenses,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+119503,Preliminary Expenses,Preliminary Expenses,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+120000,Current Assets,Current Assets,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+121000,Inventories,Inventories,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+121100,Raw Materials,Raw Materials,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121200,Packing Materials,Packing Materials,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121300,Bulk Materials,Bulk Materials,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121400,Work-in-Process/ Semi Finished Goods,Work-in-Process/ Semi Finished Goods,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121500,Finished Goods,Finished Goods,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121600,Spare Parts,Spare Parts,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121700,Non Inventory Items (Clearing Account),Non Inventory Items (Clearing Account),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121800,Inventory Clearing Account,Inventory Clearing Account,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+121900,Construction Materials,Construction Materials,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122000,Accounts Receivable,Accounts Receivable,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+122100,Accounts Receivable Trade,Accounts Receivable Trade,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122200,Accounts Receivable Trade (Doubtful),Accounts Receivable Trade (Doubtful),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122300,Accounts Receivable Services,Accounts Receivable Services,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122400,Accounts Receivable Other,Accounts Receivable Other,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122500,Advance from Customer,Advance from Customer,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122600,Tax Credit Accounts Receivable,Tax Credit Accounts Receivable,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122700,Receivable Clearing Account,Receivable Clearing Account,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+122900,Intercompany Due From,Intercompany Due From,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123000,"Advances, Deposits & Prepayments","Advances, Deposits & Prepayments",Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123100,Advance against Expenses,Advance against Expenses,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123101,Advance to Employee against Salary,Advance to Employee against Salary,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123102,Advance to Employee against Purchases/Expenses,Advance to Employee against Purchases/Expenses,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123103,Advance to Director's for Expenses,Advance to Director's for Expenses,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123104,Advance against Car/Motorcycle,Advance against Car/Motorcycle,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123105,Advance against  Hire Purchase,Advance against  Hire Purchase,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123106,Import in Transit (L/C),Import in Transit (L/C),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123107,Advance to Party,Advance to Party,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123108,Advance for Other,Advance for Other,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123200,Security Deposit,Security Deposit,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123201,Security Deposit against Tender,Security Deposit against Tender,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123202,Deposit against Power Supply,Deposit against Power Supply,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123203,Deposit against Gas Line,Deposit against Gas Line,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123204,Bank Guarantee Margin,Bank Guarantee Margin,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123206,Security Deposit-Telephone,Security Deposit-Telephone,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123207,Security Deposit-Rent,Security Deposit-Rent,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123209,Other Security Deposits,Other Security Deposits,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123300,Prepayments (General),Prepayments (General),Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123301,Prepaid Insurance,Prepaid Insurance,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123302,Prepaid Rent,Prepaid Rent,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123303,Vendor Prepayment,Vendor Prepayment,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123500,Advance Income Tax,Advance Income Tax,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123501,Advance Income Tax-against Import,Advance Income Tax-against Import,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123502,Advance Income Tax-against Local Sales,Advance Income Tax-against Local Sales,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123503,Advance Income Tax-against Transport,Advance Income Tax-against Transport,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123504,Advance Income Tax-against Trade License,Advance Income Tax-against Trade License,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123505,Advance Income Tax-against Treasure Deposits,Advance Income Tax-against Treasure Deposits,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123506,Advance Income Tax-against Export,Advance Income Tax-against Export,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123507,Advance Income Tax-against Export Incentive,Advance Income Tax-against Export Incentive,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123508,Advance Income Tax-against Bank Interest,Advance Income Tax-against Bank Interest,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123509,Advance Income Tax-against Others,Advance Income Tax-against Others,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123510,Advance Income Tax-against Local Purchases,Advance Income Tax-against Local Purchases,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123600,VAT Current Account ,VAT Current Account ,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123601,VAT Current Account Balance at June'19,VAT Current Account Balance at June'19,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123602,VAT Payable on Goods/Service Transfer,VAT Payable on Goods/Service Transfer,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123603,"VAT Input on Purchases (RM, PM)","VAT Input on Purchases (RM, PM)",Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123604,VAT Input on Service,VAT Input on Service,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123605,VAT Treasure Deposit,VAT Treasure Deposit,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123606,Advance Tax (VAT) on Import,Advance Tax (VAT) on Import,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123700,VAT with Depot Stock,VAT with Depot Stock,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123701,VAT with Depot Stock,VAT with Depot Stock,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123800,Short Term Investment,Short Term Investment,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+123801,FDR (For Less than 1 Year),FDR (For Less than 1 Year),Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+123802,Other Short Term Investment,Other Short Term Investment,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124000,Cash & Cash Equivalents,Cash & Cash Equivalents,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+124100,Cash at Bank,Cash at Bank,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+124101,Cash Balance at Bank,Cash Balance at Bank,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124150,Loan Clearing Account,Loan Clearing Account,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124151,Cheque/Deposit Clearing Account,Cheque/Deposit Clearing Account,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124153,Checking Unallocated Receipts,Checking Unallocated Receipts,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124154,Bank/Cash Clearing Account,Bank/Cash Clearing Account,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124155,Bank/Cash Transfer A/C,Bank/Cash Transfer A/C,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124200,Cash in Hand,Cash in Hand,Asset,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+124201,Petty Cash,Petty Cash,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+124251,Petty Cash In-Transfer,Petty Cash In-Transfer,Asset,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+200000,Share Holder's Equity,Share Holder's Equity,Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+210000,Ordinary Share Capital (Paid-up),Ordinary Share Capital (Paid-up),Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+210001,Dilara Khanom,Dilara Khanom,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+210002,Md. Mohabbatul Huda,Md. Mohabbatul Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+210003,Mohammad Saiful Huda,Mohammad Saiful Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+210004,Tamanna Huda,Tamanna Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+210005,Danya Huda,Danya Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+220000,Preference Share Capital,Preference Share Capital,Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+220001,Dilara Khanom,Dilara Khanom,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+220002,Md. Mohabbatul Huda,Md. Mohabbatul Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+220003,Mohammad Saiful Huda,Mohammad Saiful Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+220004,Tamanna Huda,Tamanna Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+220005,Danya Huda,Danya Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230000,Share Money Deposit,Share Money Deposit,Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+230001,Dilara Khanom,Dilara Khanom,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230002,Md. Mohabbatul Huda,Md. Mohabbatul Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230003,Mohammad Saiful Huda,Mohammad Saiful Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230004,Tamanna Huda,Tamanna Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230005,Danya Huda,Danya Huda,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230006,Soyad Ahmed,Soyad Ahmed,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+230007,Md. Faruk Miah,Md. Faruk Miah,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+240000,General Reserve,General Reserve,Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+240001,General Reserve,General Reserve,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+250000,Revaluation Reserve,Revaluation Reserve,Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+250001,Revaluation Reserve,Revaluation Reserve,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+260000,Retained Earnings,Retained Earnings,Owner's Equity,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+260001,Prior Year's Adjustment,Prior Year's Adjustment,Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+260002,Accumulated Profit/(Loss),Accumulated Profit/(Loss),Owner's Equity,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+300000,Liabilities & Provisions,Liabilities & Provisions,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+310000,Non Current Liabilities,Non Current Liabilities,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+311000,Long Term Loan,Long Term Loan,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+311001,Long Term Obligation (Bank),Long Term Obligation (Bank),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+311002,Long Term Obligation (NBFI),Long Term Obligation (NBFI),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+311003,Other Long Term Obligation,Other Long Term Obligation,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+311004,Liability for Long Term Loan Interest,Liability for Long Term Loan Interest,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+312000,Deferred Liabilities,Deferred Liabilities,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+312001,Deferred Income Tax Liabilities,Deferred Income Tax Liabilities,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+312002,Gratuity Payable (Employees),Gratuity Payable (Employees),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+312003,Obligation for Vehicles Lease to Employee,Obligation for Vehicles Lease to Employee,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+320000,Current Liabilities,Current Liabilities,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+321000,Short Term Loan,Short Term Loan,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+321001,Short Term Obligation (Bank),Short Term Obligation (Bank),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+321002,Short Term Obligation (NBFI),Short Term Obligation (NBFI),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+321003,Loan from Directors,Loan from Directors,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+321004,Loan from Others,Loan from Others,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+321005,Current Maturity of Long Term Debt (CMLTD),Current Maturity of Long Term Debt (CMLTD),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+321006,Liability for Short Term Loan Interest,Liability for Short Term Loan Interest,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322000,Accounts Payable,Accounts Payable,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+322001,Accounts Payable Trade,Accounts Payable Trade,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322002,Accounts Payable Services,Accounts Payable Services,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322003,Liabilities for Capital Item Clearing Account,Liabilities for Capital Item Clearing Account,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322004,Not Invoiced Receipts,Not Invoiced Receipts,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322005,Intercompany Due To,Intercompany Due To,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322006,Payment Selection,Payment Selection,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+322007,Payable Clearing Account,Payable Clearing Account,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324000,Liabilities for Expenses,Liabilities for Expenses,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+324001,Liabilities for Director Remuneration,Liabilities for Director Remuneration,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324002,Liabilities for Salary and Wages ,Liabilities for Salary and Wages ,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324003,Liabilities for Employees Incentive,Liabilities for Employees Incentive,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324004,Liabilities for TA/DA,Liabilities for TA/DA,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324005,Liabilities for Provident Fund,Liabilities for Provident Fund,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324006,Liabilities for WPPF,Liabilities for WPPF,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324007,Liabilities for Electricity Bill ,Liabilities for Electricity Bill ,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324008,Liabilities for Gas Bill,Liabilities for Gas Bill,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324009,Liabilities for WASA Bill,Liabilities for WASA Bill,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324010,Liabilities for Mobile Phone Bill ,Liabilities for Mobile Phone Bill ,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324011,Liabilities for Telephone/Internet Bill,Liabilities for Telephone/Internet Bill,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324012,Liabilities for Lease Premises,Liabilities for Lease Premises,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324013,Liabilities for Legal & Professional Fee ,Liabilities for Legal & Professional Fee ,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324014,Liabilities for Distributor Commission,Liabilities for Distributor Commission,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324015,Liabilities for Security Service,Liabilities for Security Service,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324016,Liabilities for Cleaning Service,Liabilities for Cleaning Service,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324017,Liabilities for Factory Expenses,Liabilities for Factory Expenses,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324018,Liabilities for Depot Expenses,Liabilities for Depot Expenses,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324019,Liabilities for Other Expenses,Liabilities for Other Expenses,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324020,Liabilities for Revenue Stamp,Liabilities for Revenue Stamp,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324021,Liabilities for Call Center and SMS Service,Liabilities for Call Center and SMS Service,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324022,Liabilities for Bad Debts Expenses,Liabilities for Bad Debts Expenses,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324023,Liabilities for Festival Bonus,Liabilities for Festival Bonus,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+324024,Liabilities for Promotional Expenses,Liabilities for Promotional Expenses,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325000,Liabilities for Others,Liabilities for Others,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+325001,Director Advance Income Tax Payable (AIT),Director Advance Income Tax Payable (AIT),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325002,Employee Advance Income Tax Payable (AIT),Employee Advance Income Tax Payable (AIT),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325003,Party Income Tax Payable (TDS),Party Income Tax Payable (TDS),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325004,Party VAT Payable (VDS),Party VAT Payable (VDS),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325005,Business Deposit From Customers,Business Deposit From Customers,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325006,Materials Loan,Materials Loan,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+325007,Customer Prepayments,Customer Prepayments,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+326000,Liabilities for Income Tax,Liabilities for Income Tax,Liability,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+326001,Liabilities for Income Tax,Liabilities for Income Tax,Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+326002,Tax Collected at Source (TCS),Tax Collected at Source (TCS),Liability,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+400000,Income,Income,Revenue,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+410000,Net Sales Revenue,Net Sales Revenue,Revenue,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+411000,Gross Sales Revenue,Gross Sales Revenue,Revenue,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+411001,Gross Sales Revenue,Gross Sales Revenue,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+412000,Sales Return,Sales Return,Revenue,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+412001,Sales Return,Sales Return,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413000,Sales Discounts Expenses,Sales Discounts Expenses,Revenue,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+413001,Trade Discounts,Trade Discounts,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413002,Special Discount,Special Discount,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413003,Cash Discount,Cash Discount,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413004,Tender Discount,Tender Discount,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413005,Product Bonus Expenses,Product Bonus Expenses,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413006,VAT on Product Bonus,VAT on Product Bonus,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+413007,Payment Discount Expense,Payment Discount Expense,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420000,Other Operating Income,Other Operating Income,Revenue,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+420001,Rent Income,Rent Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420002,Operating & Maintenance Income,Operating & Maintenance Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420003,Analysis (QC) Income,Analysis (QC) Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420004,Truck Fare Income,Truck Fare Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420005,Scrap/Wastage Sales,Scrap/Wastage Sales,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420006,Government Subsidy,Government Subsidy,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420007,Government Incentives on Export,Government Incentives on Export,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420008,Interest Income,Interest Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420009,Gain/Loss on Sale of Non-Current Assets,Gain/Loss on Sale of Non-Current Assets,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420010,Gain/Loss on Insurance/Supplier Claim,Gain/Loss on Insurance/Supplier Claim,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420011,Indenting Commission,Indenting Commission,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420012,Financial Cost Reimbursement,Financial Cost Reimbursement,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420013,Bad Debt Recovery,Bad Debt Recovery,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420014,Dividend Income,Dividend Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420015,Unrealized Gain,Unrealized Gain,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420016,Realized Gain,Realized Gain,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420017,Cash Book Receipts,Cash Book Receipts,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420018,Unearned Revenue,Unearned Revenue,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420019,Excess Cash Collection Income,Excess Cash Collection Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420020,Foreign Exchange Gain/(Loss),Foreign Exchange Gain/(Loss),Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420021,Solar Electricity Generation,Solar Electricity Generation,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420022,Income from PF Forfeited Fund,Income from PF Forfeited Fund,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420023,Management Fees Income,Management Fees Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420024,AIT Gross-up Income,AIT Gross-up Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420025,Seeds Processing and Associated Income,Seeds Processing and Associated Income,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+420026,Subsidy from Supplier,Subsidy from Supplier,Revenue,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+500000,Cost & Expenses,Cost & Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+510000,Cost of Goods Sold,Cost of Goods Sold,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+511000,"COGS of Product's RM, PM","COGS of Product's RM, PM",Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+511001,"COGS of Product's RM, PM","COGS of Product's RM, PM",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+511002,Product Cost Adjustment,Product Cost Adjustment,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+511003,Product Inventory Clearing,Product Inventory Clearing,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+511004,Landed Cost Clearing,Landed Cost Clearing,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513000,COGS Stock Adjustment,COGS Stock Adjustment,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+513001,Stock Short/Excess,Stock Short/Excess,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513002,Stock Weight Loss/Gain,Stock Weight Loss/Gain,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513003,Stock Date Expired,Stock Date Expired,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513004,Stock used for Product Development,Stock used for Product Development,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513005,"Stock used for Maintenance, Cleaning, Trial etc.","Stock used for Maintenance, Cleaning, Trial etc.",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513006,Stock used for ETP,Stock used for ETP,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513007,Stock used by Regulatory Authority,Stock used by Regulatory Authority,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513008,Stock Purchases Provision Variance,Stock Purchases Provision Variance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+513009,Inventory Shrinkage,Inventory Shrinkage,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520000,General Expenses,General Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520100,Salaries & Allowances,Salaries & Allowances,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520101,Salaries and Wages,Salaries and Wages,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520102,House Rent Allowance,House Rent Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520103,Medical Allowance,Medical Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520104,Conveyance Allowance,Conveyance Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520105,Child Education Allowance,Child Education Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520106,Lunch Allowance,Lunch Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520107,Utilities Allowances,Utilities Allowances,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520108,Transport Allowance,Transport Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520109,Leave Fare Assistance,Leave Fare Assistance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520110,Annual Leave Pay,Annual Leave Pay,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520111,Leave Without Pay,Leave Without Pay,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520112,Festival Bonus,Festival Bonus,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520113,Incentive Bonus,Incentive Bonus,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520114,Contribution To Provident Fund,Contribution To Provident Fund,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520115,Gratuity Expenses,Gratuity Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520116,Overtime Expenses,Overtime Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520117,Casual Wages,Casual Wages,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520118,Salary Clearing Account,Salary Clearing Account,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520200,Directors Remuneration & Expenses,Directors Remuneration & Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520201,Directors Remuneration,Directors Remuneration,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520202,Directors House Rent & Other Expenses,Directors House Rent & Other Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520203,Medical Allowance,Medical Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520204,Conveyance/Transport Allowance,Conveyance/Transport Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520206,Directors Festival Bonus,Directors Festival Bonus,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520207,Board Meeting Participation Fee,Board Meeting Participation Fee,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520208,DOHS Expenses,DOHS Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520209,Educational Expenses,Educational Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520300,Employee Welfare & Recreation Expenses,Employee Welfare & Recreation Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520301,Ifter Allowance,Ifter Allowance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520302,Annual Picnic Expenses,Annual Picnic Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520303,Annual Dinner Expenses,Annual Dinner Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520304,Canteen Expenses,Canteen Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520305,Donation/Support to Ex. Employee,Donation/Support to Ex. Employee,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520306,Other Welfare Expenses,Other Welfare Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520400,Rent/Lease Expenses,Rent/Lease Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520401,Factory Rent,Factory Rent,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520402,Garage Rent,Garage Rent,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520403,Land Rent,Land Rent,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520404,Office/Depot Rent,Office/Depot Rent,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520405,Warehouse Rent,Warehouse Rent,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520406,Lease Financing Rent,Lease Financing Rent,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520500,Repairs & Maintenance,Repairs & Maintenance,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520501,Repairs & Maintenance on Building,Repairs & Maintenance on Building,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520502,Repairs & Maintenance on Plant & Machinery,Repairs & Maintenance on Plant & Machinery,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520503,Repairs & Maintenance on Furniture & Fixture,Repairs & Maintenance on Furniture & Fixture,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520504,Repairs & Maintenance on Office Equipment,Repairs & Maintenance on Office Equipment,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520600,Automobiles & Vehicles Expenses,Automobiles & Vehicles Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520601,Vehicle Fuel Expense,Vehicle Fuel Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520602,Vehicle Insurance,Vehicle Insurance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520603,Vehicle Repairs & Maintenance,Vehicle Repairs & Maintenance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520604,Vehicle Registration & Fitness,Vehicle Registration & Fitness,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520605,"Vehicle Toll, Fine etc.","Vehicle Toll, Fine etc.",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520606,Vehicle Driver TA/DA,Vehicle Driver TA/DA,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520700,Fuel Expense,Fuel Expense,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520701,Generator Fuel Expense,Generator Fuel Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520702,Boiler Fuel Expense,Boiler Fuel Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520703,Fuel Expenses Other,Fuel Expenses Other,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520800,Insurance Expenses,Insurance Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520801,"General Insurance (Fire, Earthquake etc.)","General Insurance (Fire, Earthquake etc.)",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520802,Fidelity Insurance,Fidelity Insurance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520803,Group Health & Life Insurance,Group Health & Life Insurance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520900,Legal & Professional Fees,Legal & Professional Fees,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+520901,Audit Fees,Audit Fees,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520902,Legal Fees,Legal Fees,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520903,Credit Rating,Credit Rating,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520904,Consultation Fees,Consultation Fees,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+520905,Surveyor Fees,Surveyor Fees,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521000,Utility Expenses,Utility Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521001,Electricity Bill,Electricity Bill,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521002,Gas Bill,Gas Bill,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521003,Water & Sewage Bill,Water & Sewage Bill,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521100,Communications Expenses,Communications Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521101,Telephone Bill,Telephone Bill,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521102,Mobile Phone Bill,Mobile Phone Bill,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521103,Postage & Courier,Postage & Courier,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521104,Internet Bill,Internet Bill,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521105,Call Center and SMS Service,Call Center and SMS Service,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521200,Carrying Charges,Carrying Charges,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521201,Carriage Inward,Carriage Inward,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521202,Carriage Outward & Freight,Carriage Outward & Freight,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521203,Loading & Unloading Expenses,Loading & Unloading Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521300,Donations & Subscription,Donations & Subscription,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521301,Association Membership Fees,Association Membership Fees,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521302,ISO Subscription,ISO Subscription,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521303,IMS Subscription,IMS Subscription,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521304,Donation General,Donation General,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521400,Local Taxes & Licenses Fees,Local Taxes & Licenses Fees,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521401,Land Revenue,Land Revenue,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521402,Municipal Tax,Municipal Tax,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521403,"License, Fees & Forms","License, Fees & Forms",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521404,Product License Renewal,Product License Renewal,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521405,Tax/VAT Expense,Tax/VAT Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521500,Tour & Travelling Expense,Tour & Travelling Expense,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521501,Accommodation Expenses,Accommodation Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521502,Daily Allowances,Daily Allowances,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521503,Food Expenses,Food Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521504,Local Conveyance,Local Conveyance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521505,Transport Fare/Fuel Expenses,Transport Fare/Fuel Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521506,Other Travelling Expenses,Other Travelling Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521600,Foreign Tour Expenses,Foreign Tour Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521601,Foreign Tour Expenses,Foreign Tour Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521700,Field Force TA/DA,Field Force TA/DA,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521701,Field Force TA/DA,Field Force TA/DA,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521800,Research & Development Expenses,Research & Development Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521801,New Product Registration Expenses,New Product Registration Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521802,New Product Launching Expenses,New Product Launching Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521803,New Product Testing Expenses,New Product Testing Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521804,Other Expenses for New Products,Other Expenses for New Products,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521805,Imported Sample Expenses,Imported Sample Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521900,Stationary & Supplies,Stationary & Supplies,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+521901,Printing/Photocopy Paper,Printing/Photocopy Paper,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521902,Books & Journal,Books & Journal,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521903,Newspaper & Periodicals,Newspaper & Periodicals,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521904,Office File/Folder,Office File/Folder,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521905,Toiletries & Supplies,Toiletries & Supplies,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521906,Toner Cartridge for Printer/Photocopier,Toner Cartridge for Printer/Photocopier,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+521907,Office Stationary,Office Stationary,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522000,Sample Expenses,Sample Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+522001,Sample Cost,Sample Cost,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522002,Sample VAT,Sample VAT,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522100,Entertainment Expenses,Entertainment Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+522101,Entertainment Expenses,Entertainment Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522200,Business Promotional Expenses,Business Promotional Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+522201,Sales Incentive to Field Force,Sales Incentive to Field Force,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522202,Sales Commission (Distributor),Sales Commission (Distributor),Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522203,Sales Conference Expenses,Sales Conference Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522204,Clinical/Doctors Meeting,Clinical/Doctors Meeting,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522205,Farmers Meeting,Farmers Meeting,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522206,Promotional Materials,Promotional Materials,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522207,Doctor Entertainment/Honorarium,Doctor Entertainment/Honorarium,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522208,Gift & Donation,Gift & Donation,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522209,Trade Fair and Exhibition Expenses,Trade Fair and Exhibition Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522210,New Year Calendar,New Year Calendar,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522211,Overseas Market Promotion,Overseas Market Promotion,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522212,Advertisement in Media and Publications,Advertisement in Media and Publications,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522213,Product Demonstration Expenses,Product Demonstration Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522214,Krishak Bondhu (KB) Salary,Krishak Bondhu (KB) Salary,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522215,Development Team Salary,Development Team Salary,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522216,Security Deposit Interest,Security Deposit Interest,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522217,Development Force TA/DA,Development Force TA/DA,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522218,Promotional Project 123,Promotional Project 123,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522300,Other General Expenses,Other General Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+522301,Bad Debts Expenses,Bad Debts Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522302,Bank Charge & Commission,Bank Charge & Commission,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522303,"Breakage, Damage & Compensation Expenses","Breakage, Damage & Compensation Expenses",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522304,Cleaning Services,Cleaning Services,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522305,Conveyance Expenses,Conveyance Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522306,Distribution Commission (3rd Party),Distribution Commission (3rd Party),Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522307,Export Documentation,Export Documentation,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522308,Fire Extinguisher,Fire Extinguisher,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522309,Lab Chemicals & Supplies,Lab Chemicals & Supplies,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522310,Medical Expenses,Medical Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522311,Meeting & Training,Meeting & Training,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522312,Office Service Charge,Office Service Charge,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522313,Personal Health and Safety Equipment,Personal Health and Safety Equipment,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522314,Recruitment Expenses,Recruitment Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522315,Sales Commission (3rd Party),Sales Commission (3rd Party),Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522316,Security Services,Security Services,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522317,Software Expenses,Software Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522318,Testing Fees,Testing Fees,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522319,Uniform & Cleaning Expenses,Uniform & Cleaning Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522320,Charge Expense,Charge Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522321,Product Expense,Product Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522322,Toll Expenses,Toll Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522323,Currency Balancing,Currency Balancing,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522324,Suspense Balancing,Suspense Balancing,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522325,Cash Book Expense,Cash Book Expense,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522326,Default account,Default account,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522327,Petty Cash Over/Short,Petty Cash Over/Short,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522328,Unrealized Loss,Unrealized Loss,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522329,Realized Loss,Realized Loss,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522330,Purchase Price Variance,Purchase Price Variance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522331,Purchase Price Variance Offset,Purchase Price Variance Offset,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522332,Rate Variance,Rate Variance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522334,Trade Discounts Received,Trade Discounts Received,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522335,Payment Discount Revenue,Payment Discount Revenue,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522336,Non-Inventories Products and Supplies,Non-Inventories Products and Supplies,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522337,Incineration Expenses,Incineration Expenses,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522338,Fake/Torn Note Destruction,Fake/Torn Note Destruction,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522339,"Fine, Penalty etc.","Fine, Penalty etc.",Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522400,Miscellaneous Expenses,Miscellaneous Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+522401,Miscellaneous Expenses - Income Tax,Miscellaneous Expenses - Income Tax,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522402,Miscellaneous Expenses - VAT,Miscellaneous Expenses - VAT,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522403,Miscellaneous Expenses - DGDA,Miscellaneous Expenses - DGDA,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522404,Miscellaneous Expenses - DLS,Miscellaneous Expenses - DLS,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522405,Miscellaneous Expenses - Khamar Bari,Miscellaneous Expenses - Khamar Bari,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522406,Miscellaneous Expenses - Land,Miscellaneous Expenses - Land,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522407,Miscellaneous Expenses - RJSC,Miscellaneous Expenses - RJSC,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522408,Miscellaneous Expenses - License,Miscellaneous Expenses - License,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522409,Miscellaneous Expenses - Others,Miscellaneous Expenses - Others,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+522410,Miscellaneous Expenses - Customer Entertainment,Miscellaneous Expenses - Customer Entertainment,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+527100,Depreciation Expenses,Depreciation Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+527101,Depreciation Expenses on Land and Land Development,Depreciation Expenses on Land and Land Development,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+527102,Depreciation Expenses on Building & Building Improvement,Depreciation Expenses on Building & Building Improvement,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+527103,Depreciation Expenses on Plant & Machinery,Depreciation Expenses on Plant & Machinery,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+527104,Depreciation Expenses on Furniture & Fixture,Depreciation Expenses on Furniture & Fixture,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+527105,Depreciation Expenses on Office Equipment,Depreciation Expenses on Office Equipment,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+527106,Depreciation Expenses on Automobile & Vehicles,Depreciation Expenses on Automobile & Vehicles,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+600000,Financial Charges,Financial Charges,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+600001,Interest Expenses on Long Term Loan,Interest Expenses on Long Term Loan,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+600002,Interest Expenses on Short Term Loan,Interest Expenses on Short Term Loan,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+600003,Interest Expenses on Overdraft Loan,Interest Expenses on Overdraft Loan,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+600004,Interest Expenses on Lease Finance,Interest Expenses on Lease Finance,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+600005,Interest Expenses on Inter Company Loan,Interest Expenses on Inter Company Loan,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+600006,Interest Expenses on Other Loan,Interest Expenses on Other Loan,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+700000,Contribution to WPPF,Contribution to WPPF,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+700001,Contribution to WPPF,Contribution to WPPF,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+800000,Income Tax Expenses,Income Tax Expenses,Expense,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+800001,Income Tax Expenses - CY,Income Tax Expenses - CY,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+800002,Income Tax Expenses - PY,Income Tax Expenses - PY,Expense,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+900000,Commitment Accounting,Commitment Accounting,Memo,,No,Yes,SUMMARY,DEFAULTS_NOT_CONFIGURED
+900001,PO Commitment,PO Commitment,Memo,,Yes,No,,DEFAULTS_NOT_CONFIGURED
+900002,SO Commitment,SO Commitment,Memo,,Yes,No,,DEFAULTS_NOT_CONFIGURED
