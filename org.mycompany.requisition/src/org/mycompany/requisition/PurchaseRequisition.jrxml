@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="PurchaseRequisition" pageWidth="595" pageHeight="842" columnWidth="535" leftMargin="30" rightMargin="30" topMargin="30" bottomMargin="30">
+<parameter name="RECORD_ID" class="java.lang.Integer"/>
+<parameter name="LOGO_LEFT" class="java.lang.String"><defaultValueExpression><![CDATA["C:/jasper/logo_left.png"]]></defaultValueExpression></parameter>
+<parameter name="LOGO_RIGHT" class="java.lang.String"><defaultValueExpression><![CDATA["C:/jasper/logo_right.png"]]></defaultValueExpression></parameter>
+<queryString><![CDATA[SELECT r.documentno, r.datedoc, r.daterequired,
+ (SELECT rl.name FROM ad_ref_list rl WHERE rl.ad_reference_id=131 AND rl.value=r.docstatus) AS status,
+ r.description AS note,
+ w.name AS delivery_location,
+ dt.name AS purchase_type,
+ ''::varchar AS department,
+ u.name AS prepared_by, r.created AS prepared_date,
+ l.line, p.value AS item_code, p.name AS item_name, uom.uomsymbol AS uom,
+ l.qty, l.description AS remarks,
+ COALESCE((SELECT SUM(s.qtyonhand) FROM m_storageonhand s WHERE s.m_product_id=l.m_product_id),0) AS in_stock
+FROM m_requisition r
+JOIN m_requisitionline l ON l.m_requisition_id=r.m_requisition_id
+LEFT JOIN m_warehouse w ON w.m_warehouse_id=r.m_warehouse_id
+LEFT JOIN c_doctype dt ON dt.c_doctype_id=r.c_doctype_id
+LEFT JOIN ad_user u ON u.ad_user_id=r.createdby
+LEFT JOIN m_product p ON p.m_product_id=l.m_product_id
+LEFT JOIN c_uom uom ON uom.c_uom_id=p.c_uom_id
+WHERE r.m_requisition_id=$P{RECORD_ID}
+ORDER BY l.line]]></queryString>
+<field name="documentno" class="java.lang.String"/>
+<field name="datedoc" class="java.sql.Timestamp"/>
+<field name="daterequired" class="java.sql.Timestamp"/>
+<field name="status" class="java.lang.String"/>
+<field name="note" class="java.lang.String"/>
+<field name="delivery_location" class="java.lang.String"/>
+<field name="purchase_type" class="java.lang.String"/>
+<field name="department" class="java.lang.String"/>
+<field name="prepared_by" class="java.lang.String"/>
+<field name="prepared_date" class="java.sql.Timestamp"/>
+<field name="line" class="java.math.BigDecimal"/>
+<field name="item_code" class="java.lang.String"/>
+<field name="item_name" class="java.lang.String"/>
+<field name="uom" class="java.lang.String"/>
+<field name="qty" class="java.math.BigDecimal"/>
+<field name="remarks" class="java.lang.String"/>
+<field name="in_stock" class="java.math.BigDecimal"/>
+<title><band height="200">
+<image scaleImage="RetainShape" onErrorType="Blank"><reportElement x="0" y="5" width="170" height="45"/><imageExpression><![CDATA[$P{LOGO_LEFT}]]></imageExpression></image>
+<image scaleImage="RetainShape" onErrorType="Blank"><reportElement x="385" y="0" width="150" height="55"/><imageExpression><![CDATA[$P{LOGO_RIGHT}]]></imageExpression></image>
+<rectangle><reportElement mode="Transparent" x="180" y="45" width="180" height="40"/><graphicElement><pen lineWidth="0.75"/></graphicElement></rectangle>
+<staticText><reportElement x="180" y="45" width="180" height="40"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="11" isBold="true"/></textElement><text><![CDATA[Purchase Requisition]]></text></staticText>
+<staticText><reportElement x="0" y="105" width="110" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Department]]></text></staticText>
+<staticText><reportElement x="110" y="105" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="122" y="105" width="215" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{department}]]></textFieldExpression></textField>
+<staticText><reportElement x="0" y="127" width="110" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Purchase Type]]></text></staticText>
+<staticText><reportElement x="110" y="127" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="122" y="127" width="215" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{purchase_type}]]></textFieldExpression></textField>
+<staticText><reportElement x="0" y="149" width="110" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Delivery Location]]></text></staticText>
+<staticText><reportElement x="110" y="149" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="122" y="149" width="215" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{delivery_location}]]></textFieldExpression></textField>
+<staticText><reportElement x="0" y="171" width="110" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Status]]></text></staticText>
+<staticText><reportElement x="110" y="171" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="122" y="171" width="215" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{status}]]></textFieldExpression></textField>
+<rectangle><reportElement mode="Opaque" backcolor="#EEEEEE" x="340" y="95" width="195" height="85"/><graphicElement><pen lineWidth="0.5"/></graphicElement></rectangle>
+<staticText><reportElement x="350" y="102" width="75" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[PR No.]]></text></staticText>
+<staticText><reportElement x="425" y="102" width="10" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="437" y="102" width="98" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{documentno}]]></textFieldExpression></textField>
+<staticText><reportElement x="350" y="128" width="75" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[PR Date]]></text></staticText>
+<staticText><reportElement x="425" y="128" width="10" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField pattern="dd-MM-yy" isBlankWhenNull="true"><reportElement x="437" y="128" width="98" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{datedoc}]]></textFieldExpression></textField>
+<staticText><reportElement x="350" y="154" width="75" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Required Date]]></text></staticText>
+<staticText><reportElement x="425" y="154" width="10" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField pattern="dd-MM-yy" isBlankWhenNull="true"><reportElement x="437" y="154" width="98" height="22"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{daterequired}]]></textFieldExpression></textField>
+</band></title>
+<columnHeader><band height="30">
+<staticText><reportElement x="0" y="0" width="25" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Sl.]]></text></staticText>
+<staticText><reportElement x="25" y="0" width="55" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Item Code]]></text></staticText>
+<staticText><reportElement x="80" y="0" width="120" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Item Name]]></text></staticText>
+<staticText><reportElement x="200" y="0" width="40" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[UoM]]></text></staticText>
+<staticText><reportElement x="240" y="0" width="50" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Req. Qty]]></text></staticText>
+<staticText><reportElement x="290" y="0" width="50" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[In Stock]]></text></staticText>
+<staticText><reportElement x="340" y="0" width="125" height="15"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Last Purchase History]]></text></staticText>
+<staticText><reportElement x="340" y="15" width="45" height="15"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Date]]></text></staticText>
+<staticText><reportElement x="385" y="15" width="40" height="15"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Qty.]]></text></staticText>
+<staticText><reportElement x="425" y="15" width="40" height="15"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Rate]]></text></staticText>
+<staticText><reportElement x="465" y="0" width="70" height="30"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Remarks]]></text></staticText>
+</band></columnHeader>
+<detail><band height="28">
+<textField isBlankWhenNull="true"><reportElement x="0" y="0" width="25" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$V{REPORT_COUNT}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="25" y="0" width="55" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{item_code}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="80" y="0" width="120" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{item_name}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="200" y="0" width="40" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{uom}]]></textFieldExpression></textField>
+<textField pattern="#,##0.00" isBlankWhenNull="true"><reportElement x="240" y="0" width="50" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{qty}]]></textFieldExpression></textField>
+<textField pattern="#,##0.00" isBlankWhenNull="true"><reportElement x="290" y="0" width="50" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{in_stock}]]></textFieldExpression></textField>
+<staticText><reportElement x="340" y="0" width="45" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><text><![CDATA[]]></text></staticText>
+<staticText><reportElement x="385" y="0" width="40" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><text><![CDATA[]]></text></staticText>
+<staticText><reportElement x="425" y="0" width="40" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><text><![CDATA[]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="465" y="0" width="70" height="28"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{remarks}]]></textFieldExpression></textField>
+</band></detail>
+<pageFooter><band height="30">
+<staticText><reportElement x="0" y="5" width="300" height="10"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="5" isBold="true"/></textElement><text><![CDATA[Corporate Office Address:]]></text></staticText>
+<staticText><reportElement x="0" y="14" width="400" height="10"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="5" isBold="false"/></textElement><text><![CDATA[Primitek Tower, House #43/B, Road #24, Block #CWS (B), Gulshan-1, Dhaka-1212. Hotline: +88-09612-300800]]></text></staticText>
+<staticText><reportElement x="400" y="5" width="70" height="10"/><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="6" isBold="true"/></textElement><text><![CDATA[Date Printed:]]></text></staticText>
+<textField pattern="MM/dd/yyyy hh:mm a"><reportElement x="470" y="5" width="65" height="10"/><textElement textAlignment="Right"><font size="6" isBold="true"/></textElement><textFieldExpression><![CDATA[new java.util.Date()]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="485" y="18" width="50" height="10"/><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="6" isBold="false"/></textElement><textFieldExpression><![CDATA["Page " + $V{PAGE_NUMBER}]]></textFieldExpression></textField>
+</band></pageFooter>
+<summary><band height="230">
+<staticText><reportElement x="0" y="15" width="200" height="14"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Note (if any):]]></text></staticText>
+<textField isStretchWithOverflow="true" isBlankWhenNull="true"><reportElement x="0" y="32" width="535" height="100"/><textElement textAlignment="Left" verticalAlignment="Top"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{note}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="0" y="150" width="85" height="50"/><textElement textAlignment="Center" verticalAlignment="Bottom"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{prepared_by}]]></textFieldExpression></textField>
+<textField pattern="dd-MM-yy hh:mm a" isBlankWhenNull="true"><reportElement x="0" y="200" width="85" height="12"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{prepared_date}]]></textFieldExpression></textField>
+<line><reportElement x="2" y="214" width="81" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="2" y="216" width="81" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Prepared by]]></text></staticText>
+<line><reportElement x="91" y="214" width="81" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="91" y="216" width="81" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Checked by]]></text></staticText>
+<line><reportElement x="180" y="214" width="81" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="180" y="216" width="81" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Recommended by]]></text></staticText>
+<line><reportElement x="269" y="214" width="81" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="269" y="216" width="81" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Authorized by]]></text></staticText>
+<line><reportElement x="358" y="214" width="81" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="358" y="216" width="81" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Approved by]]></text></staticText>
+<line><reportElement x="447" y="214" width="81" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="447" y="216" width="81" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Assigned Officer]]></text></staticText>
+</band></summary></jasperReport>
