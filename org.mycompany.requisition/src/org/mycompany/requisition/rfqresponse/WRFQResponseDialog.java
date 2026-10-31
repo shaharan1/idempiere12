@@ -862,7 +862,8 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 			return;
 		}
 		for (Listitem it : lb.getItems()) {
-			if (it.getValue() != null && String.valueOf(it.getValue()).equals(String.valueOf(value))) {
+			Object itemValue = it.getValue();
+			if (itemValue != null && String.valueOf(itemValue).equals(String.valueOf(value))) {
 				lb.setSelectedItem(it);
 				return;
 			}
