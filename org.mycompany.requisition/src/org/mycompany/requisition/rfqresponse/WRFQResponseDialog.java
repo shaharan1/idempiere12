@@ -177,6 +177,7 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 		layout();
 		loadHeader();
 		loadLines();
+		sizeLinesBox();
 		recalc();
 	}
 
@@ -264,7 +265,6 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 		}
 		lines.appendChild(head);
 		ZKUpdateUtil.setHflex(lines, "1");
-		lines.setHeight("330px");
 	}
 
 	// ----------------------------------------------------------------- layout
@@ -661,6 +661,14 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 	}
 	
 	
+	/** Item box height follows the number of item rows (1 item = small, 3 items = taller). */
+	private void sizeLinesBox() {
+		int n = Math.max(1, Math.min(rows.size(), 12)); // up to 12 rows, then the box scrolls
+		int rowHeight = 46;   // px per item row (inputs inside)
+		int headerAndScroll = 62; // grid header + horizontal scrollbar
+		lines.setHeight((n * rowHeight + headerAndScroll) + "px");
+	}
+
 	// ------------------------------------------------------- row components
 
 	private Textbox text(String value, int max, String width) {
