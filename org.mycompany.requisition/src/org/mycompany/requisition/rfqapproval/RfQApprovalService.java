@@ -28,8 +28,12 @@ import org.compiere.util.Trx;
  * Reuses what already exists:
  * <ul>
  * <li>winner flag = standard {@code C_RfQResponse.IsSelectedWinner}</li>
- * <li>history = {@code XX_APPROVAL_HISTORY} (same table as Document Approval
- * Form), keyed by {@code DocumentTable='C_RFQ'} + {@code DocumentRecord_ID}</li>
+ * <li>live approval state = {@code UT_ApprovalHistory} (same table and the same
+ * approval inbox the Purchase Order approval uses), keyed by
+ * {@code C_DocType_ID} + {@code DocumentNo}</li>
+ * <li>audit trail / comments / justifications = {@code AD_Note} on the C_RfQ
+ * record (visible in the record Notes tab)</li>
+ * <li>approver routing = {@code UT_ApprovalMatrix} (submitter -&gt; supervisor)</li>
  * <li>price/total rules = same as {@code WRFQResponseDialog.recalc()}: effective
  * price = negotiate price if &gt; 0 else quoted price; discount % is taken on
  * (sub total + VAT); grand = that - discount + transport + others.</li>
@@ -38,13 +42,19 @@ import org.compiere.util.Trx;
 public class RfQApprovalService {
 
 	public static final String T_DOC = "C_RFQ";
-	public static final String T_HISTORY = "XX_APPROVAL_HISTORY";
+	/** Live approval state: the standard approval inbox table already in use. */
+	public static final String T_HISTORY = "UT_ApprovalHistory";
 
 	public static final String A_RECOMMEND = "RECOMMEND";
 	public static final String A_APPROVE = "APPROVE";
 	public static final String A_REJECT = "REJECT";
 	public static final String A_FORWARD = "FORWARD";
 	public static final String A_SUBMIT = "SUBMIT";
+
+	/** UT_ApprovalHistory.Status values (same codes the PO approval form reads). */
+	public static final String S_PENDING = "P";
+	public static final String S_APPROVED = "A";
+	public static final String S_REJECTED = "R";
 
 	private static final BigDecimal HUNDRED = new BigDecimal("100");
 	private static final CLogger log = CLogger.getCLogger(RfQApprovalService.class);
