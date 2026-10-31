@@ -433,8 +433,13 @@ public class RfQApprovalService {
 	}
 
 	public void approve(int rfqId, String message) throws Exception {
-		if (DB.getSQLValue(null, "SELECT COUNT(*) FROM C_RfQResponse WHERE C_RfQ_ID=? AND IsSelectedWinner='Y' "
-				+ "AND IsActive='Y'", rfqId) == 0)
+		int winners = DB.getSQLValue(null,
+				"SELECT (SELECT COUNT(*) FROM C_RfQResponse WHERE C_RfQ_ID=? AND IsSelectedWinner='Y' AND IsActive='Y') "
+				+ "+ (SELECT COUNT(*) FROM C_RfQResponseLine sl "
+				+ "     JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID "
+				+ "     WHERE l.C_RfQ_ID=? AND sl.IsSelectedWinner='Y' AND sl.IsActive='Y')",
+				rfqId, rfqId);
+		if (winners <= 0)
 			throw new Exception("Recommend a winner before approving.");
 		logHistory(rfqId, A_APPROVE, message, 0);
 	}
@@ -533,12 +538,34 @@ public class RfQApprovalService {
 
 	// ------------------------------------------------------------ small helpers
 
-	/** True when the RFQ's document type base type is 'CS'. */
+	/**
+	 * True when the RFQ's document type base type is 'CS'.
+	 * <p>
+	 * {@code C_RfQ} has no {@code C_DocType_ID} column (verified against the
+	 * database). An RFQ inherits its document type from the requisition it was
+	 * raised from, through {@code C_RfQ.M_Requisition_ID}, so the check goes
+	 * C_RfQ -&gt; M_Requisition -&gt; C_DocType.
+	 */
 	public static boolean isCsDocType(int rfqId) {
+		if (rfqId <= 0)
+			return false;
 		String bt = DB.getSQLValueString(null,
-				"SELECT dt.DocBaseType FROM C_RfQ r JOIN C_DocType dt ON dt.C_DocType_ID=r.C_DocType_ID WHERE r.C_RfQ_ID=?",
-				rfqId);
+				"SELECT dt.DocBaseType FROM C_RfQ r "
+				+ "JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID "
+				+ "JOIN C_DocType dt ON dt.C_DocType_ID=rq.C_DocType_ID "
+				+ "WHERE r.C_RfQ_ID=?", rfqId);
 		return "CS".equals(bt);
+	}
+
+	/** Document type base type of the requisition behind the RFQ, or "" when none. */
+	public static String rfqDocBaseType(int rfqId) {
+		if (rfqId <= 0)
+			return "";
+		return nvl(DB.getSQLValueString(null,
+				"SELECT dt.DocBaseType FROM C_RfQ r "
+				+ "JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID "
+				+ "JOIN C_DocType dt ON dt.C_DocType_ID=rq.C_DocType_ID "
+				+ "WHERE r.C_RfQ_ID=?", rfqId));
 	}
 
 	/** Per-product ranking DTO. */
