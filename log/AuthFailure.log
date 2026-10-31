@@ -88,3 +88,6 @@
 [2026-10-24 12:08:14] [error] [client [0:0:0:0:0:0:0:1]] [context /webui] [username primitekAdmin] Invalid User ID or Password
 [2026-10-27 14:34:16] [error] [client [0:0:0:0:0:0:0:1]] [context /webui] [username Primitekadmin] Invalid User ID or Password
 [2026-10-31 16:57:56] [error] [client [0:0:0:0:0:0:0:1]] [context /webui] [username PrimitekAdmin] Invalid User ID or Password
+[2026-10-31 18:35:57] [error] [client [0:0:0:0:0:0:0:1]] [context /webui] [username Primitek] Invalid User ID or Password
+[2026-10-31 18:36:02] [error] [client [0:0:0:0:0:0:0:1]] [context /webui] [username Primitek] Invalid User ID or Password
+[2026-10-31 18:38:20] [error] [client [0:0:0:0:0:0:0:1]] [context /webui] [username PrimitikAdmin] Invalid User ID or Password
