@@ -533,6 +533,52 @@ public class RfQApprovalService {
 
 	// ------------------------------------------------------------ small helpers
 
+	/** True when the RFQ's document type base type is 'CS'. */
+	public static boolean isCsDocType(int rfqId) {
+		String bt = DB.getSQLValueString(null,
+				"SELECT dt.DocBaseType FROM C_RfQ r JOIN C_DocType dt ON dt.C_DocType_ID=r.C_DocType_ID WHERE r.C_RfQ_ID=?",
+				rfqId);
+		return "CS".equals(bt);
+	}
+
+	/** Per-product ranking DTO. */
+	public static class RankedQuote {
+		public int rfqLineId, responseId, bpartnerId, rank;
+		public BigDecimal price;
+		public String vendorName;
+	}
+
+	/** Per-product ranking of vendor quotations (ascending price, ties share rank). */
+	public static List<RankedQuote> rankQuotes(int rfqId) {
+		List<RankedQuote> out = new ArrayList<RankedQuote>();
+		RfQApprovalService svc = new RfQApprovalService();
+		Comparison c = svc.load(rfqId);
+		for (Item it : c.items) {
+			List<RankedQuote> lineQuotes = new ArrayList<RankedQuote>();
+			for (Supplier s : c.suppliers) {
+				Integer k = Integer.valueOf(s.responseId);
+				BigDecimal u = it.unit.get(k);
+				if (u == null) continue;
+				RankedQuote q = new RankedQuote();
+				q.rfqLineId = it.rfqLineId;
+				q.responseId = s.responseId;
+				q.bpartnerId = s.bpartnerId;
+				q.vendorName = s.name;
+				q.price = u;
+				lineQuotes.add(q);
+			}
+			lineQuotes.sort((a, b) -> a.price.compareTo(b.price));
+			int r = 0; BigDecimal prev = null; int pos = 0;
+			for (RankedQuote q : lineQuotes) {
+				pos++;
+				if (prev == null || q.price.compareTo(prev) != 0) { r = pos; prev = q.price; }
+				q.rank = r;
+				out.add(q);
+			}
+		}
+		return out;
+	}
+
 	static String nvl(String s) { return s == null ? "" : s; }
 	static BigDecimal nz(BigDecimal b) { return b == null ? BigDecimal.ZERO : b; }
 	static boolean isFilled(String s) { return s != null && s.trim().length() > 0; }

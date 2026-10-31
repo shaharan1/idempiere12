@@ -89,6 +89,7 @@ public class WRFQApprovalForm extends ADForm {
 
 		// ---- RFQ list
 		rfqList = new Listbox();
+		rfqList.addEventListener(Events.ON_SELECT, e -> updateRecommendVisibility());
 		rfqList.setWidth("100%");
 		rfqList.setHeight("300px");
 		Listhead head = new Listhead();
@@ -99,6 +100,9 @@ public class WRFQApprovalForm extends ADForm {
 
 		// ---- document buttons
 		Hlayout docButtons = new Hlayout();
+		Button recommendBtn = button("Recommend", e -> openRecommend());
+		recommendBtn.setId("recommendBtn");
+		docButtons.appendChild(recommendBtn);
 		docButtons.appendChild(button("Recommend Winner", e -> openRecommend()));
 		docButtons.appendChild(button("Comparative Statement (PDF)", e -> showPdf()));
 		docButtons.appendChild(button("Approval History", e -> showHistory()));
@@ -152,6 +156,21 @@ public class WRFQApprovalForm extends ADForm {
 			rfqList.appendChild(li);
 		}
 		countLabel.setValue("Total RFQ: " + rows.size());
+	}
+
+	private void updateRecommendVisibility() {
+		RfqRow r = selected();
+		org.zkoss.zk.ui.Component btn = null;
+		// find recommend button
+		for (org.zkoss.zk.ui.Component c : getPage().getRoots()) {
+		}
+		// simpler: search by id via desktop
+		try {
+			org.zkoss.zk.ui.Component comp = getPage().getFellowIfAny("recommendBtn");
+			if (comp != null)
+				comp.setVisible(r != null && RfQApprovalService.isCsDocType(r.id));
+		} catch (Exception ignore) {
+		}
 	}
 
 	private RfqRow selected() {
