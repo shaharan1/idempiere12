@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scr:component xmlns:scr="http://www.osgi.org/xmlns/scr/v1.1.0"
+               name="XXProcessFactory">
+
+    <!-- Makes the @Process annotated classes of this plugin discoverable.
+         Without this bundle, iDempiere's own factory only scans its own
+         packages and com.xx.approval.process is never looked at. -->
+    <implementation class="com.xx.approval.process.XXProcessFactory"/>
+    <service>
+        <provide interface="org.adempiere.base.IProcessFactory"/>
+    </service>
+
+</scr:component>

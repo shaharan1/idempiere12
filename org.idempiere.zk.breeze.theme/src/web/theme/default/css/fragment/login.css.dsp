@@ -1,126 +1,139 @@
+<%@ page contentType="text/css;charset=UTF-8" %>
+<%@ taglib uri="http://www.zkoss.org/dsp/web/core" prefix="c" %>
+
+/* 1. Full page background - light geometric hexagon pattern */
+body:has(.login-window),
 .login-window {
-	background-color: #E5E5E5;
+    background: #F3F5F7 url(${c:encodeURL('~./theme/default/images/login-bg.png')}) center center / cover no-repeat fixed,
+                #F3F5F7 url(../images/login-bg.png) center center / cover no-repeat fixed !important;
 }
 
-.login-window .z-window-content {
-	background-color: #E5E5E5;
+/* 2. Completely transparent container - NO white card, borderless, like 1st image */
+.login-window .z-window.z-window-embedded,
+.login-window .z-window-embedded-cnt,
+.login-window .z-window-content,
+.login-window .z-borderlayout,
+.login-window .z-center,
+.login-window .z-center-body,
+.login-window .z-vbox,
+.login-box-body,
+.login-box-header,
+.login-box-footer {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    border: none !important;
 }
 
 .login-box-body {
-	width: 660px;
-	background-image: url(../images/login-box-bg.png);
-	background-repeat: repeat-y;
-	background-color: transparent;
-	z-index: 1;
-	padding: 0;
-	margin: 0;
-	text-align: center;
-	padding-bottom: 100px;
+    width: 580px;
+    padding: 0px 5px;
+    margin: 0 auto;
+    text-align: center;
 }
 
 .login-box-header {
-	background-image: url(../images/login-box-header.png);
-	background-color: transparent;
-	z-index: 2;
-	height: 54px;
-	width: 660px;
+    width: 580px;
+    padding: 0px;
+    margin: 0 auto;
+    box-sizing: border-box;
 }
 
+/* 3. Hide 'Login' text header */
 .login-box-header-txt {
-	color: white !important;
-	font-weight: bold;
-	position: relative;
-	top: 30px;
+    display: none !important;
 }
 
+/* 4. Primitek Logo */
 .login-box-header-logo {
-	padding-top: 20px;
-	padding-bottom: 25px;
+    padding-bottom: 25px !important;
+    text-align: center;
 }
 
-.login-box-footer {
-	background-image: url(../images/login-box-footer.png);
-	background-position: top right;
-	background-attachment: scroll;
-	background-repeat: repeat-y;
-	z-index: 2;
-	height: 110px;
-	width: 660px;
+.login-box-header-logo img {
+    max-width: 480px !important;
+    width: auto !important;
+    height: auto !important;
+    display: block !important;
+    margin: 0 auto !important;
 }
 
-.login-box-footer .confirm-panel {
-	width: 600px !important;
-}
-
-.login-box-footer-pnl {
-	width: 604px;
-	margin-left: 10px;
-	margin-right: 10px;
-	padding-top: 40px !important;
+/* 5. Labels - Dark and legible on light background */
+.login-label,
+.login-box-body .z-label,
+.login-box-body .z-checkbox-content {
+    color: #222222 !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
 }
 
 .login-label {
-	color: black;
-	text-align: right;
-	width: 40%;
+    text-align: right;
+    width: 40%;
+    padding: 5px !important;
 }
 
 .login-field {
-	text-align: left;
-	width: 55%;
+    text-align: left;
+    width: 55%;
+    padding: 5px !important;
 }
 
+/* 6. Clean white input fields */
 .login-field input:not([type="checkbox"]) {
-	width: 220px !important;
+    width: 220px !important;
+    background-color: #ffffff !important;
+    border: 1px solid #aaa !important;
+    border-radius: 4px !important;
+    color: #111111 !important;
+    padding: 4px 6px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.login-field input:not([type="checkbox"]):focus {
+    border-color: #007bff !important;
+    outline: none !important;
+    box-shadow: 0 0 5px rgba(0, 123, 255, 0.4) !important;
+}
+
+/* 7. Footer buttons */
+.login-box-footer {
+    height: 80px;
+    width: 580px;
+    padding: 0px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.login-box-footer .confirm-panel {
+    width: 400px !important;
+    margin: 0 auto !important;
+}
+
+.login-box-footer-pnl {
+    width: 400px;
+    margin: 0 auto;
+    padding-top: 15px !important;
 }
 
 .login-btn {
-	padding: 4px 20px !important;
+    padding: 6px 24px !important;
+    font-weight: 600 !important;
 }
 
-.login-east-panel, .login-west-panel {
-	width: 350px;
-	background-color: #E0EAF7;
-	position: relative;
+/* 8. Hide east/west sidebars */
+.login-east-panel,
+.login-west-panel {
+    display: none !important;
 }
-@media screen and (max-width: 659px) {
-	.login-box-body, .login-box-header, .login-box-footer {
-		background-image: none;
-		width: 90%;
-	}
-	.login-box-footer .confirm-panel, .login-box-footer-pnl {
-		width: 90% !important;
-	}
-	.login-box-header-txt {
-		display: none;
-	}
+
+@media screen and (max-width: 620px) {
+    .login-box-body, .login-box-header, .login-box-footer {
+        width: 95% !important;
+    }
+    .login-box-header-logo img {
+        max-width: 90% !important;
+    }
 }
-@media screen and (max-height: 600px) {
-	.login-box-header-txt {
-		display: none;
-	}
-	.login-box-body, .login-box-header, .login-box-footer {
-		background-image: none;
-	}
-	.login-box-body {
-		padding-bottom: 10px;
-	}
-	.login-box-header {
-		height: 0px;
-	}
-}
-@media screen and (max-device-width: 500px) {
-	.login-field input:not([type="checkbox"]) {
-		width: 100% !important;
-	}
-}
-@media screen and (max-device-width: 380px) {
-	.login-west-panel {
-		width: 350px;
-	}
-}
-@media screen and (max-width: 359px) {
-	.login-window .z-center > .z-center-body .z-window.z-window-embedded > .z-window-content {
-		padding: 0px
-	}
-}
+

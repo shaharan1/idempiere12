@@ -5,6 +5,16 @@
 	border-bottom: 1px solid #ADDDFF !important;
 }
 <%-- left panel for logo and global search --%>
+.desktop-header-left img,
+.desktop-header-left .z-image,
+.desktop-header-left #logo {
+	max-height: 28px !important;
+	max-width: 150px !important;
+	height: 28px !important;
+	width: auto !important;
+	object-fit: contain !important;
+	margin-right: 10px;
+}
 .desktop-header-left {
 	margin: 0;
 	margin-left: 1px;
@@ -261,4 +271,5 @@
 	margin-right: -4px;
 	font-size: 18px;
 }
+
 
