@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -430,6 +431,162 @@ public class RfQApprovalService {
 		String bp = DB.getSQLValueString(null, "SELECT bp.Name FROM C_RfQResponse x "
 				+ "JOIN C_BPartner bp ON bp.C_BPartner_ID=x.C_BPartner_ID WHERE x.C_RfQResponse_ID=?", responseId);
 		logHistory(rfqId, A_RECOMMEND, "Winner: " + bp + (isFilled(remarks) ? " | " + remarks.trim() : ""), 0);
+	}
+
+	/**
+	 * Per-product recommendation. One winner for each RFQ line, stored on the
+	 * standard {@code C_RfQResponseLine.IsSelectedWinner}; every quote's position
+	 * is written to {@code C_RfQResponseLineQty.Ranking}. A vendor that is not
+	 * the lowest price for a product must be justified for that product.
+	 *
+	 * @param lineWinners    RFQ line id -&gt; winning C_RfQResponse id
+	 * @param justifications RFQ line id -&gt; reason when the winner is not cheapest
+	 * @param remarks        overall remark for the audit trail
+	 */
+	public void recommendLines(int rfqId, Map<Integer, Integer> lineWinners,
+			Map<Integer, String> justifications, String remarks) throws Exception {
+		if (lineWinners == null || lineWinners.isEmpty())
+			throw new Exception("Select a vendor for at least one product.");
+
+		Comparison c = load(rfqId);
+		Map<Integer, Item> items = new HashMap<Integer, Item>();
+		for (Item it : c.items)
+			items.put(Integer.valueOf(it.rfqLineId), it);
+
+		List<RankedQuote> ranked = rankQuotes(rfqId);
+		Map<String, RankedQuote> rankByLineResp = new HashMap<String, RankedQuote>();
+		for (RankedQuote q : ranked)
+			rankByLineResp.put(q.rfqLineId + ":" + q.responseId, q);
+
+		// ---- validate before touching the database
+		Set<Integer> seenLines = new HashSet<Integer>();
+		for (Map.Entry<Integer, Integer> e : lineWinners.entrySet()) {
+			Integer lineId = e.getKey();
+			Integer respId = e.getValue();
+			if (lineId == null || respId == null || respId.intValue() <= 0)
+				continue;
+			Item it = items.get(lineId);
+			if (it == null)
+				throw new Exception("The selected product is not part of this RFQ.");
+			if (!seenLines.add(lineId))
+				throw new Exception("Only one vendor may be recommended for each product.");
+			RankedQuote q = rankByLineResp.get(lineId + ":" + respId);
+			if (q == null)
+				throw new Exception("The selected vendor did not quote " + it.name + ".");
+			if (q.rank > 1) {
+				String just = justifications == null ? null : justifications.get(lineId);
+				if (!isFilled(just))
+					throw new Exception("A justification is required for " + it.name + " because "
+							+ q.vendorName + " is not the lowest price (rank " + q.rank + ").");
+			}
+		}
+		if (seenLines.isEmpty())
+			throw new Exception("Select a vendor for at least one product.");
+
+		// ---- write winners and ranks in one transaction
+		String trxName = Trx.createTrxName("RfQRec");
+		Trx trx = Trx.get(trxName, true);
+		try {
+			DB.executeUpdateEx("UPDATE C_RfQResponseLine SET IsSelectedWinner='N' "
+					+ "WHERE C_RfQLine_ID IN (SELECT C_RfQLine_ID FROM C_RfQLine WHERE C_RfQ_ID=?)",
+					new Object[] { Integer.valueOf(rfqId) }, trxName);
+
+			for (RankedQuote q : ranked)
+				DB.executeUpdateEx("UPDATE C_RfQResponseLineQty q SET Ranking=? "
+						+ "FROM C_RfQResponseLine sl WHERE q.C_RfQResponseLine_ID=sl.C_RfQResponseLine_ID "
+						+ "AND sl.C_RfQLine_ID=? AND sl.C_RfQResponse_ID=?",
+						new Object[] { Integer.valueOf(q.rank), Integer.valueOf(q.rfqLineId),
+								Integer.valueOf(q.responseId) }, trxName);
+
+			for (Map.Entry<Integer, Integer> e : lineWinners.entrySet()) {
+				Integer lineId = e.getKey();
+				Integer respId = e.getValue();
+				if (lineId == null || respId == null || respId.intValue() <= 0)
+					continue;
+				DB.executeUpdateEx("UPDATE C_RfQResponseLine SET IsSelectedWinner='Y' "
+						+ "WHERE C_RfQLine_ID=? AND C_RfQResponse_ID=?",
+						new Object[] { lineId, respId }, trxName);
+			}
+
+			// Overall winner flag: any supplier that won at least one product.
+			DB.executeUpdateEx("UPDATE C_RfQResponse SET IsSelectedWinner='N' WHERE C_RfQ_ID=?",
+					new Object[] { Integer.valueOf(rfqId) }, trxName);
+			DB.executeUpdateEx("UPDATE C_RfQResponse SET IsSelectedWinner='Y' WHERE C_RfQ_ID=? "
+					+ "AND C_RfQResponse_ID IN (SELECT sl.C_RfQResponse_ID FROM C_RfQResponseLine sl "
+					+ "  JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID "
+					+ "  WHERE l.C_RfQ_ID=? AND sl.IsSelectedWinner='Y')",
+					new Object[] { Integer.valueOf(rfqId), Integer.valueOf(rfqId) }, trxName);
+			trx.commit();
+		} catch (Exception e) {
+			trx.rollback();
+			throw e;
+		} finally {
+			trx.close();
+		}
+
+		// ---- audit trail
+		StringBuilder note = new StringBuilder();
+		for (Map.Entry<Integer, Integer> e : lineWinners.entrySet()) {
+			Item it = items.get(e.getKey());
+			RankedQuote q = rankByLineResp.get(e.getKey() + ":" + e.getValue());
+			if (it == null || q == null)
+				continue;
+			if (note.length() > 0)
+				note.append(" | ");
+			note.append(it.name).append(" -> ").append(q.vendorName).append(" @ ")
+					.append(q.price.stripTrailingZeros().toPlainString()).append(" rank ").append(q.rank);
+			String just = justifications == null ? null : justifications.get(e.getKey());
+			if (isFilled(just))
+				note.append(" [").append(just.trim()).append("]");
+		}
+		if (isFilled(remarks))
+			note.append(" | Remarks: ").append(remarks.trim());
+		logHistory(rfqId, A_RECOMMEND, "Per product: " + note, 0);
+	}
+
+	/** Existing per-product winners: RFQ line id -&gt; winning response id. */
+	public static Map<Integer, Integer> lineWinners(int rfqId) {
+		Map<Integer, Integer> m = new HashMap<Integer, Integer>();
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement("SELECT sl.C_RfQLine_ID, sl.C_RfQResponse_ID "
+					+ "FROM C_RfQResponseLine sl JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID "
+					+ "WHERE l.C_RfQ_ID=? AND sl.IsSelectedWinner='Y' AND sl.IsActive='Y'", null);
+			ps.setInt(1, rfqId);
+			rs = ps.executeQuery();
+			while (rs.next())
+				m.put(Integer.valueOf(rs.getInt(1)), Integer.valueOf(rs.getInt(2)));
+		} catch (Exception e) {
+			log.severe("lineWinners: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+		return m;
+	}
+
+	/** Per-product winner names for the grid: RFQ line id -&gt; vendor name. */
+	public static Map<Integer, String> lineWinnerNames(int rfqId) {
+		Map<Integer, String> m = new HashMap<Integer, String>();
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement("SELECT sl.C_RfQLine_ID, bp.Name "
+					+ "FROM C_RfQResponseLine sl "
+					+ "JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID "
+					+ "JOIN C_RfQResponse x ON x.C_RfQResponse_ID=sl.C_RfQResponse_ID "
+					+ "JOIN C_BPartner bp ON bp.C_BPartner_ID=x.C_BPartner_ID "
+					+ "WHERE l.C_RfQ_ID=? AND sl.IsSelectedWinner='Y' AND sl.IsActive='Y'", null);
+			ps.setInt(1, rfqId);
+			rs = ps.executeQuery();
+			while (rs.next())
+				m.put(Integer.valueOf(rs.getInt(1)), rs.getString(2));
+		} catch (Exception e) {
+			log.severe("lineWinnerNames: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+		return m;
 	}
 
 	public void approve(int rfqId, String message) throws Exception {
