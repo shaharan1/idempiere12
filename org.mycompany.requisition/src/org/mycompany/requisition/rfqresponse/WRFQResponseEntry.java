@@ -35,6 +35,7 @@ import org.compiere.util.DB;
 import org.compiere.util.DisplayType;
 import org.compiere.util.Env;
 import org.compiere.util.Trx;
+import org.mycompany.requisition.rfqapproval.RfQApprovalService;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
@@ -112,6 +113,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 	private Combobox rfqCombo = new Combobox();
 	private Label rfqNameLabel = new Label("");
 	private Button reloadBtn = new Button("Reload RFQ");
+	private Button completeRfqBtn = new Button("Complete RFQ");
 	private ConfirmPanel confirmPanel = new ConfirmPanel(true);
 
 	private Listbox respList;
@@ -163,6 +165,9 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			// icon na thakleo button kaj korbe
 		}
 		reloadBtn.addEventListener(Events.ON_CLICK, this);
+		completeRfqBtn.setStyle("background:#1e5aa8;background-image:none;color:#ffffff;border:none;border-radius:6px;"
+				+ "font-weight:600;padding:5px 16px;cursor:pointer;");
+		completeRfqBtn.addEventListener(Events.ON_CLICK, e -> completeRfq());
 		showDoneChk.addEventListener(Events.ON_CHECK, this);
 		showDoneChk.setStyle("font-weight:600;color:#475569;padding-left:10px;");
 		confirmPanel.addActionListener(this); // OK / Cancel (tick / cross icon)
@@ -261,6 +266,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		stats.appendChild(statBox("Completed", statDone, "#16a34a"));
 		stats.appendChild(statBox("Pending", statPending, "#d97706"));
 		stats.appendChild(showDoneChk);
+		stats.appendChild(completeRfqBtn);
 		wrap.appendChild(stats);
 
 		// ---- Center: supplier list ----
@@ -579,6 +585,80 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			po.set_ValueOfColumn("IsComplete", Boolean.TRUE);
 			po.saveEx();
 			loadResponses();
+		} catch (Exception ex) {
+			error(ex);
+		}
+	}
+
+	/**
+	 * Complete RFQ: only when every invited vendor has answered, every response
+	 * is complete, and every product has a valid price in every response. On
+	 * success the RFQ is pushed into the approval chain and an audit row is
+	 * written to XX_APPROVAL_HISTORY.
+	 */
+	private void completeRfq() {
+		try {
+			int rfqId = currentRfqId();
+			if (rfqId <= 0)
+				throw new AdempiereException("Select an RFQ first.");
+
+			int total = DB.getSQLValue(null,
+					"SELECT COUNT(*) FROM C_RfQResponse WHERE C_RfQ_ID=? AND IsActive='Y'", rfqId);
+			if (total == 0)
+				throw new AdempiereException("This RFQ has no supplier response yet.");
+
+			int missing = DB.getSQLValue(null,
+					"SELECT COUNT(*) FROM C_RfQ_TopicSubscriber s "
+					+ "WHERE s.C_RfQ_Topic_ID=(SELECT C_RfQ_Topic_ID FROM C_RfQ WHERE C_RfQ_ID=?) "
+					+ "AND s.IsActive='Y' AND NOT EXISTS (SELECT 1 FROM C_RfQResponse x "
+					+ "  WHERE x.C_RfQ_ID=? AND x.C_BPartner_ID=s.C_BPartner_ID AND x.IsActive='Y')",
+					rfqId, rfqId);
+			if (missing > 0)
+				throw new AdempiereException(missing + " invited vendor(s) have not submitted a response. "
+						+ "Every invited vendor must respond before the RFQ can be completed.");
+
+			int incomplete = DB.getSQLValue(null,
+					"SELECT COUNT(*) FROM C_RfQResponse WHERE C_RfQ_ID=? AND IsActive='Y' AND IsComplete='N'",
+					rfqId);
+			if (incomplete > 0)
+				throw new AdempiereException(incomplete + " response(s) are still pending. "
+						+ "Mark every response as Complete before completing the RFQ.");
+
+			int missingPrices = DB.getSQLValue(null,
+					"SELECT COUNT(*) FROM C_RfQLine l "
+					+ "JOIN C_RfQResponse x ON x.C_RfQ_ID=l.C_RfQ_ID AND x.IsActive='Y' "
+					+ "WHERE l.C_RfQ_ID=? AND l.IsActive='Y' AND NOT EXISTS ("
+					+ "  SELECT 1 FROM C_RfQResponseLine sl "
+					+ "  JOIN C_RfQResponseLineQty q ON q.C_RfQResponseLine_ID=sl.C_RfQResponseLine_ID "
+					+ "  WHERE sl.C_RfQResponse_ID=x.C_RfQResponse_ID AND sl.C_RfQLine_ID=l.C_RfQLine_ID "
+					+ "  AND sl.IsActive='Y' AND q.IsActive='Y' "
+					+ "  AND COALESCE(NULLIF(q.XX_NegotiatePrice,0), q.Price) > 0)", rfqId);
+			if (missingPrices > 0)
+				throw new AdempiereException(missingPrices + " product/vendor price(s) are missing or invalid. "
+						+ "Every product must have a valid quoted price from every vendor.");
+
+			// Record the submission and, when a process is configured for C_RfQ,
+			// start the approval chain. The history row is the guaranteed audit
+			// trail; the engine call degrades to a no-op when nothing is configured.
+			new RfQApprovalService().submitForApproval(rfqId,
+					"RFQ completed: all invited vendors responded with valid prices.");
+			try {
+				int tableId = MTable.getTable_ID("C_RfQ");
+				int docTypeId = DB.getSQLValue(null,
+						"SELECT rq.C_DocType_ID FROM C_RfQ r "
+						+ "JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID "
+						+ "WHERE r.C_RfQ_ID=?", rfqId);
+				if (tableId > 0)
+					new org.mycompany.requisition.approval.service.ApprovalEngineClient()
+							.start(tableId, rfqId, null, docTypeId, "RFQ completed");
+			} catch (Exception ignore) {
+				// No approval process configured for C_RfQ: the history row is enough.
+				log.log(Level.INFO, "RFQ " + rfqId + " not started in the approval engine: " + ignore.getMessage());
+			}
+
+			loadResponses();
+			Messagebox.show("RFQ completed and submitted for approval.", "Complete RFQ", Messagebox.OK,
+					Messagebox.INFORMATION);
 		} catch (Exception ex) {
 			error(ex);
 		}

@@ -3,7 +3,9 @@ package org.mycompany.requisition.rfqapproval;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 
 import org.adempiere.webui.panel.ADForm;
@@ -239,40 +241,108 @@ public class WRFQApprovalForm extends ADForm {
 			tb.appendChild(tabs);
 			Tabpanels panels = new Tabpanels();
 
-			// ---- tab 1: choose the winner
+			// ---- tab 1: recommend a winner for each product
 			Tabpanel p1 = new Tabpanel();
-			final Radiogroup group = new Radiogroup();
-			p1.appendChild(group);
-			BigDecimal lowest = null;
-			for (Supplier s : c.suppliers)
-				if (lowest == null || s.ownership.compareTo(lowest) < 0)
-					lowest = s.ownership;
-			for (Supplier s : c.suppliers) {
-				Radio rb = new Radio(s.name + "   -   Cost of ownership " + MONEY.format(s.ownership)
-						+ (s.ownership.compareTo(lowest) == 0 ? "   (lowest)" : ""));
-				rb.setValue(Integer.valueOf(s.responseId));
-				rb.setStyle("display:block;margin:6px 0;");
-				group.appendChild(rb);
-				if (s.winner || (c.winner() == null && s.ownership.compareTo(lowest) == 0 && group.getSelectedItem() == null))
-					group.setSelectedItem(rb);
+			final Map<Integer, Radiogroup> groups = new LinkedHashMap<Integer, Radiogroup>();
+			final Map<Integer, Textbox> justifications = new LinkedHashMap<Integer, Textbox>();
+
+			List<RfQApprovalService.RankedQuote> ranked = RfQApprovalService.rankQuotes(r.id);
+			final Map<Integer, List<RfQApprovalService.RankedQuote>> byLine =
+					new LinkedHashMap<Integer, List<RfQApprovalService.RankedQuote>>();
+			for (RfQApprovalService.RankedQuote q : ranked) {
+				Integer key = Integer.valueOf(q.rfqLineId);
+				List<RfQApprovalService.RankedQuote> l = byLine.get(key);
+				if (l == null) {
+					l = new java.util.ArrayList<RfQApprovalService.RankedQuote>();
+					byLine.put(key, l);
+				}
+				l.add(q);
 			}
-			p1.appendChild(new Label("Remarks"));
+			final Map<Integer, Integer> existing = RfQApprovalService.lineWinners(r.id);
+
+			Vlayout prodBox = new Vlayout();
+			prodBox.setWidth("100%");
+			prodBox.setHeight("380px");
+			prodBox.setStyle("overflow:auto;");
+			int productNo = 0;
+			for (Item it : c.items) {
+				productNo++;
+				Vlayout card = new Vlayout();
+				card.setWidth("100%");
+				card.setStyle("border:1px solid #dbe3ec;border-radius:6px;padding:6px 10px;margin-bottom:8px;");
+				Label title = new Label(productNo + ". " + it.name + "   (Qty "
+						+ it.qty.stripTrailingZeros().toPlainString()
+						+ (it.uom.length() == 0 ? "" : " " + it.uom) + ")");
+				title.setStyle("font-weight:700;color:#1e4d7b;display:block;");
+				card.appendChild(title);
+
+				Radiogroup rg = new Radiogroup();
+				groups.put(Integer.valueOf(it.rfqLineId), rg);
+				List<RfQApprovalService.RankedQuote> quotes = byLine.get(Integer.valueOf(it.rfqLineId));
+				if (quotes == null || quotes.isEmpty()) {
+					card.appendChild(new Label("No vendor quoted this product."));
+				} else {
+					Integer prev = existing.get(Integer.valueOf(it.rfqLineId));
+					for (RfQApprovalService.RankedQuote q : quotes) {
+						Radio rb = new Radio(q.vendorName + "   -   " + MONEY.format(q.price)
+								+ "   (rank " + q.rank + (q.rank == 1 ? ", lowest" : "") + ")");
+						rb.setValue(Integer.valueOf(q.responseId));
+						rb.setAttribute("rank", Integer.valueOf(q.rank));
+						rb.setStyle("display:block;margin:3px 0;");
+						rg.appendChild(rb);
+						if (prev != null && prev.intValue() == q.responseId)
+							rg.setSelectedItem(rb);
+					}
+				}
+				card.appendChild(rg);
+
+				Label jl = new Label(
+						"Justification (required when the chosen vendor is not the lowest price)");
+				jl.setStyle("font-size:11px;color:#64748b;display:block;margin-top:4px;");
+				card.appendChild(jl);
+				Textbox just = new Textbox();
+				just.setMultiline(true);
+				just.setRows(2);
+				just.setWidth("100%");
+				justifications.put(Integer.valueOf(it.rfqLineId), just);
+				card.appendChild(just);
+				prodBox.appendChild(card);
+			}
+			p1.appendChild(prodBox);
+
+			p1.appendChild(new Label("Overall remarks"));
 			final Textbox remarks = new Textbox();
 			remarks.setMultiline(true);
-			remarks.setRows(3);
+			remarks.setRows(2);
 			remarks.setWidth("100%");
 			p1.appendChild(remarks);
-			Button save = new Button("Recommend");
+
+			Button save = new Button("Recommend Selected");
 			save.addEventListener(Events.ON_CLICK, e -> {
-				if (group.getSelectedItem() == null) {
-					Messagebox.show("Select a supplier.", "Recommend Winner", Messagebox.OK, Messagebox.EXCLAMATION);
+				Map<Integer, Integer> winners = new LinkedHashMap<Integer, Integer>();
+				Map<Integer, String> justs = new LinkedHashMap<Integer, String>();
+				for (Map.Entry<Integer, Radiogroup> entry : groups.entrySet()) {
+					Radio sel = entry.getValue().getSelectedItem();
+					if (sel == null)
+						continue;
+					winners.put(entry.getKey(), (Integer) sel.getValue());
+					Object rank = sel.getAttribute("rank");
+					if (rank instanceof Integer && ((Integer) rank).intValue() > 1) {
+						Textbox jb = justifications.get(entry.getKey());
+						justs.put(entry.getKey(), jb == null ? "" : jb.getValue());
+					}
+				}
+				if (winners.isEmpty()) {
+					Messagebox.show("Select a vendor for at least one product.", "Recommend Winner",
+							Messagebox.OK, Messagebox.EXCLAMATION);
 					return;
 				}
 				try {
-					service.recommendWinner(r.id, ((Integer) group.getSelectedItem().getValue()).intValue(),
-							remarks.getValue());
+					service.recommendLines(r.id, winners, justs, remarks.getValue());
 					win.detach();
 					reload();
+					Messagebox.show("Recommendation saved.", "Recommend Winner", Messagebox.OK,
+							Messagebox.INFORMATION);
 				} catch (Exception ex) {
 					fail(ex);
 				}

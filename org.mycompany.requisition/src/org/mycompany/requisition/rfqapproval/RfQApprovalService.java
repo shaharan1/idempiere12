@@ -44,6 +44,7 @@ public class RfQApprovalService {
 	public static final String A_APPROVE = "APPROVE";
 	public static final String A_REJECT = "REJECT";
 	public static final String A_FORWARD = "FORWARD";
+	public static final String A_SUBMIT = "SUBMIT";
 
 	private static final BigDecimal HUNDRED = new BigDecimal("100");
 	private static final CLogger log = CLogger.getCLogger(RfQApprovalService.class);
@@ -63,6 +64,7 @@ public class RfQApprovalService {
 			if (A_REJECT.equals(lastAction)) return "Rejected";
 			if (A_RECOMMEND.equals(lastAction)) return "Recommended";
 			if (A_FORWARD.equals(lastAction)) return "Forwarded";
+			if (A_SUBMIT.equals(lastAction)) return "Submitted";
 			return "Pending";
 		}
 	}
@@ -153,7 +155,7 @@ public class RfQApprovalService {
 		sql.append("  AND b.IsActive='Y' AND b.IsComplete='N') ");
 		if (pendingOnly)
 			sql.append("AND (").append(lastActionSql()).append(" IS NULL OR ")
-				.append(lastActionSql()).append(" IN ('RECOMMEND','FORWARD')) ");
+				.append(lastActionSql()).append(" IN ('RECOMMEND','FORWARD','SUBMIT')) ");
 		sql.append("ORDER BY r.C_RfQ_ID DESC");
 		PreparedStatement ps = null;
 		ResultSet rs = null;
@@ -613,6 +615,11 @@ public class RfQApprovalService {
 		if (toUserId == Env.getAD_User_ID(Env.getCtx()))
 			throw new Exception("An RFQ cannot be forwarded to yourself.");
 		logHistory(rfqId, A_FORWARD, message, toUserId);
+	}
+
+	/** Records that a completed RFQ was submitted into the approval chain. */
+	public void submitForApproval(int rfqId, String message) throws Exception {
+		logHistory(rfqId, A_SUBMIT, isFilled(message) ? message : "RFQ completed and submitted for approval", 0);
 	}
 
 	public List<KeyNamePair> userOptions() {
