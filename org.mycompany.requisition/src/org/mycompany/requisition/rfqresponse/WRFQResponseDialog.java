@@ -264,6 +264,7 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 		}
 		lines.appendChild(head);
 		ZKUpdateUtil.setHflex(lines, "1");
+		lines.setHeight("330px");
 	}
 
 	// ----------------------------------------------------------------- layout
