@@ -608,24 +608,31 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			if (c == rfqCombo) {
 				loadResponses();
 			} else if (c == reloadBtn) {
-				int keep = currentRfqId();
-				loadRfqList();
-				if (keep > 0) {
-					for (Comboitem it : rfqCombo.getItems()) {
-						if (toInt(it.getValue()) == keep) {
-							rfqCombo.setSelectedItem(it);
-							break;
-						}
-					}
-					loadResponses();
-				}
+				reloadKeepingSelection();
 			} else if (c instanceof org.zkoss.zk.ui.Component) {
 				String id = ((org.zkoss.zk.ui.Component) c).getId();
-				if (ConfirmPanel.A_OK.equals(id) || ConfirmPanel.A_CANCEL.equals(id))
+				if (ConfirmPanel.A_OK.equals(id))
+					reloadKeepingSelection(); // OK: stay on this form, just refresh the data
+				else if (ConfirmPanel.A_CANCEL.equals(id))
 					SessionManager.getAppDesktop().closeActiveWindow();
 			}
 		} catch (Exception ex) {
 			error(ex);
+		}
+	}
+
+	/** Reload RFQ list + grid, keeping the currently selected RFQ if it is still in the list. */
+	private void reloadKeepingSelection() {
+		int keep = currentRfqId();
+		loadRfqList();
+		if (keep > 0) {
+			for (Comboitem it : rfqCombo.getItems()) {
+				if (toInt(it.getValue()) == keep) {
+					rfqCombo.setSelectedItem(it);
+					break;
+				}
+			}
+			loadResponses();
 		}
 	}
 
