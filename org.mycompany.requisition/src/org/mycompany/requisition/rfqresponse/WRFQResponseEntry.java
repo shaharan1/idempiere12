@@ -121,6 +121,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 	private Label statTotal = new Label("0");
 	private Label statDone = new Label("0");
 	private Label statPending = new Label("0");
+	private Checkbox showDoneChk = new Checkbox("Show completed RFQs");
 	private Label emptyLbl = new Label("Select an RFQ above to see its supplier responses.");
 
 	// ------------------------------------------------------------------ init
@@ -162,6 +163,8 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			// icon na thakleo button kaj korbe
 		}
 		reloadBtn.addEventListener(Events.ON_CLICK, this);
+		showDoneChk.addEventListener(Events.ON_CHECK, this);
+		showDoneChk.setStyle("font-weight:600;color:#475569;padding-left:10px;");
 		confirmPanel.addActionListener(this); // OK / Cancel (tick / cross icon)
 
 		respList = new Listbox();
@@ -257,6 +260,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		stats.appendChild(statBox("Total Suppliers", statTotal, "#1e5aa8"));
 		stats.appendChild(statBox("Completed", statDone, "#16a34a"));
 		stats.appendChild(statBox("Pending", statPending, "#d97706"));
+		stats.appendChild(showDoneChk);
 		wrap.appendChild(stats);
 
 		// ---- Center: supplier list ----
@@ -354,7 +358,10 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		sql.append("AND x.IsActive='Y' AND x.IsComplete='N') ");
 		sql.append("OR EXISTS (SELECT 1 FROM C_RfQ_TopicSubscriber s WHERE s.C_RfQ_Topic_ID=r.C_RfQ_Topic_ID ");
 		sql.append("AND s.IsActive='Y' AND NOT EXISTS (SELECT 1 FROM C_RfQResponse y ");
-		sql.append("WHERE y.C_RfQ_ID=r.C_RfQ_ID AND y.C_BPartner_ID=s.C_BPartner_ID AND y.IsActive='Y'))) ");
+		sql.append("WHERE y.C_RfQ_ID=r.C_RfQ_ID AND y.C_BPartner_ID=s.C_BPartner_ID AND y.IsActive='Y')) ");
+		if (showDoneChk.isChecked())
+			sql.append("OR EXISTS (SELECT 1 FROM C_RfQResponse z WHERE z.C_RfQ_ID=r.C_RfQ_ID AND z.IsActive='Y') ");
+		sql.append(") ");
 		sql.append("ORDER BY r.C_RfQ_ID DESC");
 
 		PreparedStatement pstmt = null;
@@ -607,7 +614,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			Object c = e.getTarget();
 			if (c == rfqCombo) {
 				loadResponses();
-			} else if (c == reloadBtn) {
+			} else if (c == reloadBtn || c == showDoneChk) {
 				reloadKeepingSelection();
 			} else if (c instanceof org.zkoss.zk.ui.Component) {
 				String id = ((org.zkoss.zk.ui.Component) c).getId();
