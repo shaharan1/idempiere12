@@ -58,7 +58,6 @@ import org.zkoss.zul.Row;
 import org.zkoss.zul.Rows;
 import org.zkoss.zul.South;
 import org.zkoss.zul.Vbox;
-import org.zkoss.zul.impl.InputElement;
 
 public class WCreateRFQFromPR extends CustomForm implements IFormController, EventListener<Event> {
 
