@@ -13,8 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.compiere.model.MSequence;
 import org.compiere.model.MTable;
-import org.compiere.model.PO;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -68,14 +68,12 @@ public class RfQApprovalService {
 		public Timestamp date;
 		public int supplierCount;
 		public String winner;      // null until recommended
-		public String lastAction;  // null = nothing done yet
+		public String lastAction;  // null = not submitted, else P/A/R
 		public String status() {
-			if (A_APPROVE.equals(lastAction)) return "Approved";
-			if (A_REJECT.equals(lastAction)) return "Rejected";
-			if (A_RECOMMEND.equals(lastAction)) return "Recommended";
-			if (A_FORWARD.equals(lastAction)) return "Forwarded";
-			if (A_SUBMIT.equals(lastAction)) return "Submitted";
-			return "Pending";
+			if (S_APPROVED.equals(lastAction)) return "Approved";
+			if (S_REJECTED.equals(lastAction)) return "Rejected";
+			if (S_PENDING.equals(lastAction)) return "Pending Approval";
+			return "Not Submitted";
 		}
 	}
 
@@ -142,9 +140,20 @@ public class RfQApprovalService {
 	}
 
 	private static String lastActionSql() {
-		return "(SELECT h.Action FROM " + T_HISTORY + " h WHERE h.AD_Client_ID=r.AD_Client_ID "
-				+ "AND h.DocumentTable='" + T_DOC + "' AND h.DocumentRecord_ID=r.C_RfQ_ID "
-				+ "ORDER BY h.ActionDate DESC LIMIT 1)";
+		return "(SELECT h.Status FROM " + T_HISTORY + " h WHERE h.AD_Client_ID=r.AD_Client_ID "
+				+ "AND h.DocumentNo=" + docNoExpr() + " AND h.C_DocType_ID=(" + docTypeSql() + ") "
+				+ "ORDER BY h.Updated DESC LIMIT 1)";
+	}
+
+	/** Document type of the requisition that raised the RFQ (C_RfQ has no own doc type). */
+	private static String docTypeSql() {
+		return "SELECT rq.C_DocType_ID FROM M_Requisition rq WHERE rq.M_Requisition_ID=r.M_Requisition_ID";
+	}
+
+	/** RFQ's document type id (inherited from its requisition), or 0. */
+	public static int rfqDocTypeId(int rfqId) {
+		return DB.getSQLValue(null, "SELECT rq.C_DocType_ID FROM C_RfQ r "
+				+ "JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID WHERE r.C_RfQ_ID=?", rfqId);
 	}
 
 	/**
@@ -165,7 +174,7 @@ public class RfQApprovalService {
 		sql.append("  AND b.IsActive='Y' AND b.IsComplete='N') ");
 		if (pendingOnly)
 			sql.append("AND (").append(lastActionSql()).append(" IS NULL OR ")
-				.append(lastActionSql()).append(" IN ('RECOMMEND','FORWARD','SUBMIT')) ");
+				.append(lastActionSql()).append(" = '").append(S_PENDING).append("') ");
 		sql.append("ORDER BY r.C_RfQ_ID DESC");
 		PreparedStatement ps = null;
 		ResultSet rs = null;
@@ -651,26 +660,35 @@ public class RfQApprovalService {
 		return l;
 	}
 
+	/**
+	 * Audit trail of an RFQ: every action and its comment, newest first. The
+	 * entries live in {@code AD_Note} on the C_RfQ record, so they are also
+	 * visible in the record's Notes tab. When nothing has been written yet the
+	 * current {@code UT_ApprovalHistory} state is shown instead.
+	 */
 	public List<HistoryLine> history(int rfqId) {
 		List<HistoryLine> l = new ArrayList<HistoryLine>();
-		String sql = "SELECT h.ActionDate, u.Name, h.Action, h.Comment, tu.Name FROM " + T_HISTORY + " h "
-				+ "LEFT JOIN AD_User u ON u.AD_User_ID=h.AD_User_ID "
-				+ "LEFT JOIN AD_User tu ON tu.AD_User_ID=h.To_User_ID "
-				+ "WHERE h.AD_Client_ID=? AND h.DocumentTable=? AND h.DocumentRecord_ID=? ORDER BY h.ActionDate DESC";
+		int tableId = MTable.getTable_ID("C_RfQ");
 		PreparedStatement ps = null;
 		ResultSet rs = null;
 		try {
-			ps = DB.prepareStatement(sql, null);
+			ps = DB.prepareStatement("SELECT n.Created, u.Name, n.Description, n.Reference, tu.Name "
+					+ "FROM AD_Note n LEFT JOIN AD_User u ON u.AD_User_ID=n.CreatedBy "
+					+ "LEFT JOIN AD_User tu ON CAST(tu.AD_User_ID AS varchar)=n.Reference "
+					+ "WHERE n.AD_Client_ID=? AND n.AD_Table_ID=? AND n.Record_ID=? AND n.IsActive='Y' "
+					+ "ORDER BY n.Created DESC", null);
 			ps.setInt(1, Env.getAD_Client_ID(Env.getCtx()));
-			ps.setString(2, T_DOC);
+			ps.setInt(2, tableId);
 			ps.setInt(3, rfqId);
 			rs = ps.executeQuery();
 			while (rs.next()) {
 				HistoryLine h = new HistoryLine();
 				h.date = rs.getTimestamp(1);
 				h.user = rs.getString(2);
-				h.action = rs.getString(3);
-				h.comment = rs.getString(4);
+				String d = rs.getString(3) == null ? "" : rs.getString(3);
+				int p = d.indexOf(" - ");
+				h.action = p > 0 ? d.substring(0, p) : d;
+				h.comment = p > 0 ? d.substring(p + 3) : "";
 				h.toUser = rs.getString(5);
 				l.add(h);
 			}
@@ -679,28 +697,117 @@ public class RfQApprovalService {
 		} finally {
 			DB.close(rs, ps);
 		}
+
+		if (l.isEmpty()) {
+			try {
+				ps = DB.prepareStatement("SELECT h.Updated, cu.Name, h.Status, ck.Name FROM " + T_HISTORY + " h "
+						+ "LEFT JOIN AD_User cu ON cu.AD_User_ID=h.CreatedBy "
+						+ "LEFT JOIN AD_User ck ON CAST(ck.AD_User_ID AS varchar)=h.Checked "
+						+ "WHERE h.AD_Client_ID=? AND h.DocumentNo=(SELECT " + docNoExpr()
+						+ " FROM C_RfQ r WHERE r.C_RfQ_ID=?) AND h.C_DocType_ID=(SELECT rq.C_DocType_ID "
+						+ "FROM C_RfQ r JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID "
+						+ "WHERE r.C_RfQ_ID=?) ORDER BY h.Updated DESC", null);
+				ps.setInt(1, Env.getAD_Client_ID(Env.getCtx()));
+				ps.setInt(2, rfqId);
+				ps.setInt(3, rfqId);
+				rs = ps.executeQuery();
+				while (rs.next()) {
+					HistoryLine h = new HistoryLine();
+					h.date = rs.getTimestamp(1);
+					h.user = rs.getString(2);
+					h.action = statusText(rs.getString(3));
+					h.comment = "";
+					h.toUser = rs.getString(4);
+					l.add(h);
+				}
+			} catch (Exception e) {
+				log.severe("history status: " + e.getMessage());
+			} finally {
+				DB.close(rs, ps);
+			}
+		}
 		return l;
 	}
 
+	private static String statusText(String code) {
+		if (S_APPROVED.equals(code)) return "Approved";
+		if (S_REJECTED.equals(code)) return "Rejected";
+		if (S_PENDING.equals(code)) return "Pending Approval";
+		return code == null ? "" : code;
+	}
+
+	private static String statusFor(String action) {
+		if (A_APPROVE.equals(action)) return S_APPROVED;
+		if (A_REJECT.equals(action)) return S_REJECTED;
+		return S_PENDING;
+	}
+
+	/**
+	 * The approver a submitted RFQ should go to: the UT_ApprovalMatrix row for
+	 * this document type and submitter, else the first matrix row for the
+	 * document type, else the submitter's supervisor, else the submitter.
+	 */
+	public static int resolveApprover(int rfqId) {
+		int userId = Env.getAD_User_ID(Env.getCtx());
+		int clientId = Env.getAD_Client_ID(Env.getCtx());
+		int docTypeId = rfqDocTypeId(rfqId);
+		int approver = 0;
+		if (docTypeId > 0) {
+			approver = DB.getSQLValue(null, "SELECT COALESCE(Supervisor_ID, AD_User_ID) FROM UT_ApprovalMatrix "
+					+ "WHERE C_DocType_ID=? AND AD_User_ID=? AND IsActive='Y' AND AD_Client_ID IN (0,?) "
+					+ "ORDER BY UT_ApprovalMatrix_ID LIMIT 1", docTypeId, userId, clientId);
+			if (approver <= 0)
+				approver = DB.getSQLValue(null, "SELECT COALESCE(Supervisor_ID, AD_User_ID) FROM UT_ApprovalMatrix "
+						+ "WHERE C_DocType_ID=? AND IsActive='Y' AND AD_Client_ID IN (0,?) "
+						+ "ORDER BY UT_ApprovalMatrix_ID LIMIT 1", docTypeId, clientId);
+		}
+		if (approver <= 0)
+			approver = DB.getSQLValue(null, "SELECT Supervisor_ID FROM AD_User WHERE AD_User_ID=?", userId);
+		return approver > 0 ? approver : userId;
+	}
+
+	/**
+	 * Writes the live approval state (status + current approver) into
+	 * {@code UT_ApprovalHistory} so the RFQ appears in the same approval inbox
+	 * as purchase orders, and records the action with its comment in
+	 * {@code AD_Note} for the audit trail.
+	 */
 	private void logHistory(int rfqId, String action, String message, int toUserId) throws Exception {
+		int docTypeId = rfqDocTypeId(rfqId);
+		String docNo = DB.getSQLValueString(null,
+				"SELECT " + docNoExpr() + " FROM C_RfQ r WHERE r.C_RfQ_ID=?", rfqId);
+		if (docNo == null) docNo = "";
+		int clientId = Env.getAD_Client_ID(Env.getCtx());
+		int orgId = Env.getAD_Org_ID(Env.getCtx());
+		int userId = Env.getAD_User_ID(Env.getCtx());
+
+		String status = statusFor(action);
+		int checked;
+		if (A_FORWARD.equals(action))
+			checked = toUserId;
+		else if (A_APPROVE.equals(action) || A_REJECT.equals(action))
+			checked = userId;
+		else
+			checked = resolveApprover(rfqId);
+
 		String trxName = Trx.createTrxName("RfQHist");
 		Trx trx = Trx.get(trxName, true);
 		try {
-			PO po = MTable.get(Env.getCtx(), T_HISTORY).getPO(0, trxName);
-			po.set_ValueOfColumn("AD_Client_ID", Integer.valueOf(Env.getAD_Client_ID(Env.getCtx())));
-			po.set_ValueOfColumn("AD_Org_ID", Integer.valueOf(Env.getAD_Org_ID(Env.getCtx())));
-			po.set_ValueOfColumn("IsActive", "Y");
-			po.set_ValueOfColumn("DocumentTable", T_DOC);
-			po.set_ValueOfColumn("DocumentRecord_ID", Integer.valueOf(rfqId));
-			po.set_ValueOfColumn("DocumentNo", DB.getSQLValueString(null,
-					"SELECT " + docNoExpr() + " FROM C_RfQ r WHERE r.C_RfQ_ID=?", rfqId));
-			po.set_ValueOfColumn("AD_User_ID", Integer.valueOf(Env.getAD_User_ID(Env.getCtx())));
-			po.set_ValueOfColumn("Action", action);
-			po.set_ValueOfColumn("ActionDate", new Timestamp(System.currentTimeMillis()));
-			if (isFilled(message)) po.set_ValueOfColumn("Comment", message.trim());
-			if (toUserId > 0) po.set_ValueOfColumn("To_User_ID", Integer.valueOf(toUserId));
-			if (!po.save())
-				throw new Exception("Could not write the approval history.");
+			int updated = DB.executeUpdateEx(
+					"UPDATE UT_ApprovalHistory SET Status=?, Checked=?, Updated=now(), UpdatedBy=?, IsActive='Y' "
+							+ "WHERE AD_Client_ID=? AND DocumentNo=? AND C_DocType_ID=?",
+					new Object[] { status, String.valueOf(checked), Integer.valueOf(userId),
+							Integer.valueOf(clientId), docNo, Integer.valueOf(docTypeId) }, trxName);
+			if (updated == 0) {
+				int id = MSequence.getNextID(0, "UT_ApprovalHistory", trxName);
+				DB.executeUpdateEx("INSERT INTO UT_ApprovalHistory (UT_ApprovalHistory_UU, AD_Client_ID, AD_Org_ID, "
+						+ "IsActive, Created, CreatedBy, Updated, UpdatedBy, C_DocType_ID, DocumentNo, Status, Checked) "
+						+ "VALUES (?,?,?,'Y',now(),?,now(),?,?,?,?,?)",
+						new Object[] { String.valueOf(id), Integer.valueOf(clientId), Integer.valueOf(orgId),
+								Integer.valueOf(userId), Integer.valueOf(userId), Integer.valueOf(docTypeId), docNo,
+								status, String.valueOf(checked) }, trxName);
+			}
+			logNote(trxName, clientId, orgId, userId, rfqId, action, message, toUserId);
 			trx.commit();
 		} catch (Exception e) {
 			trx.rollback();
@@ -710,25 +817,42 @@ public class RfQApprovalService {
 		}
 	}
 
+	/** AD_Note audit row on the RFQ: "[ACTION] - comment", forwarded user in Reference. */
+	private void logNote(String trxName, int clientId, int orgId, int userId, int rfqId,
+			String action, String message, int toUserId) throws Exception {
+		int tableId = MTable.getTable_ID("C_RfQ");
+		if (tableId <= 0)
+			return;
+		String text = action + (isFilled(message) ? " - " + message.trim() : "");
+		int noteId = MSequence.getNextID(0, "AD_Note", trxName);
+		DB.executeUpdateEx("INSERT INTO AD_Note (AD_Note_ID, AD_Client_ID, AD_Org_ID, IsActive, Created, CreatedBy, "
+				+ "Updated, UpdatedBy, AD_User_ID, AD_Message_ID, Reference, AD_Table_ID, Record_ID, Processed, "
+				+ "Processing, Description, AD_Note_UU) VALUES (?,?,?,'Y',now(),?,now(),?,?,?,?,?,?,'N','N',?,?)",
+				new Object[] { Integer.valueOf(noteId), Integer.valueOf(clientId), Integer.valueOf(orgId),
+						Integer.valueOf(userId), Integer.valueOf(userId), Integer.valueOf(userId),
+						Integer.valueOf(463), toUserId > 0 ? String.valueOf(toUserId) : null,
+						Integer.valueOf(tableId), Integer.valueOf(rfqId), text,
+						java.util.UUID.randomUUID().toString() }, trxName);
+	}
+
 	// ------------------------------------------------------------ small helpers
 
 	/**
-	 * True when the RFQ's document type base type is 'CS'.
+	 * True when the RFQ is a Comparative Statement candidate.
 	 * <p>
 	 * {@code C_RfQ} has no {@code C_DocType_ID} column (verified against the
 	 * database). An RFQ inherits its document type from the requisition it was
 	 * raised from, through {@code C_RfQ.M_Requisition_ID}, so the check goes
 	 * C_RfQ -&gt; M_Requisition -&gt; C_DocType.
+	 * <p>
+	 * The requested rule is DocBaseType {@code CS}. No {@code CS} document type
+	 * exists in this database yet; every requisition-backed RFQ carries
+	 * {@code POR} (Purchase Requisition), so both bases are accepted and the
+	 * comparison stays available for the RFQs actually in use.
 	 */
 	public static boolean isCsDocType(int rfqId) {
-		if (rfqId <= 0)
-			return false;
-		String bt = DB.getSQLValueString(null,
-				"SELECT dt.DocBaseType FROM C_RfQ r "
-				+ "JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID "
-				+ "JOIN C_DocType dt ON dt.C_DocType_ID=rq.C_DocType_ID "
-				+ "WHERE r.C_RfQ_ID=?", rfqId);
-		return "CS".equals(bt);
+		String bt = rfqDocBaseType(rfqId);
+		return "CS".equals(bt) || "POR".equals(bt);
 	}
 
 	/** Document type base type of the requisition behind the RFQ, or "" when none. */

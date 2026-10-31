@@ -5,7 +5,8 @@ SET search_path TO adempiere, public;
 -- logout/login (menu tree cached).
 --
 -- Winner  : standard C_RfQResponse.IsSelectedWinner (kono notun column lage na)
--- History : XX_Approval_History, DocumentTable = 'C_RFQ'
+-- History : UT_ApprovalHistory (existing approval inbox; C_DocType_ID + DocumentNo)
+-- Comment : AD_Note on the C_RfQ record (audit trail)
 -- Access / menu position: "Document Approval Form" er moto hubohu copy kora hoy.
 -- =====================================================================
 

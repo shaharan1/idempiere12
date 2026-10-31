@@ -593,8 +593,8 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 	/**
 	 * Complete RFQ: only when every invited vendor has answered, every response
 	 * is complete, and every product has a valid price in every response. On
-	 * success the RFQ is pushed into the approval chain and an audit row is
-	 * written to XX_APPROVAL_HISTORY.
+	 * success the RFQ is pushed into the approval chain (UT_ApprovalHistory +
+	 * AD_Note audit trail).
 	 */
 	private void completeRfq() {
 		try {
