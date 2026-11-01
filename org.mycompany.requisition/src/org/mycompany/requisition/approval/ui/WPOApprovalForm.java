@@ -9,6 +9,7 @@ import java.text.SimpleDateFormat;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.webui.panel.ADForm;
 import org.compiere.model.MOrder;
+import org.compiere.model.MRequisition;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -112,7 +113,7 @@ public class WPOApprovalForm extends ADForm {
         addHeader(head, "Checked By", "150px");
         addHeader(head, "Status", "110px");
 //        addHeader(head, "Active", "80px");
-        addHeader(head, "Actions", "260px");
+        addHeader(head, "Actions", "420px");
 
         approvalList.appendChild(head);
         scrollContainer.appendChild(approvalList);
@@ -145,7 +146,7 @@ public class WPOApprovalForm extends ADForm {
         approvalList.getItems().clear();
 
         String sql =
-        	    "SELECT h.ut_approvalhistory_uu, " +
+        	    "SELECT h.ut_approvalhistory_uu, h.c_doctype_id, " +
         	    "       COALESCE(dt.name, CAST(h.c_doctype_id AS varchar)) AS doctype_name, " +
         	    "       h.documentno, h.created, " +
         	    "       COALESCE(cu.name, CAST(h.createdby AS varchar)) AS created_by, " +
@@ -176,6 +177,7 @@ public class WPOApprovalForm extends ADForm {
                     final String historyId  = rs.getString("ut_approvalhistory_uu");
                     final String docType    = rs.getString("doctype_name");
                     final String documentNo = rs.getString("documentno");
+                    final int docTypeId     = rs.getInt("c_doctype_id");
                     Timestamp ts            = rs.getTimestamp("created");
                     final String created    = ts == null ? "" : fmt.format(ts);
                     final String createdBy  = rs.getString("created_by");
@@ -213,6 +215,16 @@ public class WPOApprovalForm extends ADForm {
                     viewButton.addEventListener(Events.ON_CLICK,
                         event -> showDetails(docType, documentNo, created,
                             createdBy, checkedBy, status));
+
+                    // Comparative Statement (RFQ): extra button to pick the winners
+                    final int rfqId = RecommendWinnerDialog.findRfqId(documentNo, docTypeId);
+                    if (rfqId > 0) {
+                        Button winnerButton = new Button("Recommend Winner");
+                        winnerButton.setStyle("background:#fd7e14;color:white;");
+                        winnerButton.addEventListener(Events.ON_CLICK,
+                            event -> RecommendWinnerDialog.open(this, rfqId, documentNo));
+                        buttons.appendChild(winnerButton);
+                    }
 
                     buttons.appendChild(approveButton);
                     buttons.appendChild(rejectButton);
@@ -290,7 +302,7 @@ public class WPOApprovalForm extends ADForm {
 
         Messagebox.show(
             "Do you want to " + action
-            + " Purchase Order " + documentNo + "?",
+            + " document " + documentNo + "?",
             "Confirm " + action,
             Messagebox.YES | Messagebox.NO,
             Messagebox.QUESTION,
@@ -312,6 +324,20 @@ public class WPOApprovalForm extends ADForm {
             + historyId + ", action=" + newStatus + ", user=" + userId);
 
         String result = null;
+
+        // A Comparative Statement cannot be approved before a winner is recommended
+        if ("A".equals(newStatus)) {
+            int rfqCheck = DB.getSQLValue(null,
+                "SELECT c_doctype_id FROM adempiere.ut_approvalhistory WHERE ut_approvalhistory_uu = ?",
+                historyId);
+            int rfqId = RecommendWinnerDialog.findRfqId(documentNo, rfqCheck);
+            if (rfqId > 0 && !RecommendWinnerDialog.hasWinner(rfqId)) {
+                Messagebox.show("Click 'Recommend Winner' and save the winners before approving.",
+                    "Winner required", Messagebox.OK, Messagebox.EXCLAMATION);
+                return;
+            }
+        }
+
         String trxName = Trx.createTrxName("POApproval");
         Trx trx = Trx.get(trxName, true);
 
@@ -344,6 +370,20 @@ public class WPOApprovalForm extends ADForm {
                 order.saveEx();
             }
 
+            // Last level approved: complete the Purchase Requisition
+            if (result != null && result.startsWith("FINALREQ:")) {
+                int reqId = Integer.parseInt(result.substring(9));
+                MRequisition req = new MRequisition(Env.getCtx(), reqId, trxName);
+                req.setIsApproved(true); // RequisitionApprovalHandler lets approved PRs through
+                req.saveEx();
+                req.setDocAction(DocAction.ACTION_Complete);
+                if (!req.processIt(DocAction.ACTION_Complete)) {
+                    throw new AdempiereException(
+                        "Could not complete PR: " + req.getProcessMsg());
+                }
+                req.saveEx();
+            }
+
             trx.commit(true);
             log.warning("POApproval: result=" + result);
 
@@ -365,9 +405,14 @@ public class WPOApprovalForm extends ADForm {
             message = "No record was changed. It may already have been "
                 + "processed, or it may not be assigned to your user.";
         } else if ("REJECTED".equals(result)) {
-            message = "Purchase Order " + documentNo + " has been rejected.";
+            message = "Document " + documentNo + " has been rejected.";
         } else if (result.startsWith("NEXT:")) {
             message = "Approved. Sent to the next level approver.";
+        } else if (result.startsWith("FINALRFQ:")) {
+            message = "Approved. Comparative Statement " + documentNo + " is fully approved.";
+        } else if (result.startsWith("FINALREQ:")) {
+            message = "Approved. Purchase Requisition " + documentNo
+                + " has been completed.";
         } else {
             message = "Approved. Purchase Order " + documentNo
                 + " has been completed.";
