@@ -105,6 +105,7 @@ public class DocumentApprovalForm extends ADForm {
 	private Combobox fAction;
 	private Textbox fMessage;
 	private Combobox fForwardTo;
+	private Button bRecommend;
 
 	public DocumentApprovalForm() {
 		super();
@@ -112,6 +113,7 @@ public class DocumentApprovalForm extends ADForm {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		setTitle(msg("Document Approval Form"));
 		setWidth("100%");
 		setHeight("100%");
@@ -316,10 +318,17 @@ public class DocumentApprovalForm extends ADForm {
 		fMessage = UiLayouts.text();
 		UiLayouts.fieldCell(line3, fMessage);
 
+		// Shown only while the single ticked document is a comparative statement
+		// and the approval matrix allows this user to recommend a winner.
+		bRecommend = UiLayouts.button(msg("Recommend Winner"));
+		bRecommend.setVisible(false);
+		bRecommend.addEventListener(Events.ON_CLICK, e -> openRecommendWinner());
+
 		Button bSubmit = UiLayouts.button(msg("Submit"));
 		bSubmit.setStyle("float: right;");
 		bSubmit.addEventListener(Events.ON_CLICK, e -> submit());
 		Hlayout actions = UiLayouts.toolbar();
+		actions.appendChild(bRecommend);
 		actions.appendChild(bSubmit);
 		panel.appendChild(actions);
 	}
@@ -357,6 +366,7 @@ public class DocumentApprovalForm extends ADForm {
 			Row row = UiLayouts.row();
 
 			Checkbox pick = new Checkbox();
+			pick.addEventListener(Events.ON_CHECK, e -> onSelectionChanged());
 			row.appendChild(cellOf(pick));
 			selection.add(pick);
 
@@ -402,6 +412,8 @@ public class DocumentApprovalForm extends ADForm {
 			aDocNo.setText(NONE);
 			aDocInfo.setText(msg("No document selected"));
 		}
+		if (bRecommend != null)
+			bRecommend.setVisible(false);
 	}
 
 	/** The ticked document, when exactly one is ticked. Null otherwise. */
@@ -550,6 +562,45 @@ Messagebox.showDialog(text.toString(), msg("Approval History"), Messagebox.OK, M
 			showInfo(msg("Done. Documents processed: ") + done);
 		}
 		reload();
+	}
+
+	// ------------------------------------------------------------------
+	// Recommend Winner
+	// ------------------------------------------------------------------
+
+	/** The RFQ id behind the Recommend Winner button, 0 while it is hidden. */
+	private int recommendRfqId;
+
+	/**
+	 * Follows the tick boxes: shows the document in the approval panel and decides
+	 * whether Recommend Winner is offered. Only a comparative statement gets the
+	 * button, and only for a user the approval matrix lets recommend.
+	 */
+	private void onSelectionChanged() {
+		ApprovalDocument doc = singleSelection();
+		recommendRfqId = 0;
+		if (doc != null) {
+			aDocNo.setText(doc.getDocumentNo());
+			aDocInfo.setText(describe(doc));
+			int rfqId = org.mycompany.requisition.rfqwinner.RecommendWinnerService
+					.findRfqId(doc.getId(), doc.getDocumentNo());
+			if (org.mycompany.requisition.rfqwinner.RecommendWinnerService.isComparativeStatement(rfqId)
+					&& org.mycompany.requisition.rfqwinner.RecommendWinnerService.mayRecommend(rfqId))
+				recommendRfqId = rfqId;
+		} else if (aDocNo != null) {
+			aDocNo.setText(NONE);
+			aDocInfo.setText(msg("No document selected"));
+		}
+		bRecommend.setVisible(recommendRfqId > 0);
+	}
+
+	private void openRecommendWinner() {
+		if (singleSelection() == null || recommendRfqId <= 0) {
+			showInfo(msg("Please tick exactly one comparative statement."));
+			return;
+		}
+		new org.mycompany.requisition.rfqwinner.RecommendWinnerDialog(recommendRfqId, true, () -> reload())
+				.open(getPage());
 	}
 
 	/** Exposed so the form can be exercised without a browser. */
