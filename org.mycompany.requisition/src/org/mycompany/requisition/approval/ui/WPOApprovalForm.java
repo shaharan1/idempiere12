@@ -216,6 +216,10 @@ public class WPOApprovalForm extends ADForm {
                         event -> showDetails(docType, documentNo, created,
                             createdBy, checkedBy, status));
 
+                    buttons.appendChild(approveButton);
+                    buttons.appendChild(rejectButton);
+                    buttons.appendChild(viewButton);
+
                     // Comparative Statement (RFQ): extra button to pick the winners
                     final int rfqId = RecommendWinnerDialog.findRfqId(documentNo, docTypeId);
                     if (rfqId > 0) {
@@ -225,10 +229,6 @@ public class WPOApprovalForm extends ADForm {
                             event -> RecommendWinnerDialog.open(this, rfqId, documentNo));
                         buttons.appendChild(winnerButton);
                     }
-
-                    buttons.appendChild(approveButton);
-                    buttons.appendChild(rejectButton);
-                    buttons.appendChild(viewButton);
 
                     actions.appendChild(buttons);
                     row.appendChild(actions);
