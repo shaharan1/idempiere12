@@ -1,27 +1,25 @@
-package org.mycompany.requisition.rfqapproval;
+package org.mycompany.requisition.approval.ui;
 
-import java.math.BigDecimal;
-import java.text.DecimalFormat;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.logging.Level;
 
+import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.webui.panel.ADForm;
+import org.compiere.model.MOrder;
+import org.compiere.model.MRequisition;
+import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
-import org.compiere.util.KeyNamePair;
-import org.mycompany.requisition.rfqapproval.RfQApprovalService.Comparison;
-import org.mycompany.requisition.rfqapproval.RfQApprovalService.HistoryLine;
-import org.mycompany.requisition.rfqapproval.RfQApprovalService.Item;
-import org.mycompany.requisition.rfqapproval.RfQApprovalService.RfqRow;
-import org.mycompany.requisition.rfqapproval.RfQApprovalService.Supplier;
-import org.zkoss.util.media.AMedia;
+import org.compiere.util.DB;
+import org.compiere.util.Env;
+import org.compiere.util.Trx;
+import org.zkoss.zk.ui.Component;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zul.Button;
-import org.zkoss.zul.Checkbox;
+import org.zkoss.zul.Div;
 import org.zkoss.zul.Hlayout;
-import org.zkoss.zul.Iframe;
 import org.zkoss.zul.Label;
 import org.zkoss.zul.Listbox;
 import org.zkoss.zul.Listcell;
@@ -29,487 +27,373 @@ import org.zkoss.zul.Listhead;
 import org.zkoss.zul.Listheader;
 import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
-import org.zkoss.zul.Radio;
-import org.zkoss.zul.Radiogroup;
-import org.zkoss.zul.Tab;
-import org.zkoss.zul.Tabbox;
-import org.zkoss.zul.Tabpanel;
-import org.zkoss.zul.Tabpanels;
-import org.zkoss.zul.Tabs;
-import org.zkoss.zul.Textbox;
+import org.zkoss.zul.Separator;
 import org.zkoss.zul.Vlayout;
-import org.zkoss.zul.Window;
 
-/**
- * RFQ approval screen: the RFQs whose suppliers have all completed their
- * response, with Recommend Winner, Comparative Statement (PDF), Last PO History,
- * Approval History and Approve / Reject / Forward.
- * <p>
- * Menu registration: AD_Form.Classname =
- * {@code org.mycompany.requisition.rfqapproval.WRFQApprovalForm} (54 of 60 chars).
- */
-public class WRFQApprovalForm extends ADForm {
+public class WPOApprovalForm extends ADForm {
 
-	private static final long serialVersionUID = 1L;
-	private static final CLogger log = CLogger.getCLogger(WRFQApprovalForm.class);
-	private static final String GREEN = "background:#90EE90;";
-	private static final DecimalFormat MONEY = new DecimalFormat("#,##0.00");
-	private static final SimpleDateFormat DATE = new SimpleDateFormat("dd/MM/yyyy");
-	private static final SimpleDateFormat DATETIME = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+    private static final long serialVersionUID = 1L;
 
-	private final RfQApprovalService service = new RfQApprovalService();
+    // Alternating row colors: odd rows light blue, even rows white
+    private static final String ROW_BLUE  = "background:#BDD7EE;";
+    private static final String ROW_WHITE = "background:#FFFFFF;";
 
-	private Checkbox pendingOnly;
-	private Label countLabel;
-	private Listbox rfqList;
-	private Textbox message;
-	private Listbox forwardTo;
+    private static final CLogger log =
+        CLogger.getCLogger(WPOApprovalForm.class);
 
-	@Override
-	protected void initForm() {
-		setTitle("RFQ Approval");
-		setWidth("100%");
-		setHeight("100%");
+    private Listbox approvalList;
+    private Label countLabel;
 
-		Vlayout root = new Vlayout();
-		root.setWidth("100%");
-		root.setStyle("padding:6px;");
-		appendChild(root);
+    private int userId;
+    private int clientId;
 
-		// ---- search row
-		Hlayout top = new Hlayout();
-		top.setSclass("z-hlayout");
-		pendingOnly = new Checkbox("Pending only");
-		pendingOnly.setChecked(true);
-		Button reload = new Button("Reload");
-		reload.addEventListener(Events.ON_CLICK, e -> reload());
-		countLabel = new Label();
-		top.appendChild(pendingOnly);
-		top.appendChild(reload);
-		top.appendChild(countLabel);
-		root.appendChild(top);
+    @Override
+    protected void initForm() {
 
-		// ---- RFQ list
-		rfqList = new Listbox();
-		rfqList.addEventListener(Events.ON_SELECT, e -> updateRecommendVisibility());
-		rfqList.setWidth("100%");
-		rfqList.setHeight("300px");
-		Listhead head = new Listhead();
-		for (String h : new String[] { "CS / RFQ No", "Name", "Date", "Suppliers", "Recommended Winner", "Status" })
-			head.appendChild(new Listheader(h));
-		rfqList.appendChild(head);
-		root.appendChild(rfqList);
+        userId = Env.getAD_User_ID(Env.getCtx());
+        clientId = Env.getAD_Client_ID(Env.getCtx());
 
-		// ---- document buttons
-		Hlayout docButtons = new Hlayout();
-		Button recommendBtn = button("Recommend", e -> openRecommend());
-		recommendBtn.setId("recommendBtn");
-		docButtons.appendChild(recommendBtn);
-		docButtons.appendChild(button("Recommend Winner", e -> openRecommend()));
-		docButtons.appendChild(button("Comparative Statement (PDF)", e -> showPdf()));
-		docButtons.appendChild(button("Approval History", e -> showHistory()));
-		root.appendChild(docButtons);
+        setTitle("Purchase Order Approval");
+        setWidth("100%");
+        setHeight("100%");
 
-		// ---- decision panel
-		root.appendChild(new Label("Message"));
-		message = new Textbox();
-		message.setMultiline(true);
-		message.setRows(3);
-		message.setWidth("100%");
-		root.appendChild(message);
+        Vlayout root = new Vlayout();
+        root.setWidth("100%");
+        root.setHeight("100%");
+        root.setSpacing("10px");
+        root.setStyle("padding:12px;");
 
-		Hlayout decide = new Hlayout();
-		decide.appendChild(button("Approve", e -> decide(RfQApprovalService.A_APPROVE)));
-		decide.appendChild(button("Reject", e -> decide(RfQApprovalService.A_REJECT)));
-		forwardTo = new Listbox();
-		forwardTo.setMold("select");
-		forwardTo.appendItem("-- Forward to --", null);
-		for (KeyNamePair u : service.userOptions())
-			forwardTo.appendItem(u.getName(), String.valueOf(u.getKey()));
-		forwardTo.setSelectedIndex(0);
-		decide.appendChild(forwardTo);
-		decide.appendChild(button("Forward", e -> decide(RfQApprovalService.A_FORWARD)));
-		root.appendChild(decide);
+        // Form title
+        Label title = new Label("Purchase Order Approval");
+        title.setStyle("font-size:22px;font-weight:bold;color:#23466f;");
+        root.appendChild(title);
 
-		reload();
-	}
+        root.appendChild(new Separator());
 
-	private Button button(String label, org.zkoss.zk.ui.event.EventListener<org.zkoss.zk.ui.event.Event> l) {
-		Button b = new Button(label);
-		b.addEventListener(Events.ON_CLICK, l);
-		return b;
-	}
+        // Pending list heading
+        Hlayout listTitle = new Hlayout();
+        listTitle.setWidth("100%");
+        listTitle.setSpacing("10px");
 
-	// ------------------------------------------------------------ list
+        Label pendingTitle = new Label("Pending Approval List");
+        pendingTitle.setStyle("font-size:17px;font-weight:bold;");
 
-	private void reload() {
-		while (rfqList.getItemCount() > 0)
-			rfqList.removeItemAt(0);
-		List<RfqRow> rows = service.listRfqs(pendingOnly.isChecked());
-		for (RfqRow r : rows) {
-			Listitem li = new Listitem();
-			li.setValue(r);
-			li.appendChild(new Listcell(r.docNo));
-			li.appendChild(new Listcell(r.name));
-			li.appendChild(new Listcell(r.date == null ? "" : DATE.format(r.date)));
-			li.appendChild(new Listcell(String.valueOf(r.supplierCount)));
-			li.appendChild(new Listcell(r.winner == null ? "" : r.winner));
-			li.appendChild(new Listcell(r.status()));
-			rfqList.appendChild(li);
-		}
-		countLabel.setValue("Total RFQ: " + rows.size());
-	}
+        countLabel = new Label("Loading...");
 
-	private void updateRecommendVisibility() {
-		RfqRow r = selected();
-		org.zkoss.zk.ui.Component btn = null;
-		// find recommend button
-		for (org.zkoss.zk.ui.Component c : getPage().getRoots()) {
-		}
-		// simpler: search by id via desktop
-		try {
-			org.zkoss.zk.ui.Component comp = getPage().getFellowIfAny("recommendBtn");
-			if (comp != null)
-				comp.setVisible(r != null && RfQApprovalService.isCsDocType(r.id));
-		} catch (Exception ignore) {
-		}
-	}
+        Button refreshButton = new Button("Refresh");
+        refreshButton.setTooltiptext("Reload pending approvals");
+        refreshButton.addEventListener(Events.ON_CLICK,
+            event -> loadPendingApprovals());
 
-	private RfqRow selected() {
-		Listitem li = rfqList.getSelectedItem();
-		if (li == null) {
-			Messagebox.show("Select an RFQ first.", "RFQ Approval", Messagebox.OK, Messagebox.EXCLAMATION);
-			return null;
-		}
-		return li.getValue();
-	}
+        listTitle.appendChild(pendingTitle);
+        listTitle.appendChild(countLabel);
+        listTitle.appendChild(refreshButton);
+        root.appendChild(listTitle);
 
-	// ------------------------------------------------------------ Comparative Statement PDF
+        // Scrollable table container
+        Div scrollContainer = new Div();
+        scrollContainer.setWidth("100%");
+        scrollContainer.setStyle("overflow-x:auto;overflow-y:auto;");
+        scrollContainer.setVflex("1");
 
-	private void showPdf() {
-		RfqRow r = selected();
-		if (r == null)
-			return;
-		try {
-			Comparison c = service.load(r.id);
-			byte[] pdf = new ComparativeStatementReport().toPdf(c);
-			AMedia media = new AMedia("CS_" + r.docNo + ".pdf", "pdf", "application/pdf", pdf);
+        approvalList = new Listbox();
+        approvalList.setWidth("100%");
+        approvalList.setVflex("1");
+        approvalList.setEmptyMessage("No pending approvals assigned to you.");
 
-			final Window win = new Window("Comparative Statement - " + r.docNo, "normal", true);
-			win.setWidth("95%");
-			win.setHeight("90%");
-			win.setStyle("padding:0;");
-			win.setPosition("center");
-			Iframe frame = new Iframe();
-			frame.setContent(media);
-			frame.setWidth("100%");
-			frame.setHeight("calc(100% - 40px)");
-			win.appendChild(frame);
-			Button close = new Button("Close");
-			close.addEventListener(Events.ON_CLICK, e -> win.detach());
-			win.appendChild(close);
-			win.setPage(getPage());
-			win.doModal();
-		} catch (Exception ex) {
-			fail(ex);
-		}
-	}
+        Listhead head = new Listhead();
+        head.setAttribute("sizable", Boolean.TRUE);
+//        head.setSizable(true);
 
-	// ------------------------------------------------------------ Recommend Winner popup
+        addHeader(head, "Document Type", "170px");
+        addHeader(head, "PO Number", "130px");
+        addHeader(head, "Created", "160px");
+        addHeader(head, "Created By", "150px");
+//        addHeader(head, "Updated By", "150px");
+        addHeader(head, "Checked By", "150px");
+        addHeader(head, "Status", "110px");
+//        addHeader(head, "Active", "80px");
+        addHeader(head, "Actions", "260px");
 
-	private void openRecommend() {
-		final RfqRow r = selected();
-		if (r == null)
-			return;
-		try {
-			final Comparison c = service.load(r.id);
-			if (c.suppliers.isEmpty()) {
-				Messagebox.show("This RFQ has no supplier response.", "Recommend Winner", Messagebox.OK,
-						Messagebox.EXCLAMATION);
-				return;
-			}
-			final Window win = new Window("Recommend Winner - " + r.docNo, "normal", true);
-			win.setWidth("95%");
-			win.setHeight("85%");
-			win.setPosition("center");
+        approvalList.appendChild(head);
+        scrollContainer.appendChild(approvalList);
+        root.appendChild(scrollContainer);
 
-			Tabbox tb = new Tabbox();
-			tb.setHeight("calc(100% - 10px)");
-			Tabs tabs = new Tabs();
-			tabs.appendChild(new Tab("Recommend Winner"));
-			tabs.appendChild(new Tab("Comparative Statement Details"));
-			tb.appendChild(tabs);
-			Tabpanels panels = new Tabpanels();
+        appendChild(root);
 
-			// ---- tab 1: recommend a winner for each product
-			Tabpanel p1 = new Tabpanel();
-			final Map<Integer, Radiogroup> groups = new LinkedHashMap<Integer, Radiogroup>();
-			final Map<Integer, Textbox> justifications = new LinkedHashMap<Integer, Textbox>();
+        loadPendingApprovals();
+    }
 
-			List<RfQApprovalService.RankedQuote> ranked = RfQApprovalService.rankQuotes(r.id);
-			final Map<Integer, List<RfQApprovalService.RankedQuote>> byLine =
-					new LinkedHashMap<Integer, List<RfQApprovalService.RankedQuote>>();
-			for (RfQApprovalService.RankedQuote q : ranked) {
-				Integer key = Integer.valueOf(q.rfqLineId);
-				List<RfQApprovalService.RankedQuote> l = byLine.get(key);
-				if (l == null) {
-					l = new java.util.ArrayList<RfQApprovalService.RankedQuote>();
-					byLine.put(key, l);
-				}
-				l.add(q);
-			}
-			final Map<Integer, Integer> existing = RfQApprovalService.lineWinners(r.id);
+    private void addHeader(Listhead head, String title, String width) {
+        Listheader header = new Listheader(title);
+        header.setWidth(width);
+        
+        head.appendChild(header);
+    }
 
-			Vlayout prodBox = new Vlayout();
-			prodBox.setWidth("100%");
-			prodBox.setHeight("380px");
-			prodBox.setStyle("overflow:auto;");
-			int productNo = 0;
-			for (Item it : c.items) {
-				productNo++;
-				Vlayout card = new Vlayout();
-				card.setWidth("100%");
-				card.setStyle("border:1px solid #dbe3ec;border-radius:6px;padding:6px 10px;margin-bottom:8px;");
-				Label title = new Label(productNo + ". " + it.name + "   (Qty "
-						+ it.qty.stripTrailingZeros().toPlainString()
-						+ (it.uom.length() == 0 ? "" : " " + it.uom) + ")");
-				title.setStyle("font-weight:700;color:#1e4d7b;display:block;");
-				card.appendChild(title);
+    private String statusText(String code) {
+        if ("P".equals(code)) return "Pending";
+        if ("A".equals(code)) return "Approved";
+        if ("R".equals(code)) return "Rejected";
+        return code == null ? "" : code;
+    }
 
-				Radiogroup rg = new Radiogroup();
-				groups.put(Integer.valueOf(it.rfqLineId), rg);
-				List<RfQApprovalService.RankedQuote> quotes = byLine.get(Integer.valueOf(it.rfqLineId));
-				if (quotes == null || quotes.isEmpty()) {
-					card.appendChild(new Label("No vendor quoted this product."));
-				} else {
-					Integer prev = existing.get(Integer.valueOf(it.rfqLineId));
-					for (RfQApprovalService.RankedQuote q : quotes) {
-						Radio rb = new Radio(q.vendorName + "   -   " + MONEY.format(q.price)
-								+ "   (rank " + q.rank + (q.rank == 1 ? ", lowest" : "") + ")");
-						rb.setValue(Integer.valueOf(q.responseId));
-						rb.setAttribute("rank", Integer.valueOf(q.rank));
-						rb.setStyle("display:block;margin:3px 0;");
-						rg.appendChild(rb);
-						if (prev != null && prev.intValue() == q.responseId)
-							rg.setSelectedItem(rb);
-					}
-				}
-				card.appendChild(rg);
+    // =====================================================
+    // Load pending rows assigned to the logged-in user
+    // =====================================================
+    private void loadPendingApprovals() {
 
-				Label jl = new Label(
-						"Justification (required when the chosen vendor is not the lowest price)");
-				jl.setStyle("font-size:11px;color:#64748b;display:block;margin-top:4px;");
-				card.appendChild(jl);
-				Textbox just = new Textbox();
-				just.setMultiline(true);
-				just.setRows(2);
-				just.setWidth("100%");
-				justifications.put(Integer.valueOf(it.rfqLineId), just);
-				card.appendChild(just);
-				prodBox.appendChild(card);
-			}
-			p1.appendChild(prodBox);
+        approvalList.getItems().clear();
 
-			p1.appendChild(new Label("Overall remarks"));
-			final Textbox remarks = new Textbox();
-			remarks.setMultiline(true);
-			remarks.setRows(2);
-			remarks.setWidth("100%");
-			p1.appendChild(remarks);
+        String sql =
+        	    "SELECT h.ut_approvalhistory_uu, " +
+        	    "       COALESCE(dt.name, CAST(h.c_doctype_id AS varchar)) AS doctype_name, " +
+        	    "       h.documentno, h.created, " +
+        	    "       COALESCE(cu.name, CAST(h.createdby AS varchar)) AS created_by, " +
+        	    "       COALESCE(ck.name, h.checked) AS checked_by, " +
+        	    "       h.status " +
+        	    "FROM adempiere.ut_approvalhistory h " +
+        	    "LEFT JOIN adempiere.c_doctype dt ON dt.c_doctype_id = h.c_doctype_id " +
+        	    "LEFT JOIN adempiere.ad_user cu ON cu.ad_user_id = h.createdby " +
+        	    "LEFT JOIN adempiere.ad_user ck ON CAST(ck.ad_user_id AS varchar) = h.checked " +
+        	    "WHERE h.ad_client_id = ? " +
+        	    "  AND h.checked = ? " +
+        	    "  AND h.status = 'P' " +
+        	    "  AND h.isactive = 'Y' " +
+        	    "ORDER BY h.created ASC";
 
-			Button save = new Button("Recommend Selected");
-			save.addEventListener(Events.ON_CLICK, e -> {
-				Map<Integer, Integer> winners = new LinkedHashMap<Integer, Integer>();
-				Map<Integer, String> justs = new LinkedHashMap<Integer, String>();
-				for (Map.Entry<Integer, Radiogroup> entry : groups.entrySet()) {
-					Radio sel = entry.getValue().getSelectedItem();
-					if (sel == null)
-						continue;
-					winners.put(entry.getKey(), (Integer) sel.getValue());
-					Object rank = sel.getAttribute("rank");
-					if (rank instanceof Integer && ((Integer) rank).intValue() > 1) {
-						Textbox jb = justifications.get(entry.getKey());
-						justs.put(entry.getKey(), jb == null ? "" : jb.getValue());
-					}
-				}
-				if (winners.isEmpty()) {
-					Messagebox.show("Select a vendor for at least one product.", "Recommend Winner",
-							Messagebox.OK, Messagebox.EXCLAMATION);
-					return;
-				}
-				try {
-					service.recommendLines(r.id, winners, justs, remarks.getValue());
-					win.detach();
-					reload();
-					Messagebox.show("Recommendation saved.", "Recommend Winner", Messagebox.OK,
-							Messagebox.INFORMATION);
-				} catch (Exception ex) {
-					fail(ex);
-				}
-			});
-			p1.appendChild(save);
-			panels.appendChild(p1);
+        SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+        int rowCount = 0;
 
-			// ---- tab 2: comparison grid + last PO history
-			Tabpanel p2 = new Tabpanel();
-			p2.appendChild(comparisonGrid(c));
-			panels.appendChild(p2);
+        try (PreparedStatement pstmt = DB.prepareStatement(sql, null)) {
 
-			tb.appendChild(panels);
-			win.appendChild(tb);
-			win.setPage(getPage());
-			win.doModal();
-		} catch (Exception ex) {
-			fail(ex);
-		}
-	}
+            pstmt.setInt(1, clientId);
+            pstmt.setString(2, String.valueOf(userId));
 
-	private Vlayout comparisonGrid(final Comparison c) {
-		Vlayout box = new Vlayout();
-		box.setWidth("100%");
-		final Listbox grid = new Listbox();
-		grid.setWidth("100%");
-		grid.setHeight("260px");
-		Listhead h = new Listhead();
-		for (String t : new String[] { "Sl", "PR No", "Item", "UoM", "Qty", "Last P." })
-			h.appendChild(new Listheader(t));
-		for (Supplier s : c.suppliers) {
-			h.appendChild(new Listheader(s.name + " - Unit"));
-			h.appendChild(new Listheader("Total"));
-		}
-		grid.appendChild(h);
-		int sl = 0;
-		for (Item it : c.items) {
-			Listitem li = new Listitem();
-			li.setValue(it);
-			li.appendChild(new Listcell(String.valueOf(++sl)));
-			li.appendChild(new Listcell(it.prNo));
-			li.appendChild(new Listcell(it.name));
-			li.appendChild(new Listcell(it.uom));
-			li.appendChild(new Listcell(it.qty.stripTrailingZeros().toPlainString()));
-			li.appendChild(new Listcell(it.lastPrice == null ? "" : MONEY.format(it.lastPrice)));
-			for (Supplier s : c.suppliers) {
-				Integer k = Integer.valueOf(s.responseId);
-				Listcell u = new Listcell(it.unit.get(k) == null ? "" : MONEY.format(it.unit.get(k)));
-				if (it.lowest.contains(k))
-					u.setStyle(GREEN);
-				li.appendChild(u);
-				li.appendChild(new Listcell(it.total.get(k) == null ? "" : MONEY.format(it.total.get(k))));
-			}
-			grid.appendChild(li);
-		}
-		String[] labels = { "Sub Total", "Discount", "Transportation", "Other Cost", "Grand Total", "VAT",
-				"Cost of Ownership" };
-		for (int r = 0; r < labels.length; r++) {
-			Listitem li = new Listitem();
-			for (int i = 0; i < 6; i++)
-				li.appendChild(new Listcell(i == 2 ? labels[r] : ""));
-			for (Supplier s : c.suppliers) {
-				BigDecimal v;
-				switch (r) {
-				case 0: v = s.subTotal; break;
-				case 1: v = s.discount; break;
-				case 2: v = s.transport; break;
-				case 3: v = s.other; break;
-				case 4: v = s.grand; break;
-				case 5: v = s.vat; break;
-				default: v = s.ownership;
-				}
-				li.appendChild(new Listcell(""));
-				li.appendChild(new Listcell(MONEY.format(v)));
-			}
-			li.setDisabled(true);
-			grid.appendChild(li);
-		}
-		box.appendChild(grid);
+            try (ResultSet rs = pstmt.executeQuery()) {
 
-		box.appendChild(new Label("Last PO History (select an item above)"));
-		final Listbox po = new Listbox();
-		po.setWidth("100%");
-		po.setHeight("140px");
-		Listhead ph = new Listhead();
-		for (String t : new String[] { "PO No", "Date", "Vendor", "Qty", "Price" })
-			ph.appendChild(new Listheader(t));
-		po.appendChild(ph);
-		box.appendChild(po);
-		grid.addEventListener(Events.ON_SELECT, e -> {
-			while (po.getItemCount() > 0)
-				po.removeItemAt(0);
-			Listitem sel = grid.getSelectedItem();
-			if (sel == null || !(sel.getValue() instanceof Item))
-				return;
-			for (String[] row : service.lastPoHistory(((Item) sel.getValue()).rfqLineId)) {
-				Listitem li = new Listitem();
-				for (String cell : row)
-					li.appendChild(new Listcell(cell));
-				po.appendChild(li);
-			}
-		});
-		return box;
-	}
+                while (rs.next()) {
 
-	// ------------------------------------------------------------ Approval History
+                    final String historyId  = rs.getString("ut_approvalhistory_uu");
+                    final String docType    = rs.getString("doctype_name");
+                    final String documentNo = rs.getString("documentno");
+                    Timestamp ts            = rs.getTimestamp("created");
+                    final String created    = ts == null ? "" : fmt.format(ts);
+                    final String createdBy  = rs.getString("created_by");
+//                    final String updatedBy  = rs.getString("updated_by");
+                    final String checkedBy  = rs.getString("checked_by");
+                    final String status     = statusText(rs.getString("status"));
+//                    final String active     = rs.getString("isactive");
 
-	private void showHistory() {
-		RfqRow r = selected();
-		if (r == null)
-			return;
-		final Window win = new Window("Approval History - " + r.docNo, "normal", true);
-		win.setWidth("800px");
-		win.setHeight("420px");
-		win.setPosition("center");
-		Listbox lb = new Listbox();
-		lb.setWidth("100%");
-		lb.setHeight("320px");
-		Listhead h = new Listhead();
-		for (String t : new String[] { "Date", "User", "Action", "To", "Comment" })
-			h.appendChild(new Listheader(t));
-		lb.appendChild(h);
-		for (HistoryLine l : service.history(r.id)) {
-			Listitem li = new Listitem();
-			li.appendChild(new Listcell(l.date == null ? "" : DATETIME.format(l.date)));
-			li.appendChild(new Listcell(l.user == null ? "" : l.user));
-			li.appendChild(new Listcell(l.action == null ? "" : l.action));
-			li.appendChild(new Listcell(l.toUser == null ? "" : l.toUser));
-			li.appendChild(new Listcell(l.comment == null ? "" : l.comment));
-			lb.appendChild(li);
-		}
-		win.appendChild(lb);
-		Button close = new Button("Close");
-		close.addEventListener(Events.ON_CLICK, e -> win.detach());
-		win.appendChild(close);
-		win.setPage(getPage());
-		win.doModal();
-	}
+                    Listitem row = new Listitem();
 
-	// ------------------------------------------------------------ Approve / Reject / Forward
+                    addCell(row, docType);
+                    addCell(row, documentNo);
+                    addCell(row, created);
+                    addCell(row, createdBy);
+//                    addCell(row, updatedBy);
+                    addCell(row, checkedBy);
+                    addCell(row, status);
+//                    addCell(row, active);
 
-	private void decide(String action) {
-		RfqRow r = selected();
-		if (r == null)
-			return;
-		try {
-			if (RfQApprovalService.A_APPROVE.equals(action))
-				service.approve(r.id, message.getValue());
-			else if (RfQApprovalService.A_REJECT.equals(action))
-				service.reject(r.id, message.getValue());
-			else {
-				Listitem to = forwardTo.getSelectedItem();
-				int uid = to == null || to.getValue() == null ? 0 : Integer.parseInt((String) to.getValue());
-				service.forward(r.id, uid, message.getValue());
-			}
-			message.setValue("");
-			forwardTo.setSelectedIndex(0);
-			reload();
-			Messagebox.show("Done: " + action, "RFQ Approval", Messagebox.OK, Messagebox.INFORMATION);
-		} catch (Exception ex) {
-			fail(ex);
-		}
-	}
+                    Listcell actions = new Listcell();
+                    Hlayout buttons = new Hlayout();
+                    buttons.setSpacing("5px");
 
-	private void fail(Exception ex) {
-		log.log(Level.SEVERE, ex.getMessage(), ex);
-		Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(), "RFQ Approval",
-				Messagebox.OK, Messagebox.ERROR);
-	}
+                    Button approveButton = new Button("Approve");
+                    approveButton.setStyle("background:#198754;color:white;");
+                    approveButton.addEventListener(Events.ON_CLICK,
+                        event -> updateHistoryStatus(historyId, documentNo, "A"));
+
+                    Button rejectButton = new Button("Reject");
+                    rejectButton.setStyle("background:#dc3545;color:white;");
+                    rejectButton.addEventListener(Events.ON_CLICK,
+                        event -> updateHistoryStatus(historyId, documentNo, "R"));
+
+                    Button viewButton = new Button("View");
+                    viewButton.addEventListener(Events.ON_CLICK,
+                        event -> showDetails(docType, documentNo, created,
+                            createdBy, checkedBy, status));
+
+                    buttons.appendChild(approveButton);
+                    buttons.appendChild(rejectButton);
+                    buttons.appendChild(viewButton);
+
+                    actions.appendChild(buttons);
+                    row.appendChild(actions);
+
+                    String rowStyle = (rowCount % 2 == 0) ? ROW_BLUE : ROW_WHITE;
+                    row.setStyle(rowStyle);
+                    for (Component cell : row.getChildren()) {
+                        ((Listcell) cell).setStyle(rowStyle);
+                    }
+
+                    approvalList.appendChild(row);
+                    rowCount++;
+                }
+            }
+
+            countLabel.setValue("Pending records: " + rowCount);
+
+        } catch (SQLException e) {
+
+            countLabel.setValue("Unable to load records");
+
+            Messagebox.show(
+                "Could not load approval records.\n" + e.getMessage(),
+                "Database Error",
+                Messagebox.OK,
+                Messagebox.ERROR);
+        }
+    }
+
+   
+	private void addCell(Listitem row, String value) {
+        row.appendChild(new Listcell(value == null ? "" : value));
+    }
+
+    // =====================================================
+    // Show the selected history record
+    // =====================================================
+    private void showDetails(
+        String docType, String documentNo, String created,
+        String createdBy, String checkedBy,
+        String status
+    ) {
+
+        String details =
+            "Document Type: " + docType
+            + "\nPO Number: " + documentNo
+            + "\nCreated: " + created
+            + "\nCreated By: " + createdBy
+//            + "\nUpdated By: " + updatedBy
+            + "\nChecked By: " + checkedBy
+            + "\nStatus: " + status;
+//            + "\nActive: " + active;
+
+        Messagebox.show(
+            details,
+            "Approval Record Details",
+            Messagebox.OK,
+            Messagebox.INFORMATION);
+    }
+
+    // =====================================================
+    // Update the selected pending history record
+    // =====================================================
+    private void updateHistoryStatus(
+        String historyId,
+        String documentNo,
+        String newStatus
+    ) {
+
+        String action = "A".equals(newStatus) ? "Approve" : "Reject";
+
+        Messagebox.show(
+            "Do you want to " + action
+            + " document " + documentNo + "?",
+            "Confirm " + action,
+            Messagebox.YES | Messagebox.NO,
+            Messagebox.QUESTION,
+            event -> {
+                if (Messagebox.ON_YES.equals(event.getName())) {
+                    processApproval(historyId, documentNo, newStatus);
+                }
+            });
+    }
+
+    // Runs only after the user clicked Yes
+    private void processApproval(
+        String historyId,
+        String documentNo,
+        String newStatus
+    ) {
+
+        log.warning("POApproval: processApproval called, history="
+            + historyId + ", action=" + newStatus + ", user=" + userId);
+
+        String result = null;
+        String trxName = Trx.createTrxName("POApproval");
+        Trx trx = Trx.get(trxName, true);
+
+        try {
+            String sql = "SELECT adempiere.ut_process_approval(?, ?, ?, ?)";
+
+            try (PreparedStatement pstmt = DB.prepareStatement(sql, trxName)) {
+                pstmt.setString(1, historyId);
+                pstmt.setInt(2, userId);
+                pstmt.setString(3, newStatus);
+                pstmt.setInt(4, clientId);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        result = rs.getString(1);
+                    }
+                }
+            }
+
+            // Last level approved: complete the Purchase Order
+            // in the same transaction.
+            if (result != null && result.startsWith("FINAL:")) {
+                int orderId = Integer.parseInt(result.substring(6));
+                MOrder order = new MOrder(Env.getCtx(), orderId, trxName);
+                order.setDocAction(DocAction.ACTION_Complete);
+                if (!order.processIt(DocAction.ACTION_Complete)) {
+                    throw new AdempiereException(
+                        "Could not complete PO: " + order.getProcessMsg());
+                }
+                order.saveEx();
+            }
+
+            // Last level approved: complete the Purchase Requisition
+            if (result != null && result.startsWith("FINALREQ:")) {
+                int reqId = Integer.parseInt(result.substring(9));
+                MRequisition req = new MRequisition(Env.getCtx(), reqId, trxName);
+                req.setIsApproved(true); // RequisitionApprovalHandler lets approved PRs through
+                req.saveEx();
+                req.setDocAction(DocAction.ACTION_Complete);
+                if (!req.processIt(DocAction.ACTION_Complete)) {
+                    throw new AdempiereException(
+                        "Could not complete PR: " + req.getProcessMsg());
+                }
+                req.saveEx();
+            }
+
+            trx.commit(true);
+            log.warning("POApproval: result=" + result);
+
+        } catch (Exception e) {
+            trx.rollback();
+            Messagebox.show(
+                "Could not process approval.\n" + e.getMessage(),
+                "Error",
+                Messagebox.OK,
+                Messagebox.ERROR);
+            loadPendingApprovals();
+            return;
+        } finally {
+            trx.close();
+        }
+
+        String message;
+        if (result == null || "NOT_FOUND".equals(result)) {
+            message = "No record was changed. It may already have been "
+                + "processed, or it may not be assigned to your user.";
+        } else if ("REJECTED".equals(result)) {
+            message = "Document " + documentNo + " has been rejected.";
+        } else if (result.startsWith("NEXT:")) {
+            message = "Approved. Sent to the next level approver.";
+        } else if (result.startsWith("FINALREQ:")) {
+            message = "Approved. Purchase Requisition " + documentNo
+                + " has been completed.";
+        } else {
+            message = "Approved. Purchase Order " + documentNo
+                + " has been completed.";
+        }
+
+        Messagebox.show(message, "Result",
+            Messagebox.OK, Messagebox.INFORMATION);
+
+        loadPendingApprovals();
+    }
 }
