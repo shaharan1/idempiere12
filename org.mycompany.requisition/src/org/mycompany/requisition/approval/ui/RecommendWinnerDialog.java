@@ -18,11 +18,14 @@ import org.compiere.util.Env;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService.Comparison;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService.Item;
+import org.mycompany.requisition.rfqapproval.ComparativeStatementReport;
+import org.zkoss.util.media.AMedia;
 import org.zkoss.zk.ui.Component;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zul.Button;
 import org.zkoss.zul.Checkbox;
 import org.zkoss.zul.Hlayout;
+import org.zkoss.zul.Iframe;
 import org.zkoss.zul.Label;
 import org.zkoss.zul.Listbox;
 import org.zkoss.zul.Listcell;
@@ -202,32 +205,19 @@ public class RecommendWinnerDialog {
 			Hlayout btns = new Hlayout();
 			Button save = new Button("Save Winners");
 			save.addEventListener(Events.ON_CLICK, e -> {
-				Map<Integer, Integer> winners = new LinkedHashMap<Integer, Integer>();
-				Map<Integer, String> justs = new LinkedHashMap<Integer, String>();
-				for (QuoteRow q : rows) {
-					if (!q.win.isChecked())
-						continue;
-					winners.put(Integer.valueOf(q.lineId), Integer.valueOf(q.respId));
-					if (q.rank > 1)
-						justs.put(Integer.valueOf(q.lineId), q.comment.getValue());
-				}
-				if (winners.isEmpty()) {
-					Messagebox.show("Tick a winner for at least one product.", "Recommend Winner", Messagebox.OK,
-							Messagebox.EXCLAMATION);
-					return;
-				}
-				try {
-					service.recommendLines(rfqId, winners, justs, remarks.getValue());
-					win.detach();
+				if (saveWinners(service, rfqId, rows, remarks.getValue()))
 					Messagebox.show("Winners saved. You can now approve.", "Recommend Winner", Messagebox.OK,
 							Messagebox.INFORMATION);
-				} catch (Exception ex) {
-					log.severe(ex.getMessage());
-					Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(), "Recommend Winner",
-							Messagebox.OK, Messagebox.ERROR);
-				}
 			});
 			btns.appendChild(save);
+
+			// CS PDF / Print: saves the ticked winners first, so the printout matches the screen
+			Button print = new Button("CS PDF / Print");
+			print.addEventListener(Events.ON_CLICK, e -> {
+				if (saveWinners(service, rfqId, rows, remarks.getValue()))
+					showPdf(owner, service, rfqId, docNo);
+			});
+			btns.appendChild(print);
 			Button close = new Button("Close");
 			close.addEventListener(Events.ON_CLICK, e -> win.detach());
 			btns.appendChild(close);
@@ -239,6 +229,61 @@ public class RecommendWinnerDialog {
 		} catch (Exception ex) {
 			log.severe(ex.getMessage());
 			Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(), "Recommend Winner",
+					Messagebox.OK, Messagebox.ERROR);
+		}
+	}
+
+	/** Saves the ticked winners. False (after showing the reason) when it cannot be saved. */
+	private static boolean saveWinners(RfQApprovalService service, int rfqId, List<QuoteRow> rows,
+			String remarks) {
+		Map<Integer, Integer> winners = new LinkedHashMap<Integer, Integer>();
+		Map<Integer, String> justs = new LinkedHashMap<Integer, String>();
+		for (QuoteRow q : rows) {
+			if (!q.win.isChecked())
+				continue;
+			winners.put(Integer.valueOf(q.lineId), Integer.valueOf(q.respId));
+			if (q.rank > 1)
+				justs.put(Integer.valueOf(q.lineId), q.comment.getValue());
+		}
+		if (winners.isEmpty()) {
+			Messagebox.show("Tick a winner for at least one product.", "Recommend Winner", Messagebox.OK,
+					Messagebox.EXCLAMATION);
+			return false;
+		}
+		try {
+			service.recommendLines(rfqId, winners, justs, remarks);
+			return true;
+		} catch (Exception ex) {
+			log.severe(ex.getMessage());
+			Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(), "Recommend Winner",
+					Messagebox.OK, Messagebox.ERROR);
+			return false;
+		}
+	}
+
+	/** Comparative Statement PDF, built from the data as it is saved now. Print from the viewer toolbar. */
+	private static void showPdf(Component owner, RfQApprovalService service, int rfqId, String docNo) {
+		try {
+			Comparison c = service.load(rfqId);
+			byte[] pdf = new ComparativeStatementReport().toPdf(c);
+			AMedia media = new AMedia("CS_" + docNo + ".pdf", "pdf", "application/pdf", pdf);
+			final Window w = new Window("Comparative Statement - " + docNo, "normal", true);
+			w.setWidth("95%");
+			w.setHeight("92%");
+			w.setPosition("center");
+			Iframe frame = new Iframe();
+			frame.setContent(media);
+			frame.setWidth("100%");
+			frame.setHeight("calc(100% - 40px)");
+			w.appendChild(frame);
+			Button close = new Button("Close");
+			close.addEventListener(Events.ON_CLICK, e -> w.detach());
+			w.appendChild(close);
+			w.setPage(owner.getPage());
+			w.doModal();
+		} catch (Exception ex) {
+			log.severe(ex.getMessage());
+			Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(), "Comparative Statement",
 					Messagebox.OK, Messagebox.ERROR);
 		}
 	}
