@@ -145,6 +145,7 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		try {
 			reqLineHasRfqCol = columnExists("M_RequisitionLine", "XX_RfQ_ID");
 			initComponents();
@@ -427,6 +428,7 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 
 		popupWin.appendChild(box);
 		appendChild(popupWin);
+		org.mycompany.requisition.ui.XxTheme.apply(popupWin);
 		popupWin.doModal();
 	}
 

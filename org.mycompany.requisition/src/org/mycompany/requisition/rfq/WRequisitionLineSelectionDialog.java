@@ -137,6 +137,7 @@ public class WRequisitionLineSelectionDialog extends Window implements EventList
 		org.zkoss.zk.ui.Desktop desktop = org.zkoss.zk.ui.Executions.getCurrent().getDesktop();
 		if (desktop != null && desktop.getFirstPage() != null) {
 			dialog.setPage(desktop.getFirstPage());
+			org.mycompany.requisition.ui.XxTheme.apply(dialog);
 			dialog.doOverlapped();
 		} else {
 			System.out.println("No desktop/page available");

@@ -67,6 +67,7 @@ public class WRFQApprovalForm extends ADForm {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		setTitle("RFQ Approval");
 		setWidth("100%");
 		setHeight("100%");
@@ -204,6 +205,7 @@ public class WRFQApprovalForm extends ADForm {
 			close.addEventListener(Events.ON_CLICK, e -> win.detach());
 			win.appendChild(close);
 			win.setPage(getPage());
+			org.mycompany.requisition.ui.XxTheme.apply(win);
 			win.doModal();
 		} catch (Exception ex) {
 			fail(ex);
@@ -353,6 +355,7 @@ public class WRFQApprovalForm extends ADForm {
 			tb.appendChild(panels);
 			win.appendChild(tb);
 			win.setPage(getPage());
+			org.mycompany.requisition.ui.XxTheme.apply(win);
 			win.doModal();
 		} catch (Exception ex) {
 			fail(ex);
@@ -474,6 +477,7 @@ public class WRFQApprovalForm extends ADForm {
 		close.addEventListener(Events.ON_CLICK, e -> win.detach());
 		win.appendChild(close);
 		win.setPage(getPage());
+		org.mycompany.requisition.ui.XxTheme.apply(win);
 		win.doModal();
 	}
 

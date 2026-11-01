@@ -184,6 +184,7 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 	/** Modal-moto popup dekhao */
 	public void show() {
 		setAttribute(Window.MODE_KEY, Window.MODE_HIGHLIGHTED);
+		org.mycompany.requisition.ui.XxTheme.apply(this);
 		AEnv.showWindow(this);
 	}
 
