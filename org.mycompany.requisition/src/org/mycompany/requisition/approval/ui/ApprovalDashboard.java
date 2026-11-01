@@ -92,6 +92,7 @@ public class ApprovalDashboard extends ADForm implements EventListener<Event> {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		Borderlayout layout = new Borderlayout();
 		layout.setWidth("100%");
 		layout.setHeight("100%");

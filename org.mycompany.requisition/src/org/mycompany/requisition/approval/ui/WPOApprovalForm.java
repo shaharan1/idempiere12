@@ -49,6 +49,7 @@ public class WPOApprovalForm extends ADForm {
 
     @Override
     protected void initForm() {
+    	org.mycompany.requisition.ui.XxTheme.wrap(this);
 
         userId = Env.getAD_User_ID(Env.getCtx());
         clientId = Env.getAD_Client_ID(Env.getCtx());

@@ -4,7 +4,9 @@ import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.text.DecimalFormat;
+import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -12,18 +14,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.compiere.model.MTable;
+import org.compiere.model.PO;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
+import org.compiere.util.Trx;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService.Comparison;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService.Item;
 import org.mycompany.requisition.rfqapproval.ComparativeStatementReport;
 import org.zkoss.util.media.AMedia;
 import org.zkoss.zk.ui.Component;
+import org.zkoss.zk.ui.event.Event;
+import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zul.Button;
 import org.zkoss.zul.Checkbox;
+import org.zkoss.zul.Decimalbox;
 import org.zkoss.zul.Hlayout;
 import org.zkoss.zul.Iframe;
 import org.zkoss.zul.Label;
@@ -45,19 +53,46 @@ import org.zkoss.zul.Window;
 public class RecommendWinnerDialog {
 
 	private static final CLogger log = CLogger.getCLogger(RecommendWinnerDialog.class);
-	private static final String GREEN = "background:#90EE90;";
+	private static final String GREEN = "background:#90EE90;font-weight:600;";
+	private static final String EDIT_STYLE = "text-align:right;background:#fffde7;";
+	private static final BigDecimal HUNDRED = new BigDecimal("100");
 	private static final DecimalFormat MONEY = new DecimalFormat("#,##0.00");
 
 	private static final String[] COLS = { "Product", "Supplier", "Manufacturer", "Brand", "Origin", "RFQ Qty",
 			"Quoted Qty", "Quoted Price", "Negotiate Price", "VAT%", "Total Value", "Rank", "Winner", "Comment" };
-	private static final String[] WIDTH = { "170px", "150px", "100px", "80px", "80px", "70px", "80px", "95px",
-			"100px", "60px", "105px", "50px", "60px", "190px" };
+	private static final String[] WIDTH = { "170px", "150px", "100px", "80px", "80px", "70px", "80px", "110px",
+			"110px", "85px", "105px", "50px", "60px", "190px" };
 
 	private static class QuoteRow {
-		int lineId, respId, rank;
+		int lineId, respId, rank, lineQtyId;
 		boolean saved;
+		String product, supplier;
+		BigDecimal qty = BigDecimal.ZERO;
+		BigDecimal origPrice, origNeg;
+		int origTaxId;
+		BigDecimal vatAmt = BigDecimal.ZERO, lineTotal = BigDecimal.ZERO;
+		Listitem item;
+		Listcell totalCell, rankCell;
+		Decimalbox price, neg;
+		Listbox vat;
 		Checkbox win;
 		Textbox comment;
+
+		/** Price that counts for ranking and totals: Negotiate Price when given, else Quoted Price. */
+		BigDecimal unit() {
+			BigDecimal n = nzv(neg.getValue());
+			return n.signum() > 0 ? n : nzv(price.getValue());
+		}
+
+		int taxId() {
+			Listitem sel = vat.getSelectedItem();
+			return sel == null || sel.getValue() == null ? 0 : ((Integer) sel.getValue()).intValue();
+		}
+
+		boolean changed() {
+			return nzv(price.getValue()).compareTo(origPrice) != 0 || nzv(neg.getValue()).compareTo(origNeg) != 0
+					|| taxId() != origTaxId;
+		}
 	}
 
 	/** C_RfQ_ID of the document number shown in the approval inbox, 0 when it is not an RFQ. */
@@ -94,10 +129,6 @@ public class RecommendWinnerDialog {
 			for (Item it : c.items)
 				items.put(Integer.valueOf(it.rfqLineId), it);
 
-			Map<String, Integer> rankOf = new HashMap<String, Integer>();
-			for (RfQApprovalService.RankedQuote q : RfQApprovalService.rankQuotes(rfqId))
-				rankOf.put(q.rfqLineId + ":" + q.responseId, Integer.valueOf(q.rank));
-
 			final Window win = new Window("RFQ Response; RFQ: " + docNo, "normal", true);
 			win.setWidth("98%");
 			win.setHeight("90%");
@@ -117,9 +148,28 @@ public class RecommendWinnerDialog {
 			grid.appendChild(gh);
 
 			final List<QuoteRow> rows = new ArrayList<QuoteRow>();
+			// products whose winner the user decided (saved earlier or ticked by hand): never auto-moved
+			final Set<Integer> locked = new HashSet<Integer>();
+
+			// VAT list: C_Tax_ID -> rate, and the entries shown in each row's drop-down
+			final Map<Integer, BigDecimal> taxRates = new LinkedHashMap<Integer, BigDecimal>();
+			final Map<Integer, String> taxNames = new HashMap<Integer, String>();
+			try (PreparedStatement tp = DB.prepareStatement(
+					"SELECT C_Tax_ID, Name, Rate FROM C_Tax WHERE IsActive='Y' AND AD_Client_ID IN (0,?) ORDER BY Name",
+					null)) {
+				tp.setInt(1, Env.getAD_Client_ID(Env.getCtx()));
+				try (ResultSet tr = tp.executeQuery()) {
+					while (tr.next()) {
+						Integer id = Integer.valueOf(tr.getInt(1));
+						taxRates.put(id, nzv(tr.getBigDecimal(3)));
+						taxNames.put(id, tr.getString(2));
+					}
+				}
+			}
+
 			String sql = "SELECT sl.C_RfQLine_ID, sl.C_RfQResponse_ID, bp.Name, q.XX_Manufacturer, q.XX_Brand, "
 					+ "q.XX_Origin, q.XX_QuotationQty, q.Price, q.XX_NegotiatePrice, t.Rate, q.XX_LineTotal, "
-					+ "sl.IsSelectedWinner, sl.XX_WinnerComment "
+					+ "sl.IsSelectedWinner, sl.XX_WinnerComment, q.C_RfQResponseLineQty_ID, q.XX_Tax_ID "
 					+ "FROM C_RfQResponseLine sl "
 					+ "JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID "
 					+ "JOIN C_RfQResponse rs ON rs.C_RfQResponse_ID=sl.C_RfQResponse_ID "
@@ -135,63 +185,106 @@ public class RecommendWinnerDialog {
 						final QuoteRow qr = new QuoteRow();
 						qr.lineId = rs.getInt(1);
 						qr.respId = rs.getInt(2);
-						Integer rk = rankOf.get(qr.lineId + ":" + qr.respId);
-						qr.rank = rk == null ? 0 : rk.intValue();
+						qr.supplier = rs.getString(3);
+						qr.lineQtyId = rs.getInt(14);
 						qr.saved = "Y".equals(rs.getString(12));
+						if (qr.saved)
+							locked.add(Integer.valueOf(qr.lineId));
 						Item it = items.get(Integer.valueOf(qr.lineId));
+						qr.product = it == null ? "" : it.name;
+						BigDecimal quotQty = rs.getBigDecimal(7);
+						qr.qty = quotQty != null && quotQty.signum() > 0 ? quotQty : (it == null ? BigDecimal.ZERO : it.qty);
+
+						int taxId = rs.getInt(15);
+						BigDecimal rate = rs.getBigDecimal(10);
+						if (taxId > 0 && !taxRates.containsKey(Integer.valueOf(taxId))) { // inactive / other client
+							taxRates.put(Integer.valueOf(taxId), nzv(rate));
+							taxNames.put(Integer.valueOf(taxId), "");
+						}
+
+						// ---- editable fields: Quoted Price, Negotiate Price, VAT%
+						qr.price = moneyBox(rs.getBigDecimal(8));
+						qr.neg = moneyBox(rs.getBigDecimal(9));
+						qr.vat = new Listbox();
+						qr.vat.setMold("select");
+						qr.vat.setWidth("100%");
+						qr.vat.appendChild(new Listitem("", null));
+						for (Map.Entry<Integer, BigDecimal> te : taxRates.entrySet()) {
+							Listitem ti = new Listitem(te.getValue().stripTrailingZeros().toPlainString(), te.getKey());
+							ti.setTooltiptext(taxNames.get(te.getKey()));
+							qr.vat.appendChild(ti);
+							if (te.getKey().intValue() == taxId)
+								qr.vat.setSelectedItem(ti);
+						}
+						if (qr.vat.getSelectedItem() == null)
+							qr.vat.setSelectedIndex(0);
+						qr.origPrice = nzv(qr.price.getValue());
+						qr.origNeg = nzv(qr.neg.getValue());
+						qr.origTaxId = taxId;
 
 						Listitem li = new Listitem();
-						if (qr.rank == 1)
-							li.setStyle(GREEN);
-						li.appendChild(new Listcell(it == null ? "" : it.name));
+						qr.item = li;
+						li.appendChild(new Listcell(qr.product));
 						li.appendChild(new Listcell(rs.getString(3)));
 						li.appendChild(new Listcell(nz(rs.getString(4))));
 						li.appendChild(new Listcell(nz(rs.getString(5))));
 						li.appendChild(new Listcell(nz(rs.getString(6))));
 						li.appendChild(new Listcell(it == null ? "" : it.qty.stripTrailingZeros().toPlainString()));
 						li.appendChild(new Listcell(num(rs.getBigDecimal(7))));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(8))));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(9))));
-						BigDecimal rate = rs.getBigDecimal(10);
-						li.appendChild(new Listcell(rate == null ? "" : rate.stripTrailingZeros().toPlainString()));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(11))));
-						li.appendChild(new Listcell(qr.rank == 0 ? "" : String.valueOf(qr.rank)));
+						li.appendChild(cellOf(qr.price));
+						li.appendChild(cellOf(qr.neg));
+						li.appendChild(cellOf(qr.vat));
+
+						BigDecimal stored = rs.getBigDecimal(11);
+						compute(qr, taxRates);
+						if (stored != null)
+							qr.lineTotal = stored; // show what is saved until the user edits something
+						qr.totalCell = new Listcell(num(qr.lineTotal));
+						li.appendChild(qr.totalCell);
+						qr.rankCell = new Listcell();
+						li.appendChild(qr.rankCell);
 
 						qr.win = new Checkbox();
 						qr.win.setChecked(qr.saved);
-						Listcell wc = new Listcell();
-						wc.appendChild(qr.win);
-						li.appendChild(wc);
+						li.appendChild(cellOf(qr.win));
 
 						qr.comment = new Textbox(nz(rs.getString(13)));
 						qr.comment.setWidth("95%");
-						Listcell cc = new Listcell();
-						cc.appendChild(qr.comment);
-						li.appendChild(cc);
+						li.appendChild(cellOf(qr.comment));
 
-						// one winner per product
+						// one winner per product; a hand-made choice is never moved automatically
 						qr.win.addEventListener(Events.ON_CHECK, e -> {
+							locked.add(Integer.valueOf(qr.lineId));
 							if (qr.win.isChecked())
 								for (QuoteRow o : rows)
 									if (o != qr && o.lineId == qr.lineId)
 										o.win.setChecked(false);
 						});
+
+						// editing a price / VAT: new total, new ranks, rank-1 row moves its colour
+						EventListener<Event> onEdit = e -> {
+							compute(qr, taxRates);
+							qr.totalCell.setLabel(num(qr.lineTotal));
+							rerank(rows, qr.lineId);
+							autoTick(rows, locked, qr.lineId);
+						};
+						qr.price.addEventListener(Events.ON_CHANGE, onEdit);
+						qr.neg.addEventListener(Events.ON_CHANGE, onEdit);
+						qr.vat.addEventListener(Events.ON_SELECT, onEdit);
+
 						rows.add(qr);
 						grid.appendChild(li);
 					}
 				}
 			}
 
-			// Products without a saved winner: tick the lowest price (rank 1) automatically.
-			Set<Integer> hasSaved = new HashSet<Integer>();
+			// initial rank (same rule as the service) and colour; untouched products get rank 1 ticked
+			Set<Integer> lineIds = new HashSet<Integer>();
 			for (QuoteRow q : rows)
-				if (q.saved)
-					hasSaved.add(Integer.valueOf(q.lineId));
-			Set<Integer> autoDone = new HashSet<Integer>();
-			for (QuoteRow q : rows) {
-				Integer k = Integer.valueOf(q.lineId);
-				if (!hasSaved.contains(k) && q.rank == 1 && autoDone.add(k))
-					q.win.setChecked(true);
+				lineIds.add(Integer.valueOf(q.lineId));
+			for (Integer lid : lineIds) {
+				rerank(rows, lid.intValue());
+				autoTick(rows, locked, lid.intValue());
 			}
 			box.appendChild(grid);
 
@@ -225,6 +318,7 @@ public class RecommendWinnerDialog {
 
 			win.appendChild(box);
 			win.setPage(owner.getPage());
+			org.mycompany.requisition.ui.XxTheme.apply(win);
 			win.doModal();
 		} catch (Exception ex) {
 			log.severe(ex.getMessage());
@@ -251,6 +345,8 @@ public class RecommendWinnerDialog {
 			return false;
 		}
 		try {
+			// edited prices / VAT must be in the database before the service ranks the quotes
+			saveEdits(rows);
 			service.recommendLines(rfqId, winners, justs, remarks);
 			return true;
 		} catch (Exception ex) {
@@ -259,6 +355,124 @@ public class RecommendWinnerDialog {
 					Messagebox.OK, Messagebox.ERROR);
 			return false;
 		}
+	}
+
+	// ------------------------------------------------------------------ editing helpers
+
+	/** Total = Qty x unit price + VAT. Unit price is Negotiate Price when given, else Quoted Price. */
+	private static void compute(QuoteRow q, Map<Integer, BigDecimal> taxRates) {
+		BigDecimal base = q.qty.multiply(q.unit());
+		BigDecimal rate = taxRates.get(Integer.valueOf(q.taxId()));
+		q.vatAmt = base.multiply(rate == null ? BigDecimal.ZERO : rate).divide(HUNDRED, 2, RoundingMode.HALF_UP);
+		q.lineTotal = base.add(q.vatAmt).setScale(2, RoundingMode.HALF_UP);
+	}
+
+	/** Ranks one product's quotes by unit price, lowest first; equal prices share a rank. */
+	private static void rerank(List<QuoteRow> rows, int lineId) {
+		List<QuoteRow> mine = new ArrayList<QuoteRow>();
+		for (QuoteRow q : rows)
+			if (q.lineId == lineId)
+				mine.add(q);
+		Collections.sort(mine, (a, b) -> a.unit().compareTo(b.unit()));
+		int r = 0, pos = 0;
+		BigDecimal prev = null;
+		for (QuoteRow q : mine) {
+			if (q.unit().signum() <= 0) {
+				q.rank = 0;
+			} else {
+				pos++;
+				if (prev == null || q.unit().compareTo(prev) != 0) {
+					r = pos;
+					prev = q.unit();
+				}
+				q.rank = r;
+			}
+			q.rankCell.setLabel(q.rank == 0 ? "" : String.valueOf(q.rank));
+			paint(q);
+		}
+	}
+
+	/** Rank 1 row gets its own colour. Set on every cell, because the theme colours cells, not rows. */
+	private static void paint(QuoteRow q) {
+		String style = q.rank == 1 ? GREEN : null;
+		q.item.setStyle(style);
+		for (Component c : q.item.getChildren())
+			if (c instanceof Listcell)
+				((Listcell) c).setStyle(style);
+	}
+
+	/** Product without a decided winner: the tick follows rank 1. */
+	private static void autoTick(List<QuoteRow> rows, Set<Integer> locked, int lineId) {
+		if (locked.contains(Integer.valueOf(lineId)))
+			return;
+		boolean done = false;
+		for (QuoteRow q : rows) {
+			if (q.lineId != lineId)
+				continue;
+			boolean tick = !done && q.rank == 1;
+			if (tick)
+				done = true;
+			q.win.setChecked(tick);
+		}
+	}
+
+	/** Writes changed Quoted Price / Negotiate Price / VAT of the edited rows in one transaction. */
+	private static void saveEdits(List<QuoteRow> rows) throws Exception {
+		List<QuoteRow> dirty = new ArrayList<QuoteRow>();
+		for (QuoteRow q : rows) {
+			if (nzv(q.price.getValue()).signum() < 0 || nzv(q.neg.getValue()).signum() < 0)
+				throw new Exception("Prices must not be negative (" + q.product + " / " + q.supplier + ").");
+			if (q.unit().signum() <= 0)
+				throw new Exception("Enter a Quoted or Negotiate Price for " + q.product + " / " + q.supplier + ".");
+			if (q.changed())
+				dirty.add(q);
+		}
+		if (dirty.isEmpty())
+			return;
+		String trxName = Trx.createTrxName("RfQEdit");
+		Trx trx = Trx.get(trxName, true);
+		try {
+			MTable tbl = MTable.get(Env.getCtx(), "C_RfQResponseLineQty");
+			for (QuoteRow q : dirty) {
+				PO po = tbl.getPO(q.lineQtyId, trxName);
+				po.set_ValueOfColumn("Price", nzv(q.price.getValue()));
+				po.set_ValueOfColumn("XX_NegotiatePrice", nzv(q.neg.getValue()));
+				po.set_ValueOfColumn("XX_Tax_ID", q.taxId() > 0 ? Integer.valueOf(q.taxId()) : null);
+				po.set_ValueOfColumn("XX_VATAmt", q.vatAmt);
+				po.set_ValueOfColumn("XX_LineTotal", q.lineTotal);
+				po.saveEx();
+			}
+			trx.commit();
+		} catch (Exception ex) {
+			trx.rollback();
+			throw ex;
+		} finally {
+			trx.close();
+		}
+		for (QuoteRow q : dirty) { // saved: these are the new reference values
+			q.origPrice = nzv(q.price.getValue());
+			q.origNeg = nzv(q.neg.getValue());
+			q.origTaxId = q.taxId();
+		}
+	}
+
+	private static Decimalbox moneyBox(BigDecimal v) {
+		Decimalbox d = new Decimalbox(v);
+		d.setFormat("#,##0.00");
+		d.setConstraint("no negative");
+		d.setWidth("90%");
+		d.setStyle(EDIT_STYLE); // light yellow = editable
+		return d;
+	}
+
+	private static Listcell cellOf(Component c) {
+		Listcell lc = new Listcell();
+		lc.appendChild(c);
+		return lc;
+	}
+
+	private static BigDecimal nzv(BigDecimal v) {
+		return v == null ? BigDecimal.ZERO : v;
 	}
 
 	/** Comparative Statement PDF, built from the data as it is saved now. Print from the viewer toolbar. */
@@ -280,6 +494,7 @@ public class RecommendWinnerDialog {
 			close.addEventListener(Events.ON_CLICK, e -> w.detach());
 			w.appendChild(close);
 			w.setPage(owner.getPage());
+			org.mycompany.requisition.ui.XxTheme.apply(w);
 			w.doModal();
 		} catch (Exception ex) {
 			log.severe(ex.getMessage());
