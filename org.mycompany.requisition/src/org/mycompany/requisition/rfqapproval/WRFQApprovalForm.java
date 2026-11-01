@@ -91,7 +91,6 @@ public class WRFQApprovalForm extends ADForm {
 
 		// ---- RFQ list
 		rfqList = new Listbox();
-		rfqList.addEventListener(Events.ON_SELECT, e -> updateRecommendVisibility());
 		rfqList.setWidth("100%");
 		rfqList.setHeight("300px");
 		Listhead head = new Listhead();
@@ -102,10 +101,6 @@ public class WRFQApprovalForm extends ADForm {
 
 		// ---- document buttons
 		Hlayout docButtons = new Hlayout();
-		Button recommendBtn = button("Recommend", e -> openRecommend());
-		recommendBtn.setId("recommendBtn");
-		docButtons.appendChild(recommendBtn);
-		docButtons.appendChild(button("Recommend Winner", e -> openRecommend()));
 		docButtons.appendChild(button("Comparative Statement (PDF)", e -> showPdf()));
 		docButtons.appendChild(button("Approval History", e -> showHistory()));
 		root.appendChild(docButtons);
@@ -217,192 +212,151 @@ public class WRFQApprovalForm extends ADForm {
 
 	// ------------------------------------------------------------ Recommend Winner popup
 
-	/** One supplier quotation row of the Recommend Winner grid. */
-	private static class QuoteRow {
-		int lineId, respId, rank;
-		Checkbox win;
-		Textbox comment;
-	}
-
-	private static final String[] REC_COLS = { "Product", "Supplier", "Manufacturer", "Brand", "Origin", "RFQ Qty",
-			"Quoted Qty", "Quoted Price", "Negotiate Price", "VAT%", "Total Value", "Rank", "Winner", "Comment" };
-	private static final String[] REC_WIDTH = { "170px", "150px", "100px", "80px", "80px", "70px", "80px", "95px",
-			"100px", "60px", "105px", "50px", "60px", "190px" };
-
 	private void openRecommend() {
 		final RfqRow r = selected();
 		if (r == null)
 			return;
 		try {
-			// only the approver the CS is waiting on may choose winners
-			int pending = org.compiere.util.DB.getSQLValue(null,
-					"SELECT COUNT(*) FROM UT_ApprovalHistory WHERE DocumentNo=? AND Status='P' "
-							+ "AND IsActive='Y' AND Checked=? AND AD_Client_ID=?",
-					r.docNo, String.valueOf(org.compiere.util.Env.getAD_User_ID(org.compiere.util.Env.getCtx())),
-					org.compiere.util.Env.getAD_Client_ID(org.compiere.util.Env.getCtx()));
-			final boolean canEdit = pending > 0;
-
 			final Comparison c = service.load(r.id);
 			if (c.suppliers.isEmpty()) {
 				Messagebox.show("This RFQ has no supplier response.", "Recommend Winner", Messagebox.OK,
 						Messagebox.EXCLAMATION);
 				return;
 			}
-			Map<Integer, Item> items = new LinkedHashMap<Integer, Item>();
-			for (Item it : c.items)
-				items.put(Integer.valueOf(it.rfqLineId), it);
-
-			// rank per product/supplier, the same ranking recommendLines validates against
-			Map<String, Integer> rankOf = new java.util.HashMap<String, Integer>();
-			for (RfQApprovalService.RankedQuote q : RfQApprovalService.rankQuotes(r.id))
-				rankOf.put(q.rfqLineId + ":" + q.responseId, Integer.valueOf(q.rank));
-
-			final Window win = new Window("RFQ Response; RFQ: " + r.docNo, "normal", true);
-			win.setWidth("98%");
-			win.setHeight("90%");
+			final Window win = new Window("Recommend Winner - " + r.docNo, "normal", true);
+			win.setWidth("95%");
+			win.setHeight("85%");
 			win.setPosition("center");
-			Vlayout box = new Vlayout();
-			box.setWidth("100%");
 
-			if (!canEdit)
-				box.appendChild(new Label("View only: this document is not pending on your approval."));
+			Tabbox tb = new Tabbox();
+			tb.setHeight("calc(100% - 10px)");
+			Tabs tabs = new Tabs();
+			tabs.appendChild(new Tab("Recommend Winner"));
+			tabs.appendChild(new Tab("Comparative Statement Details"));
+			tb.appendChild(tabs);
+			Tabpanels panels = new Tabpanels();
 
-			Listbox grid = new Listbox();
-			grid.setWidth("100%");
-			grid.setHeight("430px");
-			Listhead gh = new Listhead();
-			for (int i = 0; i < REC_COLS.length; i++) {
-				Listheader lh = new Listheader(REC_COLS[i]);
-				lh.setWidth(REC_WIDTH[i]);
-				gh.appendChild(lh);
+			// ---- tab 1: recommend a winner for each product
+			Tabpanel p1 = new Tabpanel();
+			final Map<Integer, Radiogroup> groups = new LinkedHashMap<Integer, Radiogroup>();
+			final Map<Integer, Textbox> justifications = new LinkedHashMap<Integer, Textbox>();
+
+			List<RfQApprovalService.RankedQuote> ranked = RfQApprovalService.rankQuotes(r.id);
+			final Map<Integer, List<RfQApprovalService.RankedQuote>> byLine =
+					new LinkedHashMap<Integer, List<RfQApprovalService.RankedQuote>>();
+			for (RfQApprovalService.RankedQuote q : ranked) {
+				Integer key = Integer.valueOf(q.rfqLineId);
+				List<RfQApprovalService.RankedQuote> l = byLine.get(key);
+				if (l == null) {
+					l = new java.util.ArrayList<RfQApprovalService.RankedQuote>();
+					byLine.put(key, l);
+				}
+				l.add(q);
 			}
-			grid.appendChild(gh);
+			final Map<Integer, Integer> existing = RfQApprovalService.lineWinners(r.id);
 
-			final java.util.List<QuoteRow> rows = new java.util.ArrayList<QuoteRow>();
-			String sql = "SELECT sl.C_RfQLine_ID, sl.C_RfQResponse_ID, bp.Name, q.XX_Manufacturer, q.XX_Brand, "
-					+ "q.XX_Origin, q.XX_QuotationQty, q.Price, q.XX_NegotiatePrice, t.Rate, q.XX_LineTotal, "
-					+ "sl.IsSelectedWinner, sl.XX_WinnerComment "
-					+ "FROM C_RfQResponseLine sl "
-					+ "JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID "
-					+ "JOIN C_RfQResponse rs ON rs.C_RfQResponse_ID=sl.C_RfQResponse_ID "
-					+ "JOIN C_BPartner bp ON bp.C_BPartner_ID=rs.C_BPartner_ID "
-					+ "JOIN C_RfQResponseLineQty q ON q.C_RfQResponseLine_ID=sl.C_RfQResponseLine_ID "
-					+ "LEFT JOIN C_Tax t ON t.C_Tax_ID=q.XX_Tax_ID "
-					+ "WHERE l.C_RfQ_ID=? AND sl.IsActive='Y' AND q.IsActive='Y' AND COALESCE(q.Price,0)>0 "
-					+ "ORDER BY l.Line, l.C_RfQLine_ID, q.Price, bp.Name";
-			try (java.sql.PreparedStatement ps = org.compiere.util.DB.prepareStatement(sql, null)) {
-				ps.setInt(1, r.id);
-				try (java.sql.ResultSet rs = ps.executeQuery()) {
-					while (rs.next()) {
-						final QuoteRow qr = new QuoteRow();
-						qr.lineId = rs.getInt(1);
-						qr.respId = rs.getInt(2);
-						Integer rk = rankOf.get(qr.lineId + ":" + qr.respId);
-						qr.rank = rk == null ? 0 : rk.intValue();
-						Item it = items.get(Integer.valueOf(qr.lineId));
+			Vlayout prodBox = new Vlayout();
+			prodBox.setWidth("100%");
+			prodBox.setHeight("380px");
+			prodBox.setStyle("overflow:auto;");
+			int productNo = 0;
+			for (Item it : c.items) {
+				productNo++;
+				Vlayout card = new Vlayout();
+				card.setWidth("100%");
+				card.setStyle("border:1px solid #dbe3ec;border-radius:6px;padding:6px 10px;margin-bottom:8px;");
+				Label title = new Label(productNo + ". " + it.name + "   (Qty "
+						+ it.qty.stripTrailingZeros().toPlainString()
+						+ (it.uom.length() == 0 ? "" : " " + it.uom) + ")");
+				title.setStyle("font-weight:700;color:#1e4d7b;display:block;");
+				card.appendChild(title);
 
-						Listitem li = new Listitem();
-						if (qr.rank == 1)
-							li.setStyle(GREEN);
-						li.appendChild(new Listcell(it == null ? "" : it.name));
-						li.appendChild(new Listcell(rs.getString(3)));
-						li.appendChild(new Listcell(nz(rs.getString(4))));
-						li.appendChild(new Listcell(nz(rs.getString(5))));
-						li.appendChild(new Listcell(nz(rs.getString(6))));
-						li.appendChild(new Listcell(it == null ? "" : it.qty.stripTrailingZeros().toPlainString()));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(7))));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(8))));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(9))));
-						li.appendChild(new Listcell(rs.getBigDecimal(10) == null ? ""
-								: rs.getBigDecimal(10).stripTrailingZeros().toPlainString()));
-						li.appendChild(new Listcell(num(rs.getBigDecimal(11))));
-						li.appendChild(new Listcell(qr.rank == 0 ? "" : String.valueOf(qr.rank)));
-
-						qr.win = new Checkbox();
-						qr.win.setChecked("Y".equals(rs.getString(12)));
-						qr.win.setDisabled(!canEdit);
-						Listcell wc = new Listcell();
-						wc.appendChild(qr.win);
-						li.appendChild(wc);
-
-						qr.comment = new Textbox(nz(rs.getString(13)));
-						qr.comment.setWidth("95%");
-						qr.comment.setReadonly(!canEdit);
-						Listcell cc = new Listcell();
-						cc.appendChild(qr.comment);
-						li.appendChild(cc);
-
-						// one winner per product
-						qr.win.addEventListener(Events.ON_CHECK, e -> {
-							if (qr.win.isChecked())
-								for (QuoteRow o : rows)
-									if (o != qr && o.lineId == qr.lineId)
-										o.win.setChecked(false);
-						});
-						rows.add(qr);
-						grid.appendChild(li);
+				Radiogroup rg = new Radiogroup();
+				groups.put(Integer.valueOf(it.rfqLineId), rg);
+				List<RfQApprovalService.RankedQuote> quotes = byLine.get(Integer.valueOf(it.rfqLineId));
+				if (quotes == null || quotes.isEmpty()) {
+					card.appendChild(new Label("No vendor quoted this product."));
+				} else {
+					Integer prev = existing.get(Integer.valueOf(it.rfqLineId));
+					for (RfQApprovalService.RankedQuote q : quotes) {
+						Radio rb = new Radio(q.vendorName + "   -   " + MONEY.format(q.price)
+								+ "   (rank " + q.rank + (q.rank == 1 ? ", lowest" : "") + ")");
+						rb.setValue(Integer.valueOf(q.responseId));
+						rb.setAttribute("rank", Integer.valueOf(q.rank));
+						rb.setStyle("display:block;margin:3px 0;");
+						rg.appendChild(rb);
+						if (prev != null && prev.intValue() == q.responseId)
+							rg.setSelectedItem(rb);
 					}
 				}
-			}
-			box.appendChild(grid);
+				card.appendChild(rg);
 
-			box.appendChild(new Label("Overall remarks"));
+				Label jl = new Label(
+						"Justification (required when the chosen vendor is not the lowest price)");
+				jl.setStyle("font-size:11px;color:#64748b;display:block;margin-top:4px;");
+				card.appendChild(jl);
+				Textbox just = new Textbox();
+				just.setMultiline(true);
+				just.setRows(2);
+				just.setWidth("100%");
+				justifications.put(Integer.valueOf(it.rfqLineId), just);
+				card.appendChild(just);
+				prodBox.appendChild(card);
+			}
+			p1.appendChild(prodBox);
+
+			p1.appendChild(new Label("Overall remarks"));
 			final Textbox remarks = new Textbox();
 			remarks.setMultiline(true);
 			remarks.setRows(2);
 			remarks.setWidth("100%");
-			remarks.setReadonly(!canEdit);
-			box.appendChild(remarks);
+			p1.appendChild(remarks);
 
-			Hlayout btns = new Hlayout();
-			if (canEdit) {
-				Button save = new Button("Save Winners");
-				save.addEventListener(Events.ON_CLICK, e -> {
-					Map<Integer, Integer> winners = new LinkedHashMap<Integer, Integer>();
-					Map<Integer, String> justs = new LinkedHashMap<Integer, String>();
-					for (QuoteRow q : rows) {
-						if (!q.win.isChecked())
-							continue;
-						winners.put(Integer.valueOf(q.lineId), Integer.valueOf(q.respId));
-						if (q.rank > 1)
-							justs.put(Integer.valueOf(q.lineId), q.comment.getValue());
+			Button save = new Button("Recommend Selected");
+			save.addEventListener(Events.ON_CLICK, e -> {
+				Map<Integer, Integer> winners = new LinkedHashMap<Integer, Integer>();
+				Map<Integer, String> justs = new LinkedHashMap<Integer, String>();
+				for (Map.Entry<Integer, Radiogroup> entry : groups.entrySet()) {
+					Radio sel = entry.getValue().getSelectedItem();
+					if (sel == null)
+						continue;
+					winners.put(entry.getKey(), (Integer) sel.getValue());
+					Object rank = sel.getAttribute("rank");
+					if (rank instanceof Integer && ((Integer) rank).intValue() > 1) {
+						Textbox jb = justifications.get(entry.getKey());
+						justs.put(entry.getKey(), jb == null ? "" : jb.getValue());
 					}
-					if (winners.isEmpty()) {
-						Messagebox.show("Tick a winner for at least one product.", "Recommend Winner",
-								Messagebox.OK, Messagebox.EXCLAMATION);
-						return;
-					}
-					try {
-						service.recommendLines(r.id, winners, justs, remarks.getValue());
-						win.detach();
-						reload();
-						Messagebox.show("Winners saved.", "Recommend Winner", Messagebox.OK,
-								Messagebox.INFORMATION);
-					} catch (Exception ex) {
-						fail(ex); // e.g. comment missing for a vendor that is not the lowest price
-					}
-				});
-				btns.appendChild(save);
-			}
-			Button close = new Button("Close");
-			close.addEventListener(Events.ON_CLICK, e -> win.detach());
-			btns.appendChild(close);
-			box.appendChild(btns);
+				}
+				if (winners.isEmpty()) {
+					Messagebox.show("Select a vendor for at least one product.", "Recommend Winner",
+							Messagebox.OK, Messagebox.EXCLAMATION);
+					return;
+				}
+				try {
+					service.recommendLines(r.id, winners, justs, remarks.getValue());
+					win.detach();
+					reload();
+					Messagebox.show("Recommendation saved.", "Recommend Winner", Messagebox.OK,
+							Messagebox.INFORMATION);
+				} catch (Exception ex) {
+					fail(ex);
+				}
+			});
+			p1.appendChild(save);
+			panels.appendChild(p1);
 
-			win.appendChild(box);
+			// ---- tab 2: comparison grid + last PO history
+			Tabpanel p2 = new Tabpanel();
+			p2.appendChild(comparisonGrid(c));
+			panels.appendChild(p2);
+
+			tb.appendChild(panels);
+			win.appendChild(tb);
 			win.setPage(getPage());
 			win.doModal();
 		} catch (Exception ex) {
 			fail(ex);
 		}
-	}
-
-	private static String nz(String s) {
-		return s == null ? "" : s;
-	}
-
-	private static String num(BigDecimal v) {
-		return v == null ? "" : MONEY.format(v);
 	}
 
 	private Vlayout comparisonGrid(final Comparison c) {
