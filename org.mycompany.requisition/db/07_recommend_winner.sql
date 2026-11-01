@@ -60,6 +60,7 @@ DECLARE
     v_tab    NUMERIC;
     v_view   NUMERIC;
     v_seq    NUMERIC;
+    v_opt    TEXT;
 BEGIN
     SELECT AD_Table_ID INTO v_table FROM AD_Table WHERE LOWER(TableName) = 'ut_approvalmatrix';
     IF v_table IS NULL THEN
@@ -80,16 +81,23 @@ BEGIN
      WHERE AD_Table_ID = v_table AND LOWER(ColumnName) = 'isrecommendwinner';
     IF v_col IS NULL THEN
         v_col := (SELECT COALESCE(MAX(AD_Column_ID), 999999) + 1 FROM AD_Column);
+        -- Shudhu je column gulo sob version e ache segulo diye insert kori.
         INSERT INTO AD_Column (AD_Column_ID, AD_Client_ID, AD_Org_ID, IsActive, Created, Updated, CreatedBy, UpdatedBy,
             Name, AD_Table_ID, AD_Element_ID, AD_Reference_ID, ColumnName, FieldLength, DefaultValue,
             IsKey, IsParent, IsMandatory, IsUpdateable, IsIdentifier, SeqNo, IsTranslated, IsEncrypted,
-            IsSelectionColumn, EntityType, IsSyncDatabase, IsAlwaysUpdateable, IsAutocomplete, IsAllowLogging,
-            IsAdvancedField, IsAllowCopy, IsToolbarButton, IsSecure)
+            IsSelectionColumn, EntityType, IsSyncDatabase, IsAlwaysUpdateable)
         VALUES (v_col, 0, 0, 'Y', now(), now(), 100, 100,
             'Recommend Winner', v_table, v_elem, 20, 'IsRecommendWinner', 1, 'N',
             'N', 'N', 'Y', 'Y', 'N', 0, 'N', 'N',
-            'N', 'U', 'N', 'N', 'N', 'Y',
-            'N', 'Y', 'N', 'N');
+            'N', 'U', 'N', 'N');
+        -- Version bhede thaka optional column: thakle tobei set kori.
+        FOR v_opt IN SELECT unnest(ARRAY['IsAutocomplete','IsAdvancedField','IsToolbarButton','IsSecure']) LOOP
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = current_schema() AND LOWER(table_name) = 'ad_column'
+                         AND LOWER(column_name) = LOWER(v_opt)) THEN
+                EXECUTE format('UPDATE AD_Column SET %I = %L WHERE AD_Column_ID = %s', v_opt, 'N', v_col);
+            END IF;
+        END LOOP;
     END IF;
 
     -- tab: matrix table er prothom tab
