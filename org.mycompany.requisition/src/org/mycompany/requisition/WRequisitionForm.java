@@ -119,6 +119,7 @@ public class WRequisitionForm extends ADForm implements EventListener<Event> {
 
     @Override
     protected void initForm() {
+    	org.mycompany.requisition.ui.XxTheme.wrap(this);
         try {
             buildUI();
             loadDropdownData();
@@ -755,6 +756,7 @@ public class WRequisitionForm extends ADForm implements EventListener<Event> {
 
         win.appendChild(vl);
         win.setPage(this.getPage());
+        org.mycompany.requisition.ui.XxTheme.apply(win);
         win.doModal();
 
         // Auto-search on open if there's initial text

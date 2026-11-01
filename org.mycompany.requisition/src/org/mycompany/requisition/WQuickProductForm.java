@@ -145,6 +145,7 @@ public class WQuickProductForm extends ADForm implements EventListener<Event> {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		defaults = defaultsNow();
 		products = new ProductCreationService(ctx(), defaults);
 
