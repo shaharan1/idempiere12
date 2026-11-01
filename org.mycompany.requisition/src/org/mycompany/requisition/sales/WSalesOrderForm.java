@@ -102,6 +102,7 @@ public class WSalesOrderForm extends ADForm implements ValueChangeListener, Even
 
     @Override
     protected void initForm() {
+    	org.mycompany.requisition.ui.XxTheme.wrap(this);
         Borderlayout mainLayout = new Borderlayout();
         mainLayout.setWidth("100%");
         mainLayout.setHeight("100%");

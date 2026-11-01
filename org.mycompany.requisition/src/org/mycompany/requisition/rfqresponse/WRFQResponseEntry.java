@@ -130,6 +130,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		try {
 			rfqHasDocNo = columnExists("C_RfQ", "DocumentNo");
 			initComponents();
