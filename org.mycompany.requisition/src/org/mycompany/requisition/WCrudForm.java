@@ -111,6 +111,7 @@ public class WCrudForm extends ADForm implements EventListener<Event> {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		try {
 			service = new CrudService(ctx(), configValue("TableName", DEFAULT_TABLE),
 					configValue("NameColumn", DEFAULT_NAME_COLUMN));

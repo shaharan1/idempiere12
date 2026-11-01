@@ -102,6 +102,7 @@ public class WEmpAdvanceForm extends ADForm implements EventListener<Event> {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		try {
 			buildUI();
 			loadDefaults();
@@ -495,6 +496,7 @@ public class WEmpAdvanceForm extends ADForm implements EventListener<Event> {
 			}
 		});
 
+		org.mycompany.requisition.ui.XxTheme.apply(win);
 		win.doModal();
 	}
 
@@ -547,6 +549,7 @@ public class WEmpAdvanceForm extends ADForm implements EventListener<Event> {
 			btns.appendChild(close);
 			win.appendChild(btns);
 
+			org.mycompany.requisition.ui.XxTheme.apply(win);
 			win.doModal();
 		} catch (Exception ex) {
 			log.log(Level.SEVERE, ex.getMessage(), ex);
