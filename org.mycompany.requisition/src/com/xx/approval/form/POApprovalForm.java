@@ -88,6 +88,7 @@ public class POApprovalForm extends ADForm implements EventListener<Event> {
 
 	@Override
 	protected void initForm() {
+		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		Borderlayout layout = new Borderlayout();
 		layout.setStyle("width:100%;height:100%;position:relative;");
 		appendChild(layout);
