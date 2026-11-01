@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.Locale;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,8 +32,10 @@ import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zul.Button;
+import org.zkoss.zul.Caption;
 import org.zkoss.zul.Checkbox;
 import org.zkoss.zul.Decimalbox;
+import org.zkoss.zul.Groupbox;
 import org.zkoss.zul.Hlayout;
 import org.zkoss.zul.Iframe;
 import org.zkoss.zul.Label;
@@ -133,12 +137,13 @@ public class RecommendWinnerDialog {
 			win.setWidth("98%");
 			win.setHeight("90%");
 			win.setPosition("center");
+			win.setContentStyle("overflow:auto;");
 			Vlayout box = new Vlayout();
 			box.setWidth("100%");
 
 			Listbox grid = new Listbox();
 			grid.setWidth("100%");
-			grid.setHeight("430px");
+			grid.setHeight("300px");
 			Listhead gh = new Listhead();
 			for (int i = 0; i < COLS.length; i++) {
 				Listheader lh = new Listheader(COLS[i]);
@@ -288,6 +293,12 @@ public class RecommendWinnerDialog {
 			}
 			box.appendChild(grid);
 
+			// History records: every save of this RFQ, all users, newest first
+			final Listbox historyBox = new Listbox();
+			box.appendChild(buildHistory(historyBox));
+			fillHistory(historyBox, rfqId);
+			final Runnable refreshHistory = () -> fillHistory(historyBox, rfqId);
+
 			box.appendChild(new Label("Overall remarks"));
 			final Textbox remarks = new Textbox();
 			remarks.setMultiline(true);
@@ -298,17 +309,21 @@ public class RecommendWinnerDialog {
 			Hlayout btns = new Hlayout();
 			Button save = new Button("Save Winners");
 			save.addEventListener(Events.ON_CLICK, e -> {
-				if (saveWinners(service, rfqId, rows, remarks.getValue()))
+				if (saveWinners(service, rfqId, rows, remarks.getValue())) {
+					refreshHistory.run();
 					Messagebox.show("Winners saved. You can now approve.", "Recommend Winner", Messagebox.OK,
 							Messagebox.INFORMATION);
+				}
 			});
 			btns.appendChild(save);
 
 			// CS PDF / Print: saves the ticked winners first, so the printout matches the screen
 			Button print = new Button("CS PDF / Print");
 			print.addEventListener(Events.ON_CLICK, e -> {
-				if (saveWinners(service, rfqId, rows, remarks.getValue()))
+				if (saveWinners(service, rfqId, rows, remarks.getValue())) {
+					refreshHistory.run();
 					showPdf(owner, service, rfqId, docNo);
+				}
 			});
 			btns.appendChild(print);
 			Button close = new Button("Close");
@@ -348,6 +363,7 @@ public class RecommendWinnerDialog {
 			// edited prices / VAT must be in the database before the service ranks the quotes
 			saveEdits(rows);
 			service.recommendLines(rfqId, winners, justs, remarks);
+			logHistory(rfqId, rows);
 			return true;
 		} catch (Exception ex) {
 			log.severe(ex.getMessage());
@@ -473,6 +489,103 @@ public class RecommendWinnerDialog {
 
 	private static BigDecimal nzv(BigDecimal v) {
 		return v == null ? BigDecimal.ZERO : v;
+	}
+
+	// ------------------------------------------------------------------ history records
+
+	private static Groupbox buildHistory(Listbox lb) {
+		Groupbox gb = new Groupbox();
+		gb.setStyle("margin-top:8px;");
+		gb.appendChild(new Caption("History records"));
+		lb.setWidth("100%");
+		lb.setHeight("170px");
+		String[] names = { "Create Date and Time", "User", "Supplier", "Product", "Quoted Qty", "Quoted Price",
+				"Negotiate Price", "Rank", "Winner", "Comment" };
+		String[] widths = { "170px", "150px", "160px", "190px", "90px", "100px", "110px", "50px", "60px", "200px" };
+		Listhead head = new Listhead();
+		for (int i = 0; i < names.length; i++) {
+			Listheader h = new Listheader(names[i]);
+			h.setWidth(widths[i]);
+			head.appendChild(h);
+		}
+		lb.appendChild(head);
+		gb.appendChild(lb);
+		return gb;
+	}
+
+	/** All saved recommendations of the RFQ (every user, every save), newest first. */
+	private static void fillHistory(Listbox lb, int rfqId) {
+		while (lb.getItemCount() > 0)
+			lb.removeItemAt(0);
+		SimpleDateFormat fmt = new SimpleDateFormat("dd MMM yyyy hh:mm:ss a", Locale.ENGLISH);
+		String lastStamp = null, lastUser = null;
+		try (PreparedStatement ps = DB.prepareStatement("SELECT h.Created, u.Name, h.BPartnerName, h.ProductName, "
+				+ "h.QuotedQty, h.QuotedPrice, h.NegotiatePrice, h.Rank, h.IsWinner, h.Comment "
+				+ "FROM XX_RfQ_WinnerLog h LEFT JOIN AD_User u ON u.AD_User_ID=h.CreatedBy "
+				+ "WHERE h.C_RfQ_ID=? ORDER BY h.Created DESC, h.XX_RfQ_WinnerLog_ID", null)) {
+			ps.setInt(1, rfqId);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					String stamp = rs.getTimestamp(1) == null ? "" : fmt.format(rs.getTimestamp(1));
+					String user = nz(rs.getString(2));
+					boolean same = stamp.equals(lastStamp) && user.equals(lastUser);
+					Listitem li = new Listitem();
+					li.appendChild(new Listcell(same ? "" : stamp));
+					li.appendChild(new Listcell(same ? "" : user));
+					li.appendChild(new Listcell(nz(rs.getString(3))));
+					li.appendChild(new Listcell(nz(rs.getString(4))));
+					li.appendChild(right(num(rs.getBigDecimal(5))));
+					li.appendChild(right(num(rs.getBigDecimal(6))));
+					li.appendChild(right(num(rs.getBigDecimal(7))));
+					li.appendChild(right(String.valueOf(rs.getInt(8))));
+					Checkbox w = new Checkbox();
+					w.setChecked("Y".equals(rs.getString(9)));
+					w.setDisabled(true);
+					li.appendChild(cellOf(w));
+					li.appendChild(new Listcell(nz(rs.getString(10))));
+					lb.appendChild(li);
+					lastStamp = stamp;
+					lastUser = user;
+				}
+			}
+		} catch (Exception ex) { // table XX_RfQ_WinnerLog missing: run db/07_recommend_winner.sql
+			log.warning("history: " + ex.getMessage());
+		}
+	}
+
+	/** One history record per row for this save, all with the same time stamp (one transaction). */
+	private static void logHistory(int rfqId, List<QuoteRow> rows) {
+		int userId = Env.getAD_User_ID(Env.getCtx());
+		int clientId = Env.getAD_Client_ID(Env.getCtx());
+		String trxName = Trx.createTrxName("RfQLog");
+		Trx trx = Trx.get(trxName, true);
+		try {
+			for (QuoteRow q : rows) {
+				String cm = q.comment.getValue();
+				if (cm != null && cm.length() > 255)
+					cm = cm.substring(0, 255);
+				DB.executeUpdateEx("INSERT INTO XX_RfQ_WinnerLog (AD_Client_ID, C_RfQ_ID, C_RfQLine_ID, "
+						+ "C_RfQResponse_ID, CreatedBy, BPartnerName, ProductName, QuotedQty, QuotedPrice, "
+						+ "NegotiatePrice, Rank, IsWinner, Comment) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+						new Object[] { Integer.valueOf(clientId), Integer.valueOf(rfqId), Integer.valueOf(q.lineId),
+								Integer.valueOf(q.respId), Integer.valueOf(userId), q.supplier, q.product, q.qty,
+								nzv(q.price.getValue()), nzv(q.neg.getValue()), Integer.valueOf(q.rank),
+								q.win.isChecked() ? "Y" : "N", cm },
+						trxName);
+			}
+			trx.commit();
+		} catch (Exception ex) { // the recommendation itself is already saved; only the log failed
+			trx.rollback();
+			log.warning("history log: " + ex.getMessage());
+		} finally {
+			trx.close();
+		}
+	}
+
+	private static Listcell right(String text) {
+		Listcell c = new Listcell(text);
+		c.setStyle("text-align:right;");
+		return c;
 	}
 
 	/** Comparative Statement PDF, built from the data as it is saved now. Print from the viewer toolbar. */
