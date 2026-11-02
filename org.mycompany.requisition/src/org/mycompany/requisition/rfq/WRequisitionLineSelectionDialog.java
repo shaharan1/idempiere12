@@ -2,9 +2,11 @@ package org.mycompany.requisition.rfq;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import org.compiere.model.GridTab;
 import org.compiere.model.MRfQ;
+import org.mycompany.requisition.rfq.WCreateRFQDialog.LineRow;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zul.Button;
@@ -18,6 +20,14 @@ import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
 import org.zkoss.zul.Window;
 
+/**
+ * Two modes:
+ *  1. RFQ window mode (old): {@link #showDialog(MRfQ, int, GridTab)} - ticked lines are added
+ *     to an existing RFQ (used by CalloutRfQRequisition).
+ *  2. Picker mode (new, "Create RFQ From PR" form): {@link #showPicker(List, Consumer)} - the
+ *     given lines are listed (nothing ticked), the ticked ones are handed to the callback
+ *     (the "Selected Lines" basket of WCreateRFQFromPR). No RFQ is touched.
+ */
 public class WRequisitionLineSelectionDialog extends Window implements EventListener<Event> {
 	private static final long serialVersionUID = 1L;
 	
@@ -29,7 +39,61 @@ public class WRequisitionLineSelectionDialog extends Window implements EventList
 	private Button cancelButton;
 	private List<RequisitionLineDTO> requisitionLines;
 	private boolean cancelled = true;
+
+	/** picker mode only: receives the ticked lines */
+	private Consumer<List<LineRow>> m_onAdd;
 	
+	/** Picker mode: lines of the chosen requisition(s); ticked ones go to onAdd. */
+	public WRequisitionLineSelectionDialog(List<LineRow> lines, Consumer<List<LineRow>> onAdd) {
+		super();
+		this.m_onAdd = onAdd;
+
+		setTitle("Select Lines");
+		setBorder("normal");
+		setWidth("850px");
+		setClosable(true);
+		setSizable(true);
+
+		listBox = new Listbox();
+		listBox.setMultiple(true);
+		listBox.setCheckmark(true);   // row tick boxes + select-all in header
+		listBox.setHeight("340px");
+		appendChild(listBox);
+
+		Listhead listhead = new Listhead();
+		for (String h : new String[] { "Requisition", "BP Code", "Product Code", "Product Name", "UOM", "Qty",
+				"Description" })
+			listhead.appendChild(new Listheader(h));
+		listBox.appendChild(listhead);
+
+		for (LineRow r : lines) {
+			Listitem item = new Listitem();
+			item.setValue(r);
+			item.appendChild(new Listcell(nvl(r.reqNo)));
+			item.appendChild(new Listcell(nvl(r.bpCode)));
+			item.appendChild(new Listcell(nvl(r.productValue)));
+			item.appendChild(new Listcell(nvl(r.productName)));
+			item.appendChild(new Listcell(nvl(r.uomName)));
+			item.appendChild(new Listcell(r.qty == null ? "" : r.qty.stripTrailingZeros().toPlainString()));
+			item.appendChild(new Listcell(nvl(r.desc)));
+			listBox.appendChild(item);   // nothing ticked: the user picks the products
+		}
+
+		Hbox btnBox = new Hbox();
+		btnBox.setStyle("padding: 10px; text-align: right;");
+		okButton = new Button("Add Line");
+		okButton.addEventListener("onClick", this);
+		cancelButton = new Button("Cancel");
+		cancelButton.addEventListener("onClick", this);
+		btnBox.appendChild(okButton);
+		btnBox.appendChild(cancelButton);
+		appendChild(btnBox);
+	}
+
+	private static String nvl(String s) {
+		return s == null ? "" : s;
+	}
+
 	public WRequisitionLineSelectionDialog(MRfQ rfq, int requisitionId, GridTab parentTab) {
 		super();
 		this.m_rfq = rfq;
@@ -91,6 +155,25 @@ public class WRequisitionLineSelectionDialog extends Window implements EventList
 	
 	@Override
 	public void onEvent(Event event) throws Exception {
+		if (m_onAdd != null) {   // picker mode
+			if (event.getTarget() == okButton) {
+				List<LineRow> picked = new ArrayList<LineRow>();
+				for (Listitem item : listBox.getSelectedItems())
+					if (item.getValue() instanceof LineRow)
+						picked.add((LineRow) item.getValue());
+				if (picked.isEmpty()) {
+					Messagebox.show("Tick at least one line.", "Warning", Messagebox.OK, Messagebox.EXCLAMATION);
+					return;
+				}
+				cancelled = false;
+				detach();
+				m_onAdd.accept(picked);
+			} else if (event.getTarget() == cancelButton) {
+				cancelled = true;
+				detach();
+			}
+			return;
+		}
 		if (event.getTarget() == okButton) {
 			List<Integer> selectedIds = new ArrayList<Integer>();
 			for (Listitem item : listBox.getSelectedItems()) {
