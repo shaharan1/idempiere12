@@ -129,7 +129,7 @@ public class RfqPoService {
 
 	// ------------------------------------------------------------ main grid
 
-	/** Every RFQ that has a recommended winner, one row per winner supplier. */
+	/** Every RFQ with a recommended winner AND an approved CS, one row per winner supplier. */
 	public List<Row> listRows(boolean pendingOnly) {
 		boolean ready = columnsReady();
 		String already = ready
@@ -199,6 +199,10 @@ public class RfqPoService {
 				r.total = nz(rs.getBigDecimal(15));
 				r.poNos = rs.getString(16);
 				r.lastAction = rs.getString(17);
+				// Only RFQs whose Comparative Statement is fully approved may be turned into a PO.
+				// Not submitted / Pending Approval / Rejected stay out of this list.
+				if (!r.csApproved())
+					continue;
 				if (pendingOnly && r.remaining().signum() <= 0)
 					continue;
 				list.add(r);
