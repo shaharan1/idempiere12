@@ -7,53 +7,31 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
 
 import org.adempiere.exceptions.AdempiereException;
-import org.adempiere.webui.apps.AEnv;
 import org.adempiere.webui.component.Button;
-import org.adempiere.webui.component.Datebox;
-import org.adempiere.webui.component.Grid;
 import org.adempiere.webui.component.Label;
-import org.adempiere.webui.component.Row;
-import org.adempiere.webui.component.Rows;
 import org.adempiere.webui.component.Textbox;
-import org.adempiere.webui.editor.WTableDirEditor;
-import org.adempiere.webui.event.ValueChangeEvent;
-import org.adempiere.webui.event.ValueChangeListener;
 import org.adempiere.webui.panel.ADForm;
-import org.adempiere.webui.session.SessionManager;
 import org.adempiere.webui.util.ZKUpdateUtil;
-import org.compiere.model.MAttachment;
-import org.compiere.model.MColumn;
-import org.compiere.model.MLookup;
-import org.compiere.model.MLookupFactory;
-import org.compiere.model.MRfQ;
-import org.compiere.model.MRfQLine;
-import org.compiere.model.MRfQLineQty;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
-import org.compiere.util.DisplayType;
 import org.compiere.util.Env;
-import org.compiere.util.Trx;
-import org.compiere.util.Util;
-import org.zkoss.util.media.Media;
+import org.zkoss.zk.ui.Component;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
-import org.zkoss.zk.ui.event.UploadEvent;
+import org.zkoss.zul.A;
 import org.zkoss.zul.Borderlayout;
 import org.zkoss.zul.Center;
-import org.zkoss.zul.Column;
-import org.zkoss.zul.Columns;
-import org.zkoss.zul.Decimalbox;
-import org.zkoss.zul.Div;
+import org.zkoss.zul.Checkbox;
+import org.zkoss.zul.Hlayout;
 import org.zkoss.zul.Listbox;
 import org.zkoss.zul.Listcell;
 import org.zkoss.zul.Listhead;
@@ -62,84 +40,77 @@ import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
 import org.zkoss.zul.North;
 import org.zkoss.zul.South;
+import org.zkoss.zul.Div;
 import org.zkoss.zul.Vlayout;
-import org.zkoss.zul.Window;
+
+import org.mycompany.requisition.rfq.WCreateRFQDialog.LineRow;
 
 /**
- * "Create RFQ From PR" form.
+ * "Create RFQ From PR" form  -  step 1: the requisition list.
  *
  * Flow:
- *  1. Choose RFQ Date, RFQ Topic and Requisition (all three on one line).
- *  2. Selecting a requisition opens a popup with its eligible lines.
- *  3. Tick lines in the popup and click "Add Line" -> they appear in the lines table
- *     (the table grows with the number of lines).
- *  4. Choose an RFQ Term -> its text is filled into Terms and Conditions.
- *  5. OK creates the RFQ.
+ *  1. The form opens with ONE big table that lists every requisition that still has lines
+ *     available for an RFQ. The lines (BP Code, Product, UOM, Qty ...) of each requisition
+ *     sit one after another, so a requisition reads as one block.
+ *  2. Click a requisition code (link): a popup ({@link WRequisitionLineSelectionDialog}) lists its products;
+ *     tick the ones wanted and "Add Line" -> they go to the "Selected Lines" basket (bottom).
+ *     (Or tick product lines directly in the big table and click "Add Line".)
+ *  3. Repeat for other requisitions - the basket collects lines of several requisitions.
+ *  4. "Create RFQ" opens {@link WCreateRFQDialog} with the basket: RFQ Topic, date, term,
+ *     attachment -> OK creates ONE RFQ.
+ *  4. The list refreshes (the used lines disappear).
  *
- * Rules (same as RequisitionRFQService):
- *  - Only requisition lines not used in any RFQ/PO
- *    (M_RequisitionLine.XX_RfQ_ID null, C_OrderLine_ID null)
- *  - C_RfQLine.XX_RequisitionLine_ID is set
- *  - After save, M_RequisitionLine.XX_RfQ_ID is set
- *    (void/delete releases it via RfQVoidEventHandler)
- *  - Organization is not on the form: login org is used, otherwise the requisition's org.
+ * Eligibility rule (same as before / RequisitionRFQService):
+ *  - M_RequisitionLine.XX_RfQ_ID is null and C_OrderLine_ID is null, line is active.
  *
- * RFQ Term source: the term column of C_RfQ (the one the RfQ window uses) is detected
- * automatically from the Application Dictionary, so the dropdown shows the same terms.
+ * The RFQ is created in WCreateRFQDialog (save logic unchanged).
  */
-public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, EventListener<Event> {
+public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 
 	private static final long serialVersionUID = 1L;
 	private static final CLogger log = CLogger.getCLogger(WCreateRFQFromPR.class);
 
-	/** Column names tried (in order) for the term text on the term table */
-	private static final String[] TERM_TEXT_CANDIDATES = {
-			"TermsText", "DocumentNote", "TermsAndConditions", "TermsConditions", "TermsCondition", "Terms",
-			"Description", "Help", "Comments", "Text" };
+	/** Newest N requisitions are shown (use Search to narrow down). */
+	private static final int MAX_REQUISITIONS = 300;
 
-	/** One line's data (popup list and lines table share it) */
-	private static class LineRow {
+	private static final String GROUP_BORDER = "border-top:2px solid #94a3b8;";
+	private static final String GROUP_ALT_BG = "background:#eef4ff;";
+	private static final String GROUP_BG = "background:#ffffff;";
+
+	/** Requisition level data for the first row of a block */
+	private static class ReqHead {
 		int reqId;
-		int reqLineId;
-		int productId;
-		String productName;
-		int uomId;
-		String uomName;
-		int asiId;
-		BigDecimal qty;
-		String desc;
-		Decimalbox qtyBox; // editable qty in the lines table
+		String docNo;
+		Timestamp date;
+		String requester;
+		String status;
 	}
 
 	private Borderlayout mainLayout = new Borderlayout();
 
-	private WTableDirEditor reqEditor;
-	private WTableDirEditor topicEditor;
-	private Listbox termCombo = new Listbox();
-	private Datebox dateBox = new Datebox();
-	private Textbox termsField = new Textbox();
+	private Textbox searchBox = new Textbox();
+	private Button searchBtn = new Button("Search");
+	private Button refreshBtn = new Button("Refresh");
+	private Button addLineBtn = new Button("Add Line");
+	private Checkbox selectAll = new Checkbox("Select All");
+	private Label selectedLbl = new Label("Selected lines: 0");
+	private Label countLbl = new Label("");
+	private Button createBtn = new Button("Create RFQ");
+	private Button removeBtn = new Button("Remove Selected");
+	private Label cartLbl = new Label("Selected Lines: 0");
+	private Listbox cartList;
+	/** basket: requisition line id -> line (can hold lines of several requisitions) */
+	private Map<Integer, LineRow> cart = new LinkedHashMap<Integer, LineRow>();
 
-	// RFQ Term source (detected from the dictionary)
-	private String termColName;     // column on C_RfQ, e.g. XX_RfQTerm_ID
-	private String termTable;       // table holding the terms
-	private String termIdCol;       // key column of the term table
-	private String termTextCol;     // column holding the term text
+	private Listbox reqList;
 
-	private Button reloadBtn = new Button("Reload Requisition");
-	private Button attachBtn = new Button("Attachment");
-	private Button okBtn = new Button("OK");
-	private Button cancelBtn = new Button("Cancel");
-
-	private Listbox rfqList;     // lines table (Serial No, Requisition ID, Product ID, Product Name, Qty)
-
-	// popup
-	private Window popupWin;
-	private Listbox popupList;
-	private Button popupAddBtn = new Button("Add Line");
-
-	private Media attachMedia;
+	/** requisition id -> its eligible lines (in display order) */
+	private Map<Integer, List<LineRow>> reqLines = new LinkedHashMap<Integer, List<LineRow>>();
+	/** requisition LINE id -> its tick box (one per product line) */
+	private Map<Integer, Checkbox> reqChecks = new LinkedHashMap<Integer, Checkbox>();
 
 	private boolean reqLineHasRfqCol;
+	private boolean reqLineHasBPartner;
 
 	// ------------------------------------------------------------------ init
 
@@ -148,8 +119,10 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 		org.mycompany.requisition.ui.XxTheme.wrap(this);
 		try {
 			reqLineHasRfqCol = columnExists("M_RequisitionLine", "XX_RfQ_ID");
+			reqLineHasBPartner = columnExists("M_RequisitionLine", "C_BPartner_ID");
 			initComponents();
 			layout();
+			loadList();
 		} catch (Exception e) {
 			log.log(Level.SEVERE, e.getMessage(), e);
 			throw new AdempiereException(e);
@@ -157,129 +130,54 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 	}
 
 	private void initComponents() {
-		// Requisition dropdown
-		int reqCol = requireColumn("M_RequisitionLine", "M_Requisition_ID");
-		MLookup reqLookup = MLookupFactory.get(Env.getCtx(), m_WindowNo, 0, reqCol, DisplayType.TableDir);
-		reqEditor = new WTableDirEditor("M_Requisition_ID", false, false, true, reqLookup);
-		reqEditor.addValueChangeListener(this);
+		searchBox.setPlaceholder("Requisition no / product / BP / requester");
+		searchBox.setWidth("320px");
+		searchBox.addEventListener(Events.ON_OK, this);   // Enter key = Search
 
-		// RFQ Topic dropdown (mandatory)
-		int topicCol = requireColumn("C_RfQ", "C_RfQ_Topic_ID");
-		MLookup topicLookup = MLookupFactory.get(Env.getCtx(), m_WindowNo, 0, topicCol, DisplayType.TableDir);
-		topicEditor = new WTableDirEditor("C_RfQ_Topic_ID", true, false, true, topicLookup);
+		searchBtn.addEventListener(Events.ON_CLICK, this);
+		refreshBtn.addEventListener(Events.ON_CLICK, this);
+		addLineBtn.addEventListener(Events.ON_CLICK, this);
+		createBtn.addEventListener(Events.ON_CLICK, this);
+		removeBtn.addEventListener(Events.ON_CLICK, this);
+		selectAll.addEventListener(Events.ON_CHECK, this);
 
-		// Terms
-		termsField.setMultiline(true);
-		termsField.setRows(5);
-		ZKUpdateUtil.setHflex(termsField, "1");
-		initTerms();
-
-		// Lines table (no checkbox, no remove, grows with its content)
-		rfqList = newTable("Serial No", "Requisition ID", "Product ID", "Product Name", "Qty");
-
-		// Buttons
-		reloadBtn.addEventListener(Events.ON_CLICK, this);
-		okBtn.addEventListener(Events.ON_CLICK, this);
-		cancelBtn.addEventListener(Events.ON_CLICK, this);
-		popupAddBtn.addEventListener(Events.ON_CLICK, this);
-		attachBtn.setUpload("true");
-		attachBtn.addEventListener(Events.ON_UPLOAD, this);
-	}
-
-	/**
-	 * RFQ Term dropdown. Source table: the one behind the RFQ Term column of C_RfQ (if the
-	 * dictionary has one), otherwise XX_RFQ_Term. Selecting a term fills Terms and Conditions.
-	 */
-	private void initTerms() {
-		PreparedStatement pstmt = null;
-		ResultSet rs = null;
-		int refId = 0;
-		int refValueId = 0;
-		try {
-			pstmt = DB.prepareStatement(
-					"SELECT ColumnName, AD_Reference_ID, AD_Reference_Value_ID "
-					+ "FROM AD_Column WHERE AD_Table_ID=(SELECT AD_Table_ID FROM AD_Table WHERE TableName='C_RfQ') "
-					+ "AND IsActive='Y' AND LOWER(ColumnName) LIKE '%term%' AND LOWER(ColumnName) LIKE '%_id' "
-					+ "ORDER BY AD_Column_ID", null);
-			rs = pstmt.executeQuery();
-			if (rs.next()) {
-				termColName = rs.getString(1);
-				refId = rs.getInt(2);
-				refValueId = rs.getInt(3);
-			}
-		} catch (SQLException e) {
-			log.log(Level.WARNING, "RFQ Term column lookup failed", e);
-		} finally {
-			DB.close(rs, pstmt);
-		}
-
-		if (termColName != null) {
-			if (refId == DisplayType.Table && refValueId > 0) {
-				termTable = DB.getSQLValueString(null,
-						"SELECT t.TableName FROM AD_Ref_Table rt JOIN AD_Table t ON t.AD_Table_ID=rt.AD_Table_ID "
-						+ "WHERE rt.AD_Reference_ID=?", refValueId);
-				termIdCol = DB.getSQLValueString(null,
-						"SELECT k.ColumnName FROM AD_Ref_Table rt JOIN AD_Column k ON k.AD_Column_ID=rt.AD_Key "
-						+ "WHERE rt.AD_Reference_ID=?", refValueId);
-			} else if (termColName.toLowerCase().endsWith("_id")) {
-				termTable = termColName.substring(0, termColName.length() - 3);
-				termIdCol = termColName;
-			}
-		}
-		if (termTable == null || termIdCol == null || !columnExists(termTable, termIdCol)) {
-			// no term column on C_RfQ: use the XX_RFQ_Term table (Name + TermsText)
-			termTable = "XX_RFQ_Term";
-			termIdCol = "XX_RFQ_Term_ID";
-		}
-
-		for (String cand : TERM_TEXT_CANDIDATES) {
-			if (columnExists(termTable, cand)) {
-				termTextCol = cand;
-				break;
-			}
-		}
-		if (termTextCol == null)
-			termTextCol = DB.getSQLValueString(null,
-					"SELECT column_name FROM information_schema.columns "
-					+ "WHERE LOWER(table_name)=LOWER(?) AND (data_type='text' OR character_maximum_length>=255) "
-					+ "ORDER BY ordinal_position LIMIT 1", termTable);
-		log.info("RFQ Term source: column=" + termColName + ", table=" + termTable
-				+ ", key=" + termIdCol + ", text=" + termTextCol);
-
-		termCombo.setMold("select");
-		termCombo.appendChild(new Listitem("", Integer.valueOf(0)));
-		boolean hasClient = columnExists(termTable, "AD_Client_ID");
-		String sql = "SELECT " + termIdCol + ", Name FROM " + termTable
-				+ " WHERE IsActive='Y'" + (hasClient ? " AND AD_Client_ID IN (0,?)" : "") + " ORDER BY Name";
-		PreparedStatement ps2 = null;
-		ResultSet rs2 = null;
-		try {
-			ps2 = DB.prepareStatement(sql, null);
-			if (hasClient)
-				ps2.setInt(1, Env.getAD_Client_ID(Env.getCtx()));
-			rs2 = ps2.executeQuery();
-			while (rs2.next())
-				termCombo.appendChild(new Listitem(rs2.getString(2), Integer.valueOf(rs2.getInt(1))));
-		} catch (SQLException e) {
-			// form still works if the term table is missing; dropdown stays empty
-			log.log(Level.WARNING, "RFQ Term read failed: " + sql, e);
-		} finally {
-			DB.close(rs2, ps2);
-		}
-		termCombo.setSelectedIndex(0);
-		termCombo.addEventListener(Events.ON_SELECT, this);
-	}
-
-	private Listbox newTable(String... headers) {
-		Listbox lb = new Listbox();
-		lb.setCheckmark(true);   // row checkboxes + select-all checkbox in the header
-		lb.setMultiple(true);
+		reqList = new Listbox();
 		Listhead head = new Listhead();
-		for (String h : headers)
-			head.appendChild(new Listheader(h));
-		lb.appendChild(head);
-		ZKUpdateUtil.setHflex(lb, "1"); // no fixed height: grows with the number of lines
-		return lb;
+		String[][] cols = {
+				{ "", "40px" },
+				{ "Requisition", "120px" },
+				{ "Date", "95px" },
+				{ "Requester", "120px" },
+				{ "Status", "100px" },
+				{ "BP Code", "100px" },
+				{ "BP Name", "180px" },
+				{ "Product Code", "110px" },
+				{ "Product Name", "220px" },
+				{ "UOM", "60px" },
+				{ "Qty", "80px" },
+				{ "Description", null } };
+		for (String[] c : cols) {
+			Listheader h = new Listheader(c[0]);
+			if (c[1] != null)
+				h.setWidth(c[1]);
+			else
+				h.setHflex("1");
+			head.appendChild(h);
+		}
+		reqList.appendChild(head);
+		ZKUpdateUtil.setHflex(reqList, "1");
+		ZKUpdateUtil.setVflex(reqList, "1");
+
+		// basket of selected lines
+		cartList = new Listbox();
+		cartList.setCheckmark(true);
+		cartList.setMultiple(true);
+		cartList.setHeight("170px");
+		ZKUpdateUtil.setHflex(cartList, "1");
+		Listhead ch = new Listhead();
+		for (String h : new String[] { "Requisition", "BP Code", "Product Code", "Product Name", "UOM", "Qty" })
+			ch.appendChild(new Listheader(h));
+		cartList.appendChild(ch);
 	}
 
 	// ---------------------------------------------------------------- layout
@@ -291,190 +189,231 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 		ZKUpdateUtil.setWidth(mainLayout, "100%");
 		ZKUpdateUtil.setHeight(mainLayout, "100%");
 
-		// ---- North: header (Date, Topic, Requisition on ONE line, then buttons) ----
+		// ---- North: search + actions ----
 		North north = new North();
 		ZKUpdateUtil.setVflex(north, "min");
 		mainLayout.appendChild(north);
 
-		Grid grid = new Grid();
+		Hlayout bar = new Hlayout();
+		bar.setSpacing("10px");
+		bar.setStyle("padding:8px;");
+		bar.appendChild(new Label("Search"));
+		bar.appendChild(searchBox);
+		bar.appendChild(searchBtn);
+		bar.appendChild(refreshBtn);
+		bar.appendChild(selectAll);
+		bar.appendChild(addLineBtn);
+		bar.appendChild(selectedLbl);
+		bar.appendChild(countLbl);
+		bar.appendChild(createBtn);
+		north.appendChild(bar);
 
-		// 6 columns: label | field | label | field | label | field
-		Columns cols = new Columns();
-		String[] widths = { "100px", "1", "100px", "1", "100px", "1" };
-		for (String w : widths) {
-			Column col = new Column();
-			if (w.endsWith("px"))
-				col.setWidth(w);
-			else
-				col.setHflex(w);
-			cols.appendChild(col);
-		}
-		grid.appendChild(cols);
-
-		Rows rows = new Rows();
-		grid.appendChild(rows);
-		north.appendChild(grid);
-
-		// Row 1: RFQ Date | RFQ Topic | Requisition  (all on one line)
-		Row r1 = new Row();
-		rows.appendChild(r1);
-		r1.appendChild(new Label("RFQ Date"));
-		r1.appendChild(dateBox);
-		r1.appendChild(new Label("RFQ Topic *"));
-		r1.appendChild(topicEditor.getComponent());
-		r1.appendChild(new Label("Requisition"));
-		r1.appendChild(reqEditor.getComponent());
-
-		// Row 2: Attachment / Reload buttons (6 cells to keep columns aligned)
-		Row r2 = new Row();
-		rows.appendChild(r2);
-		r2.appendChild(new Label(""));
-		r2.appendChild(attachBtn);
-		r2.appendChild(new Label(""));
-		r2.appendChild(reloadBtn);
-		r2.appendChild(new Label(""));
-		r2.appendChild(new Label(""));
-
-		// ---- Center: lines table (grows with lines; scrolls when taller than the form) ----
+		// ---- Center: the big requisition table ----
 		Center center = new Center();
-		center.setAutoscroll(true);
 		mainLayout.appendChild(center);
-		Vlayout v = new Vlayout();
-		ZKUpdateUtil.setHflex(v, "1");
-		center.appendChild(v);
-		v.appendChild(rfqList);
+		center.appendChild(reqList);
 
-		// ---- South: RFQ Term + Terms and Conditions, then OK / Cancel ----
+		// ---- South: basket (Selected Lines) ----
 		South south = new South();
 		ZKUpdateUtil.setVflex(south, "min");
 		mainLayout.appendChild(south);
-
-		Div southBox = new Div();
-		south.appendChild(southBox);
-
-		Div footer = new Div();
-		footer.setStyle("text-align:right; padding:6px;");
-		footer.appendChild(okBtn);
-		footer.appendChild(cancelBtn);
-		southBox.appendChild(footer);
-
-		Grid termGrid = new Grid();
-		Rows termRows = new Rows();
-		termGrid.appendChild(termRows);
-		Row t1 = new Row();
-		termRows.appendChild(t1);
-		t1.appendChild(new Label("RFQ Term"));
-		t1.appendChild(termCombo);
-		t1.appendChild(new Label("Terms and Conditions"));
-		t1.appendChild(termsField);
-		southBox.appendChild(termGrid);
+		Vlayout sbox = new Vlayout();
+		ZKUpdateUtil.setHflex(sbox, "1");
+		Div sbar = new Div();
+		sbar.setStyle("padding:6px;");
+		sbar.appendChild(cartLbl);
+		sbar.appendChild(removeBtn);
+		sbox.appendChild(sbar);
+		sbox.appendChild(cartList);
+		south.appendChild(sbox);
 	}
 
-	// ----------------------------------------------------------------- popup
+	// ------------------------------------------------------------------ data
 
-	/** Opens a modal popup listing the eligible lines of the requisition. */
-	private void openRequisitionPopup(int requisitionId) {
-		if (requisitionId <= 0)
-			return;
-		closePopup();
+	/** Reloads the table from the database using the current search text. */
+	private void loadList() {
+		for (Listitem old : new ArrayList<Listitem>(reqList.getItems()))
+			old.detach();
+		reqLines.clear();
+		reqChecks.clear();
+		selectAll.setChecked(false);
 
-		// lines already in the table are not offered again
-		Set<Integer> existing = new HashSet<Integer>();
-		for (Listitem it : rfqList.getItems())
-			existing.add(Integer.valueOf(((LineRow) it.getValue()).reqLineId));
+		Map<Integer, ReqHead> heads = new LinkedHashMap<Integer, ReqHead>();
+		List<LineRow> rows = query(searchBox.getValue(), null, MAX_REQUISITIONS, heads);
 
-		List<LineRow> rowsData = loadRequisitionLines(requisitionId, existing);
-		if (rowsData.isEmpty()) {
-			warn("No available lines in this requisition (already used in RFQ/PO or already added).");
-			return;
+		for (LineRow r : rows) {
+			List<LineRow> g = reqLines.get(Integer.valueOf(r.reqId));
+			if (g == null) {
+				g = new ArrayList<LineRow>();
+				reqLines.put(Integer.valueOf(r.reqId), g);
+			}
+			g.add(r);
 		}
 
-		popupList = new Listbox();
-		popupList.setCheckmark(true);
-		popupList.setMultiple(true);
-		popupList.setHeight("300px");
-		ZKUpdateUtil.setHflex(popupList, "1");
-		Listhead head = new Listhead();
-		head.appendChild(new Listheader("Product"));
-		head.appendChild(new Listheader("UOM"));
-		head.appendChild(new Listheader("Qty"));
-		head.appendChild(new Listheader("Description"));
-		popupList.appendChild(head);
+		SimpleDateFormat df = new SimpleDateFormat("dd-MMM-yyyy");
+		int block = 0;
+		for (Map.Entry<Integer, List<LineRow>> en : reqLines.entrySet()) {
+			ReqHead h = heads.get(en.getKey());
+			String bg = (block % 2 == 0) ? GROUP_BG : GROUP_ALT_BG;
+			boolean first = true;
+			for (LineRow r : en.getValue()) {
+				String st = bg + (first ? GROUP_BORDER : "");
 
-		for (LineRow r : rowsData) {
-			Listitem item = new Listitem();
-			item.setValue(r);
-			item.appendChild(new Listcell(nvl(r.productName)));
-			item.appendChild(new Listcell(nvl(r.uomName)));
-			item.appendChild(new Listcell(r.qty.stripTrailingZeros().toPlainString()));
-			item.appendChild(new Listcell(nvl(r.desc)));
-			popupList.appendChild(item);
+				Listitem item = new Listitem();
+				item.setValue(r);
+
+				// col 0: tick box (first row of the block only)
+				Listcell c0 = cell(st);
+				// col 1: requisition code = link (first row of the block only)
+				Listcell c1 = cell(st);
+				// col 2-4: requisition data (first row of the block only)
+				Listcell c2 = cell(st);
+				Listcell c3 = cell(st);
+				Listcell c4 = cell(st);
+				// every product line has its own tick box
+				Checkbox chk = new Checkbox();
+				chk.addEventListener(Events.ON_CHECK, this);
+				reqChecks.put(Integer.valueOf(r.reqLineId), chk);
+				chk.setDisabled(cart.containsKey(Integer.valueOf(r.reqLineId)));
+				c0.appendChild(chk);
+				if (first) {
+					A link = new A(nvl(h.docNo));
+					link.setStyle("color:#1d4ed8; font-weight:700; text-decoration:underline; cursor:pointer;");
+					link.setAttribute("reqId", en.getKey());
+					link.addEventListener(Events.ON_CLICK, this);
+					c1.appendChild(link);
+
+					c2.setLabel(h.date == null ? "" : df.format(h.date));
+					c3.setLabel(nvl(h.requester));
+					c4.setLabel(nvl(h.status));
+				}
+				item.appendChild(c0);
+				item.appendChild(c1);
+				item.appendChild(c2);
+				item.appendChild(c3);
+				item.appendChild(c4);
+
+				// col 5-11: this line
+				item.appendChild(cell(st, r.bpCode));
+				item.appendChild(cell(st, r.bpName));
+				item.appendChild(cell(st, r.productValue));
+				item.appendChild(cell(st, nvl(r.productName) + (cart.containsKey(Integer.valueOf(r.reqLineId)) ? "  \u2714 added" : "")));
+				item.appendChild(cell(st, r.uomName));
+				item.appendChild(cell(st, r.qty == null ? "" : r.qty.stripTrailingZeros().toPlainString()));
+				item.appendChild(cell(st, r.desc));
+
+				reqList.appendChild(item);
+				first = false;
+			}
+			block++;
 		}
 
-		popupWin = new Window();
-		popupWin.setTitle("Select Requisition Lines");
-		popupWin.setClosable(true);
-		popupWin.setBorder("normal");
-		popupWin.setWidth("700px");
-
-		Vlayout box = new Vlayout();
-		ZKUpdateUtil.setHflex(box, "1");
-		box.appendChild(popupList);
-
-		Div bar = new Div();
-		bar.setStyle("text-align:right; padding:6px;");
-		bar.appendChild(popupAddBtn);
-		box.appendChild(bar);
-
-		popupWin.appendChild(box);
-		appendChild(popupWin);
-		org.mycompany.requisition.ui.XxTheme.apply(popupWin);
-		popupWin.doModal();
+		countLbl.setValue(reqLines.isEmpty()
+				? "No requisition with available lines found."
+				: reqLines.size() + " requisition(s)"
+						+ (reqLines.size() >= MAX_REQUISITIONS ? " (newest " + MAX_REQUISITIONS + " - use Search to narrow)" : ""));
+		updateSelectedCount();
 	}
 
-	private void closePopup() {
-		if (popupWin != null) {
-			popupWin.detach();
-			popupWin = null;
-		}
-		popupList = null;
-	}
-
-	/** Follows the RequisitionRFQService eligibility rule */
-	private List<LineRow> loadRequisitionLines(int requisitionId, Set<Integer> skipLineIds) {
+	/**
+	 * Eligible requisition lines (rule: not used in any RFQ/PO).
+	 *
+	 * @param filter   search text (null/empty = none)
+	 * @param reqIds   only these requisitions (null = all)
+	 * @param maxReq   stop after this many requisitions (0 = no limit)
+	 * @param heads    receives the requisition level data (may be null)
+	 */
+	private List<LineRow> query(String filter, Set<Integer> reqIds, int maxReq, Map<Integer, ReqHead> heads) {
 		List<LineRow> result = new ArrayList<LineRow>();
 
 		StringBuilder sql = new StringBuilder();
-		sql.append("SELECT rl.M_RequisitionLine_ID, rl.M_Product_ID, p.Name, rl.C_UOM_ID, u.Name, ");
-		sql.append("rl.Qty, rl.Description, rl.M_AttributeSetInstance_ID, rl.M_Requisition_ID ");
+		sql.append("SELECT r.M_Requisition_ID, r.DocumentNo, r.DateDoc, u.Name, dl.Name, ");
+		sql.append("rl.M_RequisitionLine_ID, rl.Line, rl.M_Product_ID, p.Value, p.Name, ");
+		sql.append("rl.C_UOM_ID, um.Name, rl.Qty, rl.Description, rl.M_AttributeSetInstance_ID, ");
+		if (reqLineHasBPartner)
+			sql.append("rl.C_BPartner_ID, bp.Value, bp.Name ");
+		else
+			sql.append("0, NULL, NULL ");
 		sql.append("FROM M_RequisitionLine rl ");
+		sql.append("JOIN M_Requisition r ON r.M_Requisition_ID = rl.M_Requisition_ID ");
 		sql.append("JOIN M_Product p ON p.M_Product_ID = rl.M_Product_ID ");
-		sql.append("LEFT JOIN C_UOM u ON u.C_UOM_ID = rl.C_UOM_ID ");
-		sql.append("WHERE rl.M_Requisition_ID=? AND rl.IsActive='Y' AND rl.C_OrderLine_ID IS NULL ");
+		sql.append("LEFT JOIN C_UOM um ON um.C_UOM_ID = rl.C_UOM_ID ");
+		sql.append("LEFT JOIN AD_User u ON u.AD_User_ID = r.AD_User_ID ");
+		sql.append("LEFT JOIN AD_Ref_List dl ON dl.AD_Reference_ID = 131 AND dl.Value = r.DocStatus ");
+		if (reqLineHasBPartner)
+			sql.append("LEFT JOIN C_BPartner bp ON bp.C_BPartner_ID = rl.C_BPartner_ID ");
+		sql.append("WHERE r.AD_Client_ID=? AND r.IsActive='Y' AND rl.IsActive='Y' AND rl.C_OrderLine_ID IS NULL ");
 		if (reqLineHasRfqCol)
 			sql.append("AND (rl.XX_RfQ_ID IS NULL OR rl.XX_RfQ_ID=0) ");
-		sql.append("ORDER BY rl.Line");
+
+		List<Object> params = new ArrayList<Object>();
+		params.add(Integer.valueOf(Env.getAD_Client_ID(Env.getCtx())));
+
+		if (reqIds != null && !reqIds.isEmpty()) {
+			sql.append("AND r.M_Requisition_ID IN (");
+			boolean firstId = true;
+			for (Integer id : reqIds) {
+				sql.append(firstId ? "?" : ",?");
+				params.add(id);
+				firstId = false;
+			}
+			sql.append(") ");
+		}
+
+		if (filter != null && !filter.trim().isEmpty()) {
+			String like = "%" + filter.trim().toUpperCase() + "%";
+			sql.append("AND (UPPER(r.DocumentNo) LIKE ? OR UPPER(p.Name) LIKE ? OR UPPER(p.Value) LIKE ? ");
+			sql.append("OR UPPER(COALESCE(u.Name,'')) LIKE ? ");
+			int n = 4;
+			if (reqLineHasBPartner) {
+				sql.append("OR UPPER(COALESCE(bp.Value,'')) LIKE ? OR UPPER(COALESCE(bp.Name,'')) LIKE ? ");
+				n = 6;
+			}
+			sql.append(") ");
+			for (int i = 0; i < n; i++)
+				params.add(like);
+		}
+		sql.append("ORDER BY r.DateDoc DESC, r.M_Requisition_ID DESC, rl.Line, rl.M_RequisitionLine_ID");
 
 		PreparedStatement pstmt = null;
 		ResultSet rs = null;
 		try {
 			pstmt = DB.prepareStatement(sql.toString(), null);
-			pstmt.setInt(1, requisitionId);
+			DB.setParameters(pstmt, params);
 			rs = pstmt.executeQuery();
+			Set<Integer> seen = new LinkedHashSet<Integer>();
 			while (rs.next()) {
-				int lineId = rs.getInt(1);
-				if (skipLineIds.contains(Integer.valueOf(lineId)))
-					continue;
+				Integer reqId = Integer.valueOf(rs.getInt(1));
+				if (!seen.contains(reqId)) {
+					if (maxReq > 0 && seen.size() >= maxReq)
+						break;   // keep only the newest requisitions
+					seen.add(reqId);
+					if (heads != null) {
+						ReqHead h = new ReqHead();
+						h.reqId = reqId.intValue();
+						h.docNo = rs.getString(2);
+						h.date = rs.getTimestamp(3);
+						h.requester = rs.getString(4);
+						h.status = rs.getString(5);
+						heads.put(reqId, h);
+					}
+				}
 				LineRow r = new LineRow();
-				r.reqLineId = lineId;
-				r.productId = rs.getInt(2);
-				r.productName = rs.getString(3);
-				r.uomId = rs.getInt(4);
-				r.uomName = rs.getString(5);
-				r.qty = rs.getBigDecimal(6) != null ? rs.getBigDecimal(6) : BigDecimal.ONE;
-				r.desc = rs.getString(7);
-				r.asiId = rs.getInt(8);
-				r.reqId = rs.getInt(9);
+				r.reqId = reqId.intValue();
+				r.reqNo = rs.getString(2);
+				r.reqLineId = rs.getInt(6);
+				r.lineNo = rs.getInt(7);
+				r.productId = rs.getInt(8);
+				r.productValue = rs.getString(9);
+				r.productName = rs.getString(10);
+				r.uomId = rs.getInt(11);
+				r.uomName = rs.getString(12);
+				r.qty = rs.getBigDecimal(13) != null ? rs.getBigDecimal(13) : BigDecimal.ONE;
+				r.desc = rs.getString(14);
+				r.asiId = rs.getInt(15);
+				r.bpId = rs.getInt(16);
+				r.bpCode = rs.getString(17);
+				r.bpName = rs.getString(18);
 				result.add(r);
 			}
 		} catch (SQLException e) {
@@ -486,97 +425,50 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 		return result;
 	}
 
-	/** Popup "Add Line": moves ticked lines into the lines table. */
-	private void addSelectedLines() {
-		if (popupList == null)
-			return;
-		if (popupList.getSelectedCount() == 0) {
-			warn("Select at least one line.");
-			return;
-		}
-
-		Set<Integer> existing = new HashSet<Integer>();
-		for (Listitem it : rfqList.getItems())
-			existing.add(Integer.valueOf(((LineRow) it.getValue()).reqLineId));
-
-		for (Listitem src : new ArrayList<Listitem>(popupList.getSelectedItems())) {
-			LineRow s = (LineRow) src.getValue();
-			if (existing.contains(Integer.valueOf(s.reqLineId)))
-				continue;
-
-			LineRow r = new LineRow();
-			r.reqId = s.reqId;
-			r.reqLineId = s.reqLineId;
-			r.productId = s.productId;
-			r.productName = s.productName;
-			r.uomId = s.uomId;
-			r.uomName = s.uomName;
-			r.asiId = s.asiId;
-			r.qty = s.qty;
-			r.desc = s.desc;
-			r.qtyBox = new Decimalbox(s.qty);
-			r.qtyBox.setWidth("90px");
-
-			int serial = rfqList.getItemCount() + 1;
-
-			Listitem item = new Listitem();
-			item.setValue(r);
-			item.appendChild(new Listcell(String.valueOf(serial)));
-			item.appendChild(new Listcell(String.valueOf(r.reqId)));
-			item.appendChild(new Listcell(String.valueOf(r.productId)));
-			item.appendChild(new Listcell(nvl(r.productName)));
-			Listcell qtyCell = new Listcell();
-			qtyCell.appendChild(r.qtyBox);
-			item.appendChild(qtyCell);
-			rfqList.appendChild(item);
-			item.setSelected(true);   // newly added lines are ticked by default
-		}
-		closePopup();
-	}
-
 	// ----------------------------------------------------------------- events
-
-	@Override
-	public void valueChange(ValueChangeEvent evt) {
-		String name = evt.getPropertyName();
-		if ("M_Requisition_ID".equals(name))
-			openRequisitionPopup(toInt(evt.getNewValue()));
-	}
 
 	@Override
 	public void onEvent(Event e) {
 		try {
-			if (e instanceof UploadEvent) {
-				Media m = ((UploadEvent) e).getMedia();
-				if (m != null) {
-					attachMedia = m;
-					attachBtn.setLabel("Attachment: " + m.getName());
+			Component c = e.getTarget();
+			if (c == searchBtn || c == searchBox) {
+				loadList();
+			} else if (c == refreshBtn) {
+				searchBox.setValue("");
+				loadList();
+			} else if (c == selectAll) {
+				for (Checkbox chk : reqChecks.values())
+					chk.setChecked(selectAll.isChecked());
+				updateSelectedCount();
+			} else if (c == addLineBtn) {
+				int added = 0;
+				for (List<LineRow> g : reqLines.values())
+					for (LineRow r : g) {
+						Checkbox chk = reqChecks.get(Integer.valueOf(r.reqLineId));
+						if (chk != null && chk.isChecked() && !chk.isDisabled()) {
+							cart.put(Integer.valueOf(r.reqLineId), r);
+							added++;
+						}
+					}
+				if (added == 0) {
+					warn("Tick at least one product line, or click a requisition code to pick products.");
+				} else {
+					refreshCart();
+					loadList();
 				}
-				return;
-			}
-
-			Object c = e.getTarget();
-			if (c == reloadBtn) {
-				int reqId = toInt(reqEditor.getValue());
-				if (reqId <= 0)
-					warn("Select a requisition first.");
-				else
-					openRequisitionPopup(reqId);
-			} else if (c == termCombo) {
-				Listitem ti = termCombo.getSelectedItem();
-				onTermSelected(ti == null ? 0 : toInt(ti.getValue()));
-			} else if (c == popupAddBtn) {
-				addSelectedLines();
-			} else if (c == okBtn) {
-				int rfqId = saveRfq();
-				SessionManager.getAppDesktop().closeActiveWindow();
-				try {
-					AEnv.zoom(MRfQ.Table_ID, rfqId); // opens RfQ window with Line/Quantity tabs
-				} catch (Exception zx) {
-					log.log(Level.WARNING, "Zoom failed", zx);
-				}
-			} else if (c == cancelBtn) {
-				SessionManager.getAppDesktop().closeActiveWindow();
+			} else if (c == createBtn) {
+				openCreateDialog();
+			} else if (c == removeBtn) {
+				for (Listitem it : new ArrayList<Listitem>(cartList.getSelectedItems()))
+					cart.remove(Integer.valueOf(((LineRow) it.getValue()).reqLineId));
+				refreshCart();
+				loadList();
+			} else if (c instanceof A) {
+				Object id = c.getAttribute("reqId");
+				if (id instanceof Integer)
+					openPicker((Integer) id);
+			} else if (c instanceof Checkbox) {
+				updateSelectedCount();   // a line tick box
 			}
 		} catch (Exception ex) {
 			log.log(Level.SEVERE, ex.getMessage(), ex);
@@ -584,193 +476,96 @@ public class WCreateRFQFromPR extends ADForm implements ValueChangeListener, Eve
 		}
 	}
 
-	/** Fills Terms and Conditions with the text of the selected RFQ Term. */
-	private void onTermSelected(int termId) {
-		if (termId <= 0) {
-			termsField.setValue("");
-			return;
-		}
-		if (termTable == null || termIdCol == null || termTextCol == null)
-			return;
-		String text = DB.getSQLValueString(null,
-				"SELECT " + termTextCol + " FROM " + termTable + " WHERE " + termIdCol + "=?", termId);
-		termsField.setValue(text == null ? "" : text);
+	private void updateSelectedCount() {
+		int n = 0;
+		for (Checkbox chk : reqChecks.values())
+			if (chk.isChecked())
+				n++;
+		selectedLbl.setValue("Selected lines: " + n);
 	}
 
-	// ------------------------------------------------------------------- save
-
-	/** @return created C_RfQ_ID */
-	private int saveRfq() throws Exception {
-		int topicId = toInt(topicEditor.getValue());
-
-		if (topicId <= 0)
-			throw new AdempiereException("RFQ Topic mandatory");
-		if (rfqList.getItemCount() == 0)
-			throw new AdempiereException("No line added (select a requisition and click Add Line)");
-
-		// Empty date -> today (avoids restricted Datebox.setValue)
-		Date d = dateBox.getValue();
-		if (d == null)
-			d = new Date();
-		Timestamp rfqDate = new Timestamp(d.getTime());
-
-		if (rfqList.getSelectedCount() == 0)
-			throw new AdempiereException("Select at least one line in the lines table");
-
-		// read ticked lines only + validate qty
+	/** Popup with the products of one requisition; ticked ones go to the basket. */
+	private void openPicker(Integer reqId) {
+		Set<Integer> ids = new LinkedHashSet<Integer>();
+		ids.add(reqId);
 		List<LineRow> lines = new ArrayList<LineRow>();
-		for (Listitem it : rfqList.getItems()) {
-			if (!it.isSelected())
-				continue;
-			LineRow r = (LineRow) it.getValue();
-			BigDecimal q = r.qtyBox != null ? r.qtyBox.getValue() : r.qty;
-			if (q == null || q.signum() <= 0)
-				throw new AdempiereException("Qty must be greater than 0: " + r.productName);
-			r.qty = q;
-			lines.add(r);
+		for (LineRow r : query(null, ids, 0, null))   // fresh read
+			if (!cart.containsKey(Integer.valueOf(r.reqLineId)))
+				lines.add(r);
+		if (lines.isEmpty()) {
+			warn("No more available lines in this requisition (already used, or already in Selected Lines).");
+			return;
 		}
-		int reqId = lines.get(0).reqId; // requisition of the first line
-
-		String trxName = Trx.createTrxName("CreateRFQ");
-		Trx trx = Trx.get(trxName, true);
-		try {
-			// ---------- Organization (login org, else requisition's org) ----------
-			int orgId = Env.getAD_Org_ID(Env.getCtx());
-			if (orgId <= 0 && reqId > 0)
-				orgId = DB.getSQLValue(trxName,
-						"SELECT AD_Org_ID FROM M_Requisition WHERE M_Requisition_ID=?", reqId);
-			if (orgId <= 0)
-				throw new AdempiereException(
-						"Organization not found. Login with a specific organization or use a requisition with an organization.");
-
-			// ---------- Header: C_RfQ ----------
-			MRfQ rfq = new MRfQ(Env.getCtx(), 0, trxName);
-			rfq.setAD_Org_ID(orgId);
-			rfq.setC_RfQ_Topic_ID(topicId);
-			rfq.setName("RFQ-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date()));
-			rfq.setHelp(termsField.getValue());   // Comment/Help = Terms and Conditions
-			rfq.setDateResponse(rfqDate);
-			rfq.setDateWorkStart(rfqDate);
-			rfq.setSalesRep_ID(Env.getAD_User_ID(Env.getCtx()));
-
-			// selected RFQ Term (so the RfQ window shows it too)
-			Listitem termItem = termCombo.getSelectedItem();
-			int termId = (termItem == null) ? 0 : toInt(termItem.getValue());
-			if (termId > 0 && termColName != null && rfq.get_ColumnIndex(termColName) >= 0)
-				rfq.set_ValueOfColumn(termColName, termId);
-
-			int curId = Env.getContextAsInt(Env.getCtx(), "$C_Currency_ID");
-			if (curId <= 0)
-				curId = DB.getSQLValue(trxName,
-						"SELECT C_Currency_ID FROM C_AcctSchema WHERE C_AcctSchema_ID="
-						+ "(SELECT C_AcctSchema1_ID FROM AD_ClientInfo WHERE AD_Client_ID=?)",
-						Env.getAD_Client_ID(Env.getCtx()));
-			rfq.setC_Currency_ID(curId);
-
-			if (reqId > 0 && rfq.get_ColumnIndex("M_Requisition_ID") >= 0)
-				rfq.set_ValueOfColumn("M_Requisition_ID", reqId);
-
-			rfq.saveEx();
-			int rfqId = rfq.getC_RfQ_ID();
-
-			// ---------- Lines ----------
-			// Same product (+ same UOM / attribute set) -> ONE RFQ line with the summed qty.
-			// All requisition lines of the group are still locked to this RFQ.
-			Map<String, List<LineRow>> groups = new LinkedHashMap<String, List<LineRow>>();
-			for (LineRow r : lines) {
-				String key = r.productId + "_" + r.uomId + "_" + r.asiId;
-				List<LineRow> g = groups.get(key);
-				if (g == null) {
-					g = new ArrayList<LineRow>();
-					groups.put(key, g);
-				}
-				g.add(r);
+		WRequisitionLineSelectionDialog dlg = new WRequisitionLineSelectionDialog(lines, new java.util.function.Consumer<List<LineRow>>() {
+			@Override
+			public void accept(List<LineRow> picked) {
+				for (LineRow r : picked)
+					cart.put(Integer.valueOf(r.reqLineId), r);
+				refreshCart();
+				loadList();
 			}
+		});
+		appendChild(dlg);
+		org.mycompany.requisition.ui.XxTheme.apply(dlg);
+		dlg.doModal();
+	}
 
-			int lineNo = 0;
-			for (List<LineRow> g : groups.values()) {
-				LineRow first = g.get(0);
-				BigDecimal totalQty = BigDecimal.ZERO;
-				for (LineRow r : g)
-					totalQty = totalQty.add(r.qty);
-
-				lineNo += 1;   // Line = Serial No (1, 2, 3...) so the RfQ window matches this form
-
-				MRfQLine line = new MRfQLine(rfq);
-				line.setLine(lineNo);
-				line.setM_Product_ID(first.productId);
-				line.setM_AttributeSetInstance_ID(first.asiId);
-				line.setDescription(!Util.isEmpty(first.desc, true) ? first.desc : first.productName);
-				if (line.get_ColumnIndex("XX_RequisitionLine_ID") >= 0)
-					line.set_ValueOfColumn("XX_RequisitionLine_ID", first.reqLineId);
-				if (line.get_ColumnIndex("Qty") >= 0)
-					line.set_ValueOfColumn("Qty", totalQty);
-				line.saveEx();
-
-				MRfQLineQty lq = new MRfQLineQty(line);
-				if (first.uomId > 0)
-					lq.setC_UOM_ID(first.uomId);
-				lq.setQty(totalQty);
-				lq.setIsRfQQty(true);
-				lq.setIsPurchaseQty(true);
-				lq.saveEx();
-
-				// lock every requisition line of this group to this RFQ
-				if (reqLineHasRfqCol) {
-					for (LineRow r : g) {
-						int n = DB.executeUpdateEx(
-								"UPDATE M_RequisitionLine SET XX_RfQ_ID=? WHERE M_RequisitionLine_ID=? "
-								+ "AND (XX_RfQ_ID IS NULL OR XX_RfQ_ID=0)",
-								new Object[] { rfqId, r.reqLineId }, trxName);
-						if (n != 1)
-							throw new AdempiereException(
-									"Requisition line already used in another RFQ: " + r.productName);
-					}
-				}
-			}
-
-			// ---------- Attachment ----------
-			if (attachMedia != null) {
-				MAttachment att = new MAttachment(Env.getCtx(), MRfQ.Table_ID, rfqId, trxName);
-				byte[] bytes = attachMedia.isBinary()
-						? attachMedia.getByteData()
-						: attachMedia.getStringData().getBytes("UTF-8");
-				att.addEntry(attachMedia.getName(), bytes);
-				att.saveEx();
-			}
-
-			trx.commit();
-			return rfqId;
-		} catch (Exception ex) {
-			trx.rollback();
-			if (ex instanceof AdempiereException)
-				throw ex;
-			throw new AdempiereException(ex);
-		} finally {
-			trx.close();
+	/** Redraws the Selected Lines table. */
+	private void refreshCart() {
+		for (Listitem old : new ArrayList<Listitem>(cartList.getItems()))
+			old.detach();
+		for (LineRow r : cart.values()) {
+			Listitem it = new Listitem();
+			it.setValue(r);
+			it.appendChild(new Listcell(nvl(r.reqNo)));
+			it.appendChild(new Listcell(nvl(r.bpCode)));
+			it.appendChild(new Listcell(nvl(r.productValue)));
+			it.appendChild(new Listcell(nvl(r.productName)));
+			it.appendChild(new Listcell(nvl(r.uomName)));
+			it.appendChild(new Listcell(r.qty == null ? "" : r.qty.stripTrailingZeros().toPlainString()));
+			cartList.appendChild(it);
 		}
+		cartLbl.setValue("Selected Lines: " + cart.size() + "   ");
+	}
+
+	/** Opens the separate "Create RFQ" window with every line in the basket. */
+	private void openCreateDialog() {
+		if (cart.isEmpty()) {
+			warn("No line selected. Click a requisition code and pick products first.");
+			return;
+		}
+		WCreateRFQDialog dlg = new WCreateRFQDialog(m_WindowNo, new ArrayList<LineRow>(cart.values()), new Runnable() {
+			@Override
+			public void run() {
+				cart.clear();
+				refreshCart();
+				loadList();   // used lines disappear from the list
+			}
+		});
+		appendChild(dlg);
+		org.mycompany.requisition.ui.XxTheme.apply(dlg);
+		dlg.doModal();
 	}
 
 	// ---------------------------------------------------------------- helpers
+
+	private static Listcell cell(String style) {
+		Listcell c = new Listcell();
+		c.setStyle(style);
+		return c;
+	}
+
+	private static Listcell cell(String style, String label) {
+		Listcell c = new Listcell(nvl(label));
+		c.setStyle(style);
+		return c;
+	}
 
 	private static boolean columnExists(String table, String column) {
 		return DB.getSQLValue(null,
 				"SELECT COUNT(*) FROM information_schema.columns "
 				+ "WHERE LOWER(table_name)=LOWER(?) AND LOWER(column_name)=LOWER(?)",
 				table, column) > 0;
-	}
-
-	private static int requireColumn(String table, String column) {
-		int id = MColumn.getColumn_ID(table, column);
-		if (id <= 0)
-			throw new AdempiereException("AD_Column not found: " + table + "." + column);
-		return id;
-	}
-
-	private static int toInt(Object o) {
-		if (o instanceof Number)
-			return ((Number) o).intValue();
-		return 0;
 	}
 
 	private static String nvl(String s) {
