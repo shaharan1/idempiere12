@@ -8,7 +8,6 @@ import java.util.logging.Level;
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.webui.apps.AEnv;
 import org.adempiere.webui.component.Button;
-import org.adempiere.webui.component.Combobox;
 import org.adempiere.webui.component.ConfirmPanel;
 import org.adempiere.webui.component.Grid;
 import org.adempiere.webui.component.Label;
@@ -20,7 +19,6 @@ import org.adempiere.webui.event.ValueChangeListener;
 import org.adempiere.webui.panel.ADForm;
 import org.adempiere.webui.panel.WAttachment;
 import org.adempiere.webui.session.SessionManager;
-import org.adempiere.webui.theme.ThemeManager;
 import org.adempiere.webui.util.ZKUpdateUtil;
 import org.compiere.model.MColumn;
 import org.compiere.model.MLookup;
@@ -46,7 +44,6 @@ import org.zkoss.zul.Center;
 import org.zkoss.zul.Checkbox;
 import org.zkoss.zul.Column;
 import org.zkoss.zul.Columns;
-import org.zkoss.zul.Comboitem;
 import org.zkoss.zul.Div;
 import org.zkoss.zul.Hlayout;
 import org.zkoss.zul.Style;
@@ -64,9 +61,10 @@ import org.zkoss.zul.Vlayout;
 /**
  * "RFQ Response Entry" form.
  *
- * - RFQ field = search + dropdown (type korle filter hoy). Shudhu oi RFQ gulo ashe
- *   jegulor kono response ekhono Complete hoy ni.
- * - RFQ select korle shei RFQ er Business Partner response list ashe.
+ * - Upore shob RFQ er ekta table (RFQ No, Name, Date, PR No, Items, Business Partner Code gulo
+ *   por por, Status, CS Status). "Show completed RFQs" tick na thakle shudhu pending RFQ ashe.
+ * - Business Partner Code e click -> oi RFQ select hoy + response popup khole.
+ * - RFQ row select korle niche tar supplier response list (Complete / Attachment) ashe.
  * - Business Partner Code e click -> WRFQResponseDialog (response entry popup).
  * - "Complete" -> IsComplete='Y'. "Attachment" -> standard attachment window.
  *
@@ -110,7 +108,9 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 	private Borderlayout mainLayout = new Borderlayout();
 
 	private WTableDirEditor orgEditor;
-	private Combobox rfqCombo = new Combobox();
+	private Listbox rfqList;
+	private int selectedRfqId;
+	private String selectedRfqLabel = "";
 	private Label rfqNameLabel = new Label("");
 	private Button reloadBtn = new Button("Reload RFQ");
 	private Button completeRfqBtn = new Button("Complete RFQ");
@@ -150,25 +150,33 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		orgEditor.setValue(Integer.valueOf(Env.getAD_Org_ID(Env.getCtx())));
 		orgEditor.addValueChangeListener(this);
 
-		// RFQ: search + dropdown
-		rfqCombo.setAutocomplete(true);
-		rfqCombo.setAutodrop(true);
-		rfqCombo.setButtonVisible(true);
-		ZKUpdateUtil.setHflex(rfqCombo, "1");
-		rfqCombo.addEventListener(Events.ON_SELECT, this);
-		rfqCombo.addEventListener(Events.ON_CHANGE, this);
+		// RFQ table (master list)
+		rfqList = new Listbox();
+		rfqList.setSclass("rq-list");
+		rfqList.setHeight("340px");
+		rfqList.setEmptyMessage("No RFQ found.");
+		Listhead rh = new Listhead();
+		rh.appendChild(header("SL", "50px"));
+		rh.appendChild(header("RFQ No", "110px"));
+		rh.appendChild(header("RFQ Name", "210px"));
+		rh.appendChild(header("Date", "100px"));
+		rh.appendChild(header("PR No", "130px"));
+		rh.appendChild(header("Items", "60px"));
+		rh.appendChild(header("Business Partner Code", null));
+		rh.appendChild(header("Responses", "100px"));
+		rh.appendChild(header("Status", "110px"));
+		rh.appendChild(header("CS Status", "130px"));
+		rfqList.appendChild(rh);
+		ZKUpdateUtil.setHflex(rfqList, "1");
+		rfqList.addEventListener(Events.ON_SELECT, this);
 
 		reloadBtn.setStyle("background:#0ea5a4;background-image:none;color:#ffffff;border:none;border-radius:6px;"
 				+ "font-weight:600;padding:6px 18px;cursor:pointer;");
-		try {
-			reloadBtn.setImage(ThemeManager.getThemeResource("images/Refresh16.png"));
-		} catch (Exception ignore) {
-			// icon na thakleo button kaj korbe
-		}
 		reloadBtn.addEventListener(Events.ON_CLICK, this);
 		completeRfqBtn.setStyle("background:#1e5aa8;background-image:none;color:#ffffff;border:none;border-radius:6px;"
 				+ "font-weight:600;padding:5px 16px;cursor:pointer;");
 		completeRfqBtn.addEventListener(Events.ON_CLICK, e -> completeRfq());
+		showDoneChk.setChecked(true); // user chay shob RFQ dekhte
 		showDoneChk.addEventListener(Events.ON_CHECK, this);
 		showDoneChk.setStyle("font-weight:600;color:#475569;padding-left:10px;");
 		confirmPanel.addActionListener(this); // OK / Cancel (tick / cross icon)
@@ -240,9 +248,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		grid.appendChild(cols);
 		addColumn(cols, "120px", null);
 		addColumn(cols, null, "1");
-		addColumn(cols, "60px", null);
-		addColumn(cols, null, "1");
-		addColumn(cols, "90px", null);
+		addColumn(cols, "120px", null);
 		addColumn(cols, null, "2");
 		addColumn(cols, "170px", null);
 		Rows rows = new Rows();
@@ -253,9 +259,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		rows.appendChild(r1);
 		r1.appendChild(boldLabel("Organization"));
 		r1.appendChild(orgEditor.getComponent());
-		r1.appendChild(boldLabel("RFQ"));
-		r1.appendChild(rfqCombo);
-		r1.appendChild(boldLabel("RFQ Name"));
+		r1.appendChild(boldLabel("Selected RFQ"));
 		rfqNameLabel.setStyle("font-weight:600;color:#0f2b46;font-size:14px;");
 		r1.appendChild(rfqNameLabel);
 		r1.appendChild(reloadBtn);
@@ -280,9 +284,17 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		ZKUpdateUtil.setHflex(cwrap, "1");
 		center.appendChild(cwrap);
 
+		Div rfqCard = new Div();
+		rfqCard.setSclass("rq-card");
+		rfqCard.setStyle("margin-top:0;");
+		cwrap.appendChild(rfqCard);
+		Label rcap = new Label("RFQ List");
+		rcap.setSclass("rq-section");
+		rfqCard.appendChild(rcap);
+		rfqCard.appendChild(rfqList);
+
 		Div listCard = new Div();
 		listCard.setSclass("rq-card");
-		listCard.setStyle("margin-top:0;");
 		cwrap.appendChild(listCard);
 
 		Label cap = new Label("Supplier Responses");
@@ -340,37 +352,47 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 
 	// ------------------------------------------------------------ RFQ list
 
+	private static class Resp {
+		int id;
+		String code, name;
+		boolean complete;
+	}
+
 	/**
-	 * Dropdown e shudhu oi RFQ gulo jegulor kono active response ekhono Complete hoy ni.
-	 * (Shob RFQ dekhte chaile EXISTS er line ta muche din.)
+	 * RFQ table. "Show completed RFQs" tick na thakle shudhu oi RFQ gulo ashe jegulor kono
+	 * response ekhono Complete hoy ni (ba jar subscriber er response ekhono toiri hoy ni).
 	 */
 	private void loadRfqList() {
-		while (rfqCombo.getItemCount() > 0)
-			rfqCombo.removeItemAt(0);
-		rfqCombo.setValue("");
-		rfqNameLabel.setValue("");
+		int keep = selectedRfqId;
+		clear(rfqList);
 		clear(respList);
 		setStats(0, 0);
+		selectedRfqId = 0;
+		selectedRfqLabel = "";
+		rfqNameLabel.setValue("");
 
 		int orgId = toInt(orgEditor.getValue());
-		String labelExpr = rfqHasDocNo ? "COALESCE(r.DocumentNo, r.Name)" : "r.Name";
 
 		StringBuilder sql = new StringBuilder();
-		sql.append("SELECT r.C_RfQ_ID, ").append(labelExpr).append(" FROM C_RfQ r ");
-		sql.append("WHERE r.IsActive='Y' AND r.AD_Client_ID=? ");
+		sql.append("SELECT r.C_RfQ_ID, ").append(RfQApprovalService.docNoExpr()).append(", r.Name, r.Created, ");
+		sql.append("(SELECT string_agg(DISTINCT x.DocumentNo, ', ') FROM C_RfQLine xl ");
+		sql.append("   JOIN M_RequisitionLine xrl ON xrl.M_RequisitionLine_ID=xl.XX_RequisitionLine_ID ");
+		sql.append("   JOIN M_Requisition x ON x.M_Requisition_ID=xrl.M_Requisition_ID WHERE xl.C_RfQ_ID=r.C_RfQ_ID), ");
+		sql.append("(SELECT COUNT(*) FROM C_RfQLine ql WHERE ql.C_RfQ_ID=r.C_RfQ_ID AND ql.IsActive='Y'), ");
+		sql.append(RfQApprovalService.lastActionSql()).append(" ");
+		sql.append("FROM C_RfQ r WHERE r.IsActive='Y' AND r.AD_Client_ID=? ");
 		if (orgId > 0)
 			sql.append("AND r.AD_Org_ID=? ");
 		// Incomplete response ache, ba Topic e emon active subscriber ache jar response ekhono toiri hoy ni
 		sql.append("AND (EXISTS (SELECT 1 FROM C_RfQResponse x WHERE x.C_RfQ_ID=r.C_RfQ_ID ");
 		sql.append("AND x.IsActive='Y' AND x.IsComplete='N') ");
-		sql.append("OR EXISTS (SELECT 1 FROM C_RfQ_TopicSubscriber s WHERE s.C_RfQ_Topic_ID=r.C_RfQ_Topic_ID ");
-		sql.append("AND s.IsActive='Y' AND NOT EXISTS (SELECT 1 FROM C_RfQResponse y ");
-		sql.append("WHERE y.C_RfQ_ID=r.C_RfQ_ID AND y.C_BPartner_ID=s.C_BPartner_ID AND y.IsActive='Y')) ");
+		sql.append("OR ").append(missingSubscriberSql("r.C_RfQ_ID")).append(" ");
 		if (showDoneChk.isChecked())
 			sql.append("OR EXISTS (SELECT 1 FROM C_RfQResponse z WHERE z.C_RfQ_ID=r.C_RfQ_ID AND z.IsActive='Y') ");
 		sql.append(") ");
 		sql.append("ORDER BY r.C_RfQ_ID DESC");
 
+		java.util.List<Object[]> rfqs = new java.util.ArrayList<Object[]>();
 		PreparedStatement pstmt = null;
 		ResultSet rs = null;
 		try {
@@ -380,34 +402,159 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			if (orgId > 0)
 				pstmt.setInt(idx++, orgId);
 			rs = pstmt.executeQuery();
-			while (rs.next()) {
-				Comboitem ci = rfqCombo.appendItem(nvl(rs.getString(2)));
-				ci.setValue(Integer.valueOf(rs.getInt(1)));
-			}
+			while (rs.next())
+				rfqs.add(new Object[] { Integer.valueOf(rs.getInt(1)), nvl(rs.getString(2)), nvl(rs.getString(3)),
+						rs.getTimestamp(4), nvl(rs.getString(5)), Integer.valueOf(rs.getInt(6)), rs.getString(7) });
 		} catch (SQLException e) {
 			log.log(Level.SEVERE, sql.toString(), e);
 			throw new AdempiereException(e);
 		} finally {
 			DB.close(rs, pstmt);
 		}
-	}
+		if (rfqs.isEmpty())
+			return;
 
-	/** Selected RFQ id (dropdown theke select, ba full label type kora) */
-	private int currentRfqId() {
-		Comboitem ci = rfqCombo.getSelectedItem();
-		if (ci == null) {
-			String t = rfqCombo.getValue();
-			if (t != null && !t.trim().isEmpty()) {
-				for (Comboitem it : rfqCombo.getItems()) {
-					if (t.trim().equalsIgnoreCase(it.getLabel())) {
-						rfqCombo.setSelectedItem(it);
-						ci = it;
-						break;
-					}
-				}
+		// subscriber er response ekhono na thakle toiri kore nao (BP code gulo dekhanor jonno)
+		StringBuilder ids = new StringBuilder();
+		for (Object[] r : rfqs) {
+			int id = ((Integer) r[0]).intValue();
+			if (ids.length() > 0)
+				ids.append(',');
+			ids.append(id);
+			try {
+				if (DB.getSQLValue(null, "SELECT CASE WHEN " + missingSubscriberSql("?") + " THEN 1 ELSE 0 END", id) > 0)
+					ensureResponses(id);
+			} catch (Exception ex) {
+				log.log(Level.WARNING, "ensureResponses RFQ " + id + ": " + ex.getMessage());
 			}
 		}
-		return ci == null ? 0 : toInt(ci.getValue());
+
+		// shob RFQ er response ek query te
+		java.util.Map<Integer, java.util.List<Resp>> byRfq = new java.util.HashMap<Integer, java.util.List<Resp>>();
+		String rsql = "SELECT r.C_RfQ_ID, r.C_RfQResponse_ID, bp.Value, bp.Name, r.IsComplete "
+				+ "FROM C_RfQResponse r JOIN C_BPartner bp ON bp.C_BPartner_ID=r.C_BPartner_ID "
+				+ "WHERE r.IsActive='Y' AND r.C_RfQ_ID IN (" + ids + ") ORDER BY r.C_RfQ_ID, r.C_RfQResponse_ID";
+		try {
+			pstmt = DB.prepareStatement(rsql, null);
+			rs = pstmt.executeQuery();
+			while (rs.next()) {
+				Resp rp = new Resp();
+				rp.id = rs.getInt(2);
+				rp.code = nvl(rs.getString(3));
+				rp.name = nvl(rs.getString(4));
+				rp.complete = "Y".equals(rs.getString(5));
+				Integer k = Integer.valueOf(rs.getInt(1));
+				if (!byRfq.containsKey(k))
+					byRfq.put(k, new java.util.ArrayList<Resp>());
+				byRfq.get(k).add(rp);
+			}
+		} catch (SQLException e) {
+			log.log(Level.SEVERE, rsql, e);
+			throw new AdempiereException(e);
+		} finally {
+			DB.close(rs, pstmt);
+		}
+
+		java.text.SimpleDateFormat df = new java.text.SimpleDateFormat("dd/MM/yyyy");
+		int sl = 0;
+		Listitem keepItem = null;
+		for (Object[] r : rfqs) {
+			sl++;
+			int id = ((Integer) r[0]).intValue();
+			String no = (String) r[1];
+			java.util.List<Resp> resps = byRfq.get(Integer.valueOf(id));
+			if (resps == null)
+				resps = new java.util.ArrayList<Resp>();
+			int done = 0;
+			for (Resp rp : resps)
+				if (rp.complete)
+					done++;
+			Listitem item = newRfqRow(id, sl, no, (String) r[2], r[3] == null ? "" : df.format((java.util.Date) r[3]),
+					(String) r[4], ((Integer) r[5]).intValue(), resps, done, (String) r[6]);
+			rfqList.appendChild(item);
+			if (id == keep)
+				keepItem = item;
+		}
+		if (keepItem != null)
+			selectRfq(keepItem);
+	}
+
+	/** True SQL expression: oi RFQ er Topic e emon active subscriber ache jar response ekhono nei. */
+	private static String missingSubscriberSql(String rfqIdExpr) {
+		return "EXISTS (SELECT 1 FROM C_RfQ_TopicSubscriber s JOIN C_RfQ q ON q.C_RfQ_Topic_ID=s.C_RfQ_Topic_ID "
+				+ "WHERE q.C_RfQ_ID=" + rfqIdExpr + " AND s.IsActive='Y' AND NOT EXISTS (SELECT 1 FROM C_RfQResponse y "
+				+ "WHERE y.C_RfQ_ID=q.C_RfQ_ID AND y.C_BPartner_ID=s.C_BPartner_ID AND y.IsActive='Y'))";
+	}
+
+	private Listitem newRfqRow(final int rfqId, int sl, String no, String name, String date, String prNos, int items,
+			java.util.List<Resp> resps, int done, String csState) {
+		final Listitem item = new Listitem();
+		item.setValue(Integer.valueOf(rfqId));
+		item.setAttribute("label", no + (name.isEmpty() ? "" : " - " + name));
+		if (sl % 2 == 0)
+			item.setStyle("background:#f8fafc;");
+
+		item.appendChild(new Listcell(String.valueOf(sl)));
+		Listcell cNo = new Listcell(no);
+		cNo.setStyle("font-weight:700;color:#0f2b46;");
+		item.appendChild(cNo);
+		item.appendChild(new Listcell(name));
+		item.appendChild(new Listcell(date));
+		item.appendChild(new Listcell(prNos));
+		item.appendChild(new Listcell(String.valueOf(items)));
+
+		// Business Partner Code gulo por por; click -> RFQ select + response popup
+		Listcell cBp = new Listcell();
+		Vlayout stack = new Vlayout();
+		stack.setSpacing("3px");
+		for (final Resp rp : resps) {
+			Hlayout line = new Hlayout();
+			line.setSpacing("8px");
+			A link = new A(rp.code);
+			link.setStyle(LINK_STYLE + "color:" + (rp.complete ? "#166534;" : "#b45309;"));
+			link.setTooltiptext(rp.name + (rp.complete ? " (Completed)" : " (Pending)"));
+			link.addEventListener(Events.ON_CLICK, e -> {
+				selectRfq(item);
+				openResponse(rp.id);
+			});
+			Label nm = new Label(rp.name);
+			nm.setStyle("color:#64748b;font-size:12px;");
+			line.appendChild(link);
+			line.appendChild(nm);
+			stack.appendChild(line);
+		}
+		cBp.appendChild(stack);
+		item.appendChild(cBp);
+
+		item.appendChild(new Listcell(done + " / " + resps.size()));
+
+		boolean allDone = !resps.isEmpty() && done == resps.size();
+		Label badge = new Label(allDone ? "Completed" : "Pending");
+		badge.setStyle("display:inline-block;padding:3px 14px;border-radius:999px;font-size:12px;font-weight:600;"
+				+ (allDone ? "background:#dcfce7;color:#166534;" : "background:#fef3c7;color:#92400e;"));
+		Listcell cSt = new Listcell();
+		cSt.appendChild(badge);
+		item.appendChild(cSt);
+
+		String cs = RfQApprovalService.S_APPROVED.equals(csState) ? "Approved"
+				: RfQApprovalService.S_REJECTED.equals(csState) ? "Rejected"
+				: RfQApprovalService.S_PENDING.equals(csState) ? "Pending Approval" : "Not Submitted";
+		item.appendChild(new Listcell(cs));
+		return item;
+	}
+
+	/** RFQ row select kore niche tar supplier list dekhao. */
+	private void selectRfq(Listitem item) {
+		rfqList.setSelectedItem(item);
+		selectedRfqId = toInt(item.getValue());
+		Object lbl = item.getAttribute("label");
+		selectedRfqLabel = lbl == null ? "" : lbl.toString();
+		loadResponses();
+	}
+
+	/** Selected RFQ id (table er selected row) */
+	private int currentRfqId() {
+		return selectedRfqId;
 	}
 
 	// ------------------------------------------------------------ grid data
@@ -463,8 +610,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			return;
 		}
 		ensureResponses(rfqId);
-		String rfqName = DB.getSQLValueString(null, "SELECT Name FROM C_RfQ WHERE C_RfQ_ID=?", rfqId);
-		rfqNameLabel.setValue(nvl(rfqName));
+		rfqNameLabel.setValue(selectedRfqLabel);
 
 		StringBuilder sql = new StringBuilder();
 		sql.append("SELECT r.C_RfQResponse_ID, bp.Value, bp.Name, loc.Address1, loc.Address2, loc.City, r.IsComplete ");
@@ -564,7 +710,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 
 	private void openResponse(int respId) {
 		try {
-			WRFQResponseDialog dlg = new WRFQResponseDialog(respId, () -> loadResponses());
+			WRFQResponseDialog dlg = new WRFQResponseDialog(respId, () -> reloadKeepingSelection());
 			dlg.show();
 		} catch (Exception ex) {
 			error(ex);
@@ -585,7 +731,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			PO po = MTable.get(Env.getCtx(), "C_RfQResponse").getPO(respId, null);
 			po.set_ValueOfColumn("IsComplete", Boolean.TRUE);
 			po.saveEx();
-			loadResponses();
+			reloadKeepingSelection();
 		} catch (Exception ex) {
 			error(ex);
 		}
@@ -657,7 +803,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 				log.log(Level.INFO, "RFQ " + rfqId + " not started in the approval engine: " + ignore.getMessage());
 			}
 
-			loadResponses();
+			reloadKeepingSelection();
 			Messagebox.show("RFQ completed and submitted for approval.", "Complete RFQ", Messagebox.OK,
 					Messagebox.INFORMATION);
 		} catch (Exception ex) {
@@ -685,16 +831,20 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 
 	@Override
 	public void valueChange(ValueChangeEvent evt) {
-		if ("AD_Org_ID".equals(evt.getPropertyName()))
-			loadRfqList(); // org bodlale RFQ list notun kore
+		if ("AD_Org_ID".equals(evt.getPropertyName())) {
+			selectedRfqId = 0; // org bodlale selection reset
+			loadRfqList();
+		}
 	}
 
 	@Override
 	public void onEvent(Event e) {
 		try {
 			Object c = e.getTarget();
-			if (c == rfqCombo) {
-				loadResponses();
+			if (c == rfqList) {
+				Listitem li = rfqList.getSelectedItem();
+				if (li != null && toInt(li.getValue()) != selectedRfqId)
+					selectRfq(li);
 			} else if (c == reloadBtn || c == showDoneChk) {
 				reloadKeepingSelection();
 			} else if (c instanceof org.zkoss.zk.ui.Component) {
@@ -709,19 +859,9 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		}
 	}
 
-	/** Reload RFQ list + grid, keeping the currently selected RFQ if it is still in the list. */
+	/** Reload RFQ table + supplier list, keeping the currently selected RFQ if it is still in the list. */
 	private void reloadKeepingSelection() {
-		int keep = currentRfqId();
 		loadRfqList();
-		if (keep > 0) {
-			for (Comboitem it : rfqCombo.getItems()) {
-				if (toInt(it.getValue()) == keep) {
-					rfqCombo.setSelectedItem(it);
-					break;
-				}
-			}
-			loadResponses();
-		}
 	}
 
 	// ---------------------------------------------------------------- helpers
