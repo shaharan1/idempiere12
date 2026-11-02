@@ -130,7 +130,7 @@ public class RfQApprovalService {
 
 	// ------------------------------------------------------------ list
 
-	private static String docNoExpr() {
+	public static String docNoExpr() {
 		return hasColumn("C_RfQ", "DocumentNo") ? "COALESCE(r.DocumentNo, r.Name)" : "r.Name";
 	}
 
@@ -139,7 +139,7 @@ public class RfQApprovalService {
 				+ "WHERE LOWER(table_name)=LOWER(?) AND LOWER(column_name)=LOWER(?)", table, column) > 0;
 	}
 
-	private static String lastActionSql() {
+	public static String lastActionSql() {
 		return "(SELECT h.Status FROM " + T_HISTORY + " h WHERE h.AD_Client_ID=r.AD_Client_ID "
 				+ "AND h.DocumentNo=" + docNoExpr() + " AND h.C_DocType_ID=(" + docTypeSql() + ") "
 				+ "ORDER BY h.Updated DESC LIMIT 1)";
