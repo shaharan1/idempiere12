@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.adempiere.webui.panel.ADForm;
-import org.compiere.db.CConnection;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -16,6 +15,7 @@ import org.mycompany.requisition.rfqpo.RfqPoService.CsLine;
 import org.mycompany.requisition.rfqpo.RfqPoService.Line;
 import org.mycompany.requisition.rfqpo.RfqPoService.Result;
 import org.mycompany.requisition.rfqpo.RfqPoService.Row;
+import org.mycompany.requisition.rfqpo.WinnerChangeService.ChangeRequest;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zul.Button;
 import org.zkoss.zul.Checkbox;
@@ -34,13 +34,7 @@ import org.zkoss.zul.Vlayout;
 import org.zkoss.zul.Window;
 
 /**
- * Create PO from CS.
- * <p>
- * One table, the columns of the Response Line Detail grid: SL No., BP Code, Business Partner,
- * Address, PO Creation, Product Code, Product Name, Product Rank, Price, Recommended Winner,
- * Select Winner, Comments. One row per product line of every supplier of a finally approved CS.
- * The "Create PO" button of a row creates the PO of that product (the quantity still left) for
- * that supplier and Completes it. It is enabled for the recommended winner's lines only.
+ * Create PO from CS with Fast-Track Winner Change Request & Approval.
  */
 public class WCreatePOFromCS extends ADForm {
 
@@ -62,6 +56,8 @@ public class WCreatePOFromCS extends ADForm {
 		setWidth("100%");
 		setHeight("100%");
 
+		WinnerChangeService.ensureTable();
+
 		// Root fills entire form vertically
 		Vlayout root = new Vlayout();
 		root.setWidth("100%");
@@ -72,33 +68,35 @@ public class WCreatePOFromCS extends ADForm {
 		// ---- top bar
 		Div topBar = new Div();
 		topBar.setStyle(
-			"display:flex;align-items:center;gap:14px;padding:8px 14px;" +
+			"display:flex;align-items:center;gap:12px;padding:8px 14px;" +
 			"background:linear-gradient(90deg,#1e3a8a 0%,#2563eb 100%);" +
 			"border-radius:6px 6px 0 0;flex-shrink:0;");
 		root.appendChild(topBar);
 
-		// Organization label
 		Label org = new Label("Organization: " + Env.getContext(Env.getCtx(), "#AD_Org_Name"));
 		org.setStyle("font-weight:700;color:#ffffff;font-size:13px;");
 
-		// Separator
 		Label sep = new Label("|");
 		sep.setStyle("color:#93c5fd;font-weight:300;");
 
-		// Pending only checkbox
 		pendingOnly = new Checkbox("Pending PO only");
 		pendingOnly.setChecked(true);
 		pendingOnly.setStyle("color:#ffffff;font-size:13px;font-weight:500;");
 		pendingOnly.addEventListener(Events.ON_CHECK, e -> reload());
 
-		// Reload button
 		Button reload = new Button("⟳ Reload RFQ");
 		reload.setStyle(
 			"background:#0d9488;color:#fff;border:none;border-radius:4px;" +
 			"padding:4px 14px;font-size:12px;font-weight:600;cursor:pointer;");
 		reload.addEventListener(Events.ON_CLICK, e -> reload());
 
-		// Count label
+		// HOD Approvals button
+		Button hodBtn = new Button("📋 Winner Change Requests");
+		hodBtn.setStyle(
+			"background:#f59e0b;color:#1e3a8a;border:none;border-radius:4px;" +
+			"padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;margin-left:6px;");
+		hodBtn.addEventListener(Events.ON_CLICK, e -> showHodApprovalDialog());
+
 		countLabel = new Label();
 		countLabel.setStyle("color:#bfdbfe;font-size:12px;margin-left:auto;");
 
@@ -106,6 +104,7 @@ public class WCreatePOFromCS extends ADForm {
 		topBar.appendChild(sep);
 		topBar.appendChild(pendingOnly);
 		topBar.appendChild(reload);
+		topBar.appendChild(hodBtn);
 		topBar.appendChild(countLabel);
 
 		// ---- Table wrapper fills remaining vertical space
@@ -123,13 +122,12 @@ public class WCreatePOFromCS extends ADForm {
 
 		Listhead head = new Listhead();
 		head.setSizable(true);
-		// Column names and hflex weights (proportional widths)
 		String[] names  = { "SL No.", "BP Code", "Business Partner", "Address",
 				"PO Creation", "Product Code", "Product Name", "Product Rank",
 				"Price", "Recommended Winner", "Select Winner", "Comments" };
 		String[] hflexs = { "1", "2", "4", "5",
 				"3", "2", "4", "2",
-				"2", "3", "2", "4" };
+				"2", "3", "3", "4" };
 		for (int i = 0; i < names.length; i++) {
 			Listheader h = new Listheader(names[i]);
 			h.setHflex(hflexs[i]);
@@ -176,10 +174,7 @@ public class WCreatePOFromCS extends ADForm {
 				}
 
 				Listitem li = new Listitem();
-				// Zebra striping
-				li.setStyle((sl % 2 == 0)
-						? "background:#f8faff;"
-						: "background:#ffffff;");
+				li.setStyle((sl % 2 == 0) ? "background:#f8faff;" : "background:#ffffff;");
 
 				li.appendChild(first ? center(String.valueOf(sl)) : new Listcell());
 				li.appendChild(new Listcell(first ? c.bpCode : ""));
@@ -188,8 +183,14 @@ public class WCreatePOFromCS extends ADForm {
 
 				final Row wr = winnerRows.get(c.rfqId + ":" + c.respId);
 				Line wl = left.get(c.respId + ":" + c.rfqLineId);
+
+				// Check if there is a pending Winner Change Request for this line
+				ChangeRequest pendingReq = WinnerChangeService.getPendingRequest(c.rfqLineId);
+				boolean hasPendingChange = (pendingReq != null);
+
 				boolean canCreate = c.winner && wr != null && wl != null
-						&& wl.remaining().signum() > 0 && wr.csApproved();
+						&& wl.remaining().signum() > 0 && wr.csApproved() && !hasPendingChange;
+
 				Listcell action = new Listcell();
 				action.setStyle("text-align:center;");
 				final Button create = new Button("Create PO");
@@ -212,31 +213,43 @@ public class WCreatePOFromCS extends ADForm {
 				// Recommended Winner — read-only
 				li.appendChild(check(c.winner));
 
-				// ---- Select Winner — interactive checkbox ----
+				// ---- Select Winner cell with Fast-Track Deviation Request ----
 				final int rfqLineId_f = c.rfqLineId;
 				final int respId_f    = c.respId;
 				final int rfqId_f     = c.rfqId;
+				final String bpName_f = c.bpName;
+				final String pName_f  = c.productName;
 
 				Listcell selCell = new Listcell();
 				selCell.setStyle("text-align:center;");
-				Checkbox selCb = new Checkbox();
-				selCb.setChecked(c.winner);
-				selCb.setStyle("cursor:pointer;");
-				selCb.addEventListener(Events.ON_CHECK, evt -> {
-					boolean newVal = selCb.isChecked();
-					if (newVal) {
-						// Must enter a comment before confirming
-						showCommentDialog(rfqLineId_f, respId_f, rfqId_f, selCb);
-					} else {
-						// Unchecking: clear winner & comment, no dialog needed
-						saveWinner(rfqLineId_f, respId_f, false, "");
-						reload();
-					}
-				});
-				selCell.appendChild(selCb);
+
+				if (hasPendingChange && pendingReq.newRespId == c.respId) {
+					// Pending approval badge for requested new winner
+					Label pendingBadge = new Label("⏳ Pending HOD");
+					pendingBadge.setStyle("color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;");
+					pendingBadge.setTooltiptext("Change requested: " + pendingReq.justification);
+					selCell.appendChild(pendingBadge);
+				} else {
+					Checkbox selCb = new Checkbox();
+					selCb.setChecked(c.winner);
+					selCb.setStyle("cursor:pointer;");
+					selCb.addEventListener(Events.ON_CHECK, evt -> {
+						boolean newVal = selCb.isChecked();
+						if (newVal) {
+							// Open Fast-Track Change Request Dialog
+							showWinnerChangeDialog(rfqId_f, rfqLineId_f, respId_f, bpName_f, pName_f, selCb);
+						} else {
+							// Uncheck
+							selCb.setChecked(true); // Don't allow unchecking without selecting alternative
+							Messagebox.show("To change winner, please check the alternative vendor you want to request.",
+									"Info", Messagebox.OK, Messagebox.INFORMATION);
+						}
+					});
+					selCell.appendChild(selCb);
+				}
 				li.appendChild(selCell);
 
-				// ---- Comments — editable for winner lines ----
+				// ---- Comments ----
 				Listcell cm = new Listcell();
 				Textbox tb = new Textbox(c.comment == null ? "" : c.comment);
 				tb.setReadonly(!c.winner);
@@ -244,10 +257,6 @@ public class WCreatePOFromCS extends ADForm {
 				tb.setStyle(c.winner
 						? "border:1px solid #60a5fa;border-radius:3px;font-size:12px;"
 						: "border:1px solid #e5e7eb;border-radius:3px;font-size:12px;background:#f9fafb;");
-				if (c.winner) {
-					tb.addEventListener(Events.ON_CHANGE, e ->
-						saveWinnerComment(rfqLineId_f, respId_f, tb.getValue()));
-				}
 				cm.appendChild(tb);
 				li.appendChild(cm);
 
@@ -255,114 +264,172 @@ public class WCreatePOFromCS extends ADForm {
 			}
 		}
 		countLabel.setValue("Total CS: " + csHeads.size());
-		if (!RfqPoService.columnsReady())
-			Messagebox.show(
-				"Run db/09_create_po_from_cs.sql first. Until then a PO cannot be created.",
-				"Create PO From CS", Messagebox.OK, Messagebox.EXCLAMATION);
 	}
 
-	/** Shows a modal dialog requiring the user to enter a comment when selecting a winner. */
-	private void showCommentDialog(int rfqLineId, int respId, int rfqId, Checkbox selCb) {
+	/** Fast-Track Winner Change Request Modal Dialog */
+	private void showWinnerChangeDialog(int rfqId, int rfqLineId, int newRespId, String bpName, String prodName, Checkbox selCb) {
 		Window dlg = new Window();
-		dlg.setTitle("Comment Required");
+		dlg.setTitle("Request Winner Change (Deviation Request)");
 		dlg.setBorder("normal");
 		dlg.setMode("modal");
-		dlg.setWidth("420px");
-		dlg.setStyle("padding:0;");
+		dlg.setWidth("480px");
 
 		Vlayout body = new Vlayout();
-		body.setStyle("padding:16px;gap:10px;");
+		body.setStyle("padding:16px;gap:12px;");
 		dlg.appendChild(body);
 
-		Label info = new Label("Please enter a comment to confirm winner selection:");
-		info.setStyle("font-size:13px;font-weight:600;color:#1e3a8a;display:block;margin-bottom:8px;");
-		body.appendChild(info);
+		Label title = new Label("Product: " + prodName + "\nProposed New Winner: " + bpName);
+		title.setStyle("font-weight:700;color:#1e3a8a;font-size:13px;white-space:pre-line;");
+		body.appendChild(title);
 
-		Textbox commentBox = new Textbox();
-		commentBox.setRows(3);
-		commentBox.setWidth("100%");
-		commentBox.setStyle("font-size:13px;border:1px solid #93c5fd;border-radius:4px;");
-		commentBox.setPlaceholder("Enter winner comment…");
-		body.appendChild(commentBox);
+		Label sub = new Label("CS was already approved. Changing winner requires HOD approval. Please provide official justification (e.g. Previous vendor unable to supply/stock out):");
+		sub.setStyle("font-size:12px;color:#4b5563;");
+		body.appendChild(sub);
 
-		// Error label (hidden initially)
-		Label errLabel = new Label("⚠ Comment is required to select winner.");
+		Textbox reasonBox = new Textbox();
+		reasonBox.setRows(3);
+		reasonBox.setWidth("100%");
+		reasonBox.setPlaceholder("Enter justification for HOD review…");
+		reasonBox.setStyle("font-size:12px;border:1px solid #93c5fd;border-radius:4px;");
+		body.appendChild(reasonBox);
+
+		Label errLabel = new Label("⚠ Justification is mandatory.");
 		errLabel.setStyle("color:#dc2626;font-size:12px;display:none;");
 		body.appendChild(errLabel);
 
 		Hlayout buttons = new Hlayout();
 		buttons.setStyle("justify-content:flex-end;gap:8px;margin-top:8px;");
 
-		Button ok = new Button("✔ Confirm");
-		ok.setStyle("background:#2563eb;color:#fff;border:none;border-radius:4px;padding:5px 18px;font-weight:600;cursor:pointer;");
+		Button submitBtn = new Button("✔ Submit to HOD");
+		submitBtn.setStyle("background:#2563eb;color:#fff;border:none;border-radius:4px;padding:5px 16px;font-weight:600;cursor:pointer;");
 
-		Button cancel = new Button("✘ Cancel");
-		cancel.setStyle("background:#6b7280;color:#fff;border:none;border-radius:4px;padding:5px 14px;cursor:pointer;");
+		Button cancelBtn = new Button("✘ Cancel");
+		cancelBtn.setStyle("background:#6b7280;color:#fff;border:none;border-radius:4px;padding:5px 14px;cursor:pointer;");
 
-		buttons.appendChild(ok);
-		buttons.appendChild(cancel);
+		buttons.appendChild(submitBtn);
+		buttons.appendChild(cancelBtn);
 		body.appendChild(buttons);
 
-		ok.addEventListener(Events.ON_CLICK, e -> {
-			String comment = commentBox.getValue().trim();
-			if (comment.isEmpty()) {
+		submitBtn.addEventListener(Events.ON_CLICK, e -> {
+			String reason = reasonBox.getValue().trim();
+			if (reason.isEmpty()) {
 				errLabel.setStyle("color:#dc2626;font-size:12px;display:block;");
 				return;
 			}
-			saveWinner(rfqLineId, respId, true, comment);
-			dlg.detach();
-			reload();
+			try {
+				WinnerChangeService.submitRequest(rfqId, rfqLineId, newRespId, reason);
+				Messagebox.show("Winner change request submitted for HOD approval.", "Success", Messagebox.OK, Messagebox.INFORMATION);
+				dlg.detach();
+				reload();
+			} catch (Exception ex) {
+				Messagebox.show("Error: " + ex.getMessage(), "Error", Messagebox.OK, Messagebox.ERROR);
+			}
 		});
 
-		cancel.addEventListener(Events.ON_CLICK, e -> {
-			// Revert checkbox visual state
+		cancelBtn.addEventListener(Events.ON_CLICK, e -> {
 			selCb.setChecked(false);
 			dlg.detach();
+			reload();
 		});
 
 		dlg.setPage(grid.getPage());
 		dlg.doModal();
 	}
 
-	/** Saves IsSelectedWinner + XX_WinnerComment for the given response line. */
-	private void saveWinner(int rfqLineId, int respId, boolean winner, String comment) {
-		try {
-			DB.executeUpdateEx(
-				"UPDATE C_RfQResponseLine " +
-				"SET IsSelectedWinner=?, XX_WinnerComment=?, Updated=now(), UpdatedBy=? " +
-				"WHERE C_RfQLine_ID=? AND C_RfQResponse_ID=?",
-				new Object[]{
-					winner ? "Y" : "N",
-					comment,
-					Integer.valueOf(Env.getAD_User_ID(Env.getCtx())),
-					Integer.valueOf(rfqLineId),
-					Integer.valueOf(respId)
-				}, null);
-		} catch (Exception e) {
-			log.warning("saveWinner: " + e.getMessage());
-			Messagebox.show("Error saving winner: " + e.getMessage(),
-				"Error", Messagebox.OK, Messagebox.ERROR);
-		}
-	}
+	/** HOD Fast-Track Review & Approval Dialog */
+	private void showHodApprovalDialog() {
+		List<ChangeRequest> pendingList = WinnerChangeService.listPendingRequests();
 
-	/** Saves only the comment field for an already-selected winner line. */
-	private void saveWinnerComment(int rfqLineId, int respId, String comment) {
-		try {
-			DB.executeUpdateEx(
-				"UPDATE C_RfQResponseLine " +
-				"SET XX_WinnerComment=?, Updated=now(), UpdatedBy=? " +
-				"WHERE C_RfQLine_ID=? AND C_RfQResponse_ID=?",
-				new Object[]{
-					comment,
-					Integer.valueOf(Env.getAD_User_ID(Env.getCtx())),
-					Integer.valueOf(rfqLineId),
-					Integer.valueOf(respId)
-				}, null);
-		} catch (Exception e) {
-			log.warning("saveWinnerComment: " + e.getMessage());
-			Messagebox.show("Error saving comment: " + e.getMessage(),
-				"Error", Messagebox.OK, Messagebox.ERROR);
+		Window dlg = new Window();
+		dlg.setTitle("HOD Winner Change Approvals (" + pendingList.size() + " Pending)");
+		dlg.setBorder("normal");
+		dlg.setMode("modal");
+		dlg.setWidth("750px");
+		dlg.setHeight("480px");
+
+		Vlayout body = new Vlayout();
+		body.setStyle("padding:14px;gap:10px;height:100%;box-sizing:border-box;");
+		dlg.appendChild(body);
+
+		if (pendingList.isEmpty()) {
+			Label empty = new Label("No pending winner change requests.");
+			empty.setStyle("font-size:13px;color:#6b7280;font-weight:500;padding:20px;text-align:center;display:block;");
+			body.appendChild(empty);
+		} else {
+			Listbox reqGrid = new Listbox();
+			reqGrid.setVflex("1");
+			reqGrid.setWidth("100%");
+
+			Listhead lh = new Listhead();
+			String[] hNames = {"CS Doc No", "Product", "Previous Winner", "Requested Winner", "Justification", "Action"};
+			String[] hWidths = {"90px", "120px", "110px", "110px", "170px", "120px"};
+			for (int i=0; i<hNames.length; i++) {
+				Listheader th = new Listheader(hNames[i]);
+				th.setWidth(hWidths[i]);
+				lh.appendChild(th);
+			}
+			reqGrid.appendChild(lh);
+
+			for (ChangeRequest cr : pendingList) {
+				Listitem item = new Listitem();
+				item.appendChild(new Listcell(cr.rfqDocNo));
+				item.appendChild(new Listcell(cr.productName));
+				item.appendChild(new Listcell(cr.oldBpName.isEmpty() ? "-" : cr.oldBpName));
+				item.appendChild(new Listcell(cr.newBpName));
+
+				Listcell jc = new Listcell(cr.justification);
+				jc.setTooltiptext(cr.justification);
+				item.appendChild(jc);
+
+				Listcell actCell = new Listcell();
+				Hlayout actLayout = new Hlayout();
+				actLayout.setStyle("gap:4px;");
+
+				Button appBtn = new Button("✔");
+				appBtn.setTooltiptext("Approve Change");
+				appBtn.setStyle("background:#16a34a;color:#fff;border:none;border-radius:3px;padding:3px 8px;font-weight:bold;cursor:pointer;");
+				appBtn.addEventListener(Events.ON_CLICK, ev -> {
+					try {
+						WinnerChangeService.approveRequest(cr.changeId, "Approved by HOD");
+						Messagebox.show("Request Approved! New winner is set.", "Success", Messagebox.OK, Messagebox.INFORMATION);
+						dlg.detach();
+						reload();
+					} catch (Exception ex) {
+						Messagebox.show("Error: " + ex.getMessage(), "Error", Messagebox.OK, Messagebox.ERROR);
+					}
+				});
+
+				Button rejBtn = new Button("✘");
+				rejBtn.setTooltiptext("Reject Change");
+				rejBtn.setStyle("background:#dc2626;color:#fff;border:none;border-radius:3px;padding:3px 8px;font-weight:bold;cursor:pointer;");
+				rejBtn.addEventListener(Events.ON_CLICK, ev -> {
+					try {
+						WinnerChangeService.rejectRequest(cr.changeId, "Rejected by HOD");
+						Messagebox.show("Request Rejected.", "Info", Messagebox.OK, Messagebox.INFORMATION);
+						dlg.detach();
+						reload();
+					} catch (Exception ex) {
+						Messagebox.show("Error: " + ex.getMessage(), "Error", Messagebox.OK, Messagebox.ERROR);
+					}
+				});
+
+				actLayout.appendChild(appBtn);
+				actLayout.appendChild(rejBtn);
+				actCell.appendChild(actLayout);
+				item.appendChild(actCell);
+
+				reqGrid.appendChild(item);
+			}
+			body.appendChild(reqGrid);
 		}
+
+		Button closeBtn = new Button("Close");
+		closeBtn.setStyle("background:#6b7280;color:#fff;border:none;border-radius:4px;padding:4px 14px;cursor:pointer;align-self:flex-end;");
+		closeBtn.addEventListener(Events.ON_CLICK, e -> dlg.detach());
+		body.appendChild(closeBtn);
+
+		dlg.setPage(grid.getPage());
+		dlg.doModal();
 	}
 
 	/** Creates the PO of this one product line (the quantity still left) and Completes it. */
@@ -385,7 +452,6 @@ public class WCreatePOFromCS extends ADForm {
 		reload();
 	}
 
-	/** Read-only checkbox cell (for Recommended Winner). */
 	private static Listcell check(boolean on) {
 		Listcell c = new Listcell();
 		Checkbox cb = new Checkbox();
