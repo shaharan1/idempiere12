@@ -1,15 +1,18 @@
 package org.mycompany.requisition.rfqpo;
 
-import java.math.BigDecimal;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.adempiere.webui.panel.ADForm;
 import org.compiere.util.CLogger;
 import org.compiere.util.Env;
+import org.mycompany.requisition.rfqpo.RfqPoService.CsLine;
 import org.mycompany.requisition.rfqpo.RfqPoService.Line;
+import org.mycompany.requisition.rfqpo.RfqPoService.Result;
 import org.mycompany.requisition.rfqpo.RfqPoService.Row;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zul.Button;
@@ -18,19 +21,22 @@ import org.zkoss.zul.Hlayout;
 import org.zkoss.zul.Label;
 import org.zkoss.zul.Listbox;
 import org.zkoss.zul.Listcell;
+import org.zkoss.zul.Listgroup;
 import org.zkoss.zul.Listhead;
 import org.zkoss.zul.Listheader;
 import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
+import org.zkoss.zul.Textbox;
 import org.zkoss.zul.Vlayout;
 
 /**
  * Create PO from CS.
  * <p>
- * Every RFQ that has a recommended winner is listed, one row per winner supplier, with its
- * details. Pick a row and press "Create PO": the Create PO popup opens, and its OK creates the
- * Drafted PO and sends it to the approval matrix (the approval history is kept by the engine and
- * is visible in the PO approval form).
+ * One table, the columns of the Response Line Detail grid: SL No., BP Code, Business Partner,
+ * Address, PO Creation, Product Code, Product Name, Product Rank, Price, Recommended Winner,
+ * Select Winner, Comments. One row per product line of every supplier of a finally approved CS.
+ * The "Create PO" button of a row creates the PO of that product (the quantity still left) for
+ * that supplier and Completes it. It is enabled for the recommended winner's lines only.
  */
 public class WCreatePOFromCS extends ADForm {
 
@@ -42,9 +48,8 @@ public class WCreatePOFromCS extends ADForm {
 	private final RfqPoService service = new RfqPoService();
 
 	private Checkbox pendingOnly;
-	private Label countLabel, detailTitle;
-	private Listbox rfqGrid, detailGrid;
-	private Map<Integer, Object[]> taxes;
+	private Label countLabel;
+	private Listbox grid;
 
 	@Override
 	protected void initForm() {
@@ -75,149 +80,130 @@ public class WCreatePOFromCS extends ADForm {
 		top.appendChild(countLabel);
 		root.appendChild(top);
 
-		// ---- all RFQs, one row per winner supplier
-		rfqGrid = new Listbox();
-		rfqGrid.setWidth("100%");
-		rfqGrid.setHeight("320px");
+		// ---- the table
+		grid = new Listbox();
+		grid.setWidth("100%");
+		grid.setHeight("560px");
 		Listhead head = new Listhead();
-		String[] names = { "SL", "RFQ No", "RFQ Name", "Date", "PR No", "BP Code", "Business Partner", "Address",
-				"Products", "Items", "Qty", "Amount", "CS Status", "PO Status" };
-		String[] widths = { "45px", "100px", "150px", "90px", "110px", "80px", "160px", "170px", "230px", "55px",
-				"80px", "110px", "120px", "170px" };
+		String[] names = { "SL No.", "BP Code", "Business Partner", "Address", "PO Creation", "Product Code",
+				"Product Name", "Product Rank", "Price", "Recommended Winner", "Select Winner", "Comments" };
+		String[] widths = { "60px", "90px", "200px", "230px", "120px", "110px", "230px", "100px", "90px", "110px",
+				"100px", "170px" };
 		for (int i = 0; i < names.length; i++) {
 			Listheader h = new Listheader(names[i]);
 			h.setWidth(widths[i]);
 			head.appendChild(h);
 		}
-		rfqGrid.appendChild(head);
-		rfqGrid.addEventListener(Events.ON_SELECT, e -> showDetail());
-		root.appendChild(rfqGrid);
+		grid.appendChild(head);
+		root.appendChild(grid);
 
-		// ---- selected row: product lines
-		detailTitle = new Label("Response Line Detail");
-		detailTitle.setStyle("font-weight:600;");
-		root.appendChild(detailTitle);
-		detailGrid = new Listbox();
-		detailGrid.setWidth("100%");
-		detailGrid.setHeight("170px");
-		Listhead dh = new Listhead();
-		String[] dn = { "Line", "Product Code", "Product Name", "UOM", "RFQ Qty", "Already PO Qty", "Rate", "VAT %",
-				"Total" };
-		for (String n : dn)
-			dh.appendChild(new Listheader(n));
-		detailGrid.appendChild(dh);
-		root.appendChild(detailGrid);
-
-		// ---- buttons
-		Hlayout btns = new Hlayout();
-		Button create = new Button("Create PO");
-		create.addEventListener(Events.ON_CLICK, e -> createPo());
-		btns.appendChild(create);
-		root.appendChild(btns);
-
-		taxes = service.taxes();
 		reload();
 	}
 
 	private void reload() {
-		while (rfqGrid.getItemCount() > 0)
-			rfqGrid.removeItemAt(0);
-		clearDetail();
-		List<Row> rows = service.listRows(pendingOnly.isChecked());
-		int sl = 0;
-		for (Row r : rows) {
-			Listitem li = new Listitem();
-			li.setValue(r);
-			li.appendChild(right(String.valueOf(++sl)));
-			li.appendChild(new Listcell(r.docNo));
-			li.appendChild(new Listcell(r.name));
-			li.appendChild(new Listcell(r.date == null ? "" : DATE.format(r.date)));
-			li.appendChild(new Listcell(r.prNos));
-			li.appendChild(new Listcell(r.bpCode));
-			li.appendChild(new Listcell(r.bpName));
-			li.appendChild(new Listcell(r.address));
-			li.appendChild(new Listcell(r.products));
-			li.appendChild(right(String.valueOf(r.items)));
-			li.appendChild(right(r.qty.stripTrailingZeros().toPlainString()));
-			li.appendChild(right(MONEY.format(r.total)));
-			li.appendChild(new Listcell(r.csStatus()));
-			li.appendChild(new Listcell(r.poStatus()));
-			rfqGrid.appendChild(li);
+		while (grid.getItemCount() > 0)
+			grid.removeItemAt(0);
+		grid.getChildren().removeIf(c -> c instanceof Listgroup);
+
+		// CSs to show, and the winner (CS, supplier) rows a PO can be made for
+		Map<Integer, Row> csHeads = new LinkedHashMap<Integer, Row>();
+		for (Row r : service.listRows(pendingOnly.isChecked()))
+			csHeads.putIfAbsent(Integer.valueOf(r.rfqId), r);
+		Map<String, Row> winnerRows = new HashMap<String, Row>();
+		for (Row r : service.listRows(false))
+			winnerRows.put(r.rfqId + ":" + r.respId, r);
+
+		for (Row head : csHeads.values()) {
+			Listgroup g = new Listgroup();
+			g.setLabel("CS " + head.docNo + "   " + head.name + "   " + (head.date == null ? "" : DATE.format(head.date)));
+			grid.appendChild(g);
+
+			// quantity still left per winner line
+			Map<String, Line> left = new HashMap<String, Line>();
+			for (Row wr : winnerRows.values())
+				if (wr.rfqId == head.rfqId)
+					for (Line l : service.loadLines(wr.rfqId, wr.respId))
+						left.put(wr.respId + ":" + l.rfqLineId, l);
+
+			int sl = 0, lastResp = -1;
+			for (final CsLine c : service.listCsLines(head.rfqId)) {
+				boolean first = c.respId != lastResp;
+				if (first) {
+					sl++;
+					lastResp = c.respId;
+				}
+				Listitem li = new Listitem();
+				li.appendChild(first ? center(String.valueOf(sl)) : new Listcell());
+				li.appendChild(new Listcell(first ? c.bpCode : ""));
+				li.appendChild(new Listcell(first ? c.bpName : ""));
+				li.appendChild(new Listcell(first ? c.address : ""));
+
+				final Row wr = winnerRows.get(c.rfqId + ":" + c.respId);
+				Line wl = left.get(c.respId + ":" + c.rfqLineId);
+				boolean canCreate = c.winner && wr != null && wl != null && wl.remaining().signum() > 0
+						&& wr.csApproved();
+				Listcell action = new Listcell();
+				final Button create = new Button("Create PO");
+				create.setDisabled(!canCreate);
+				create.addEventListener(Events.ON_CLICK, e -> createPo(wr, c.rfqLineId, create));
+				action.appendChild(create);
+				li.appendChild(action);
+
+				li.appendChild(new Listcell(c.productCode));
+				li.appendChild(new Listcell(c.productName));
+				li.appendChild(center(String.valueOf(c.rank)));
+				Listcell price = new Listcell(MONEY.format(c.price));
+				price.setStyle("text-align:right;");
+				li.appendChild(price);
+				li.appendChild(check(c.winner)); // Recommended Winner
+				li.appendChild(check(c.winner)); // Select Winner (one winner flag per line)
+				Listcell cm = new Listcell();
+				Textbox tb = new Textbox(c.comment);
+				tb.setReadonly(true);
+				tb.setWidth("95%");
+				cm.appendChild(tb);
+				li.appendChild(cm);
+				grid.appendChild(li);
+			}
 		}
-		countLabel.setValue("Total: " + rows.size());
+		countLabel.setValue("Total: " + csHeads.size());
 		if (!RfqPoService.columnsReady())
-			Messagebox.show("Run db/09_create_po_from_cs.sql first. Until then PO status cannot be shown and a PO cannot be created.",
+			Messagebox.show("Run db/09_create_po_from_cs.sql first. Until then a PO cannot be created.",
 					"Create PO From CS", Messagebox.OK, Messagebox.EXCLAMATION);
 	}
 
-	private void clearDetail() {
-		while (detailGrid.getItemCount() > 0)
-			detailGrid.removeItemAt(0);
-		detailTitle.setValue("Response Line Detail");
-	}
-
-	private Row selected(boolean warn) {
-		Listitem li = rfqGrid.getSelectedItem();
-		if (li == null) {
-			if (warn)
-				Messagebox.show("Select a row first.", "Create PO From CS", Messagebox.OK, Messagebox.EXCLAMATION);
-			return null;
-		}
-		return li.getValue();
-	}
-
-	private void showDetail() {
-		clearDetail();
-		Row r = selected(false);
-		if (r == null)
-			return;
-		detailTitle.setValue("Response Line Detail  -  " + r.docNo + "  /  " + r.bpName);
-		for (Line l : service.loadLines(r.rfqId, r.respId)) {
-			BigDecimal pct = BigDecimal.ZERO;
-			Object[] t = taxes.get(Integer.valueOf(l.taxId));
-			if (t != null)
-				pct = (BigDecimal) t[1];
-			BigDecimal base = l.rfqQty.multiply(l.rate);
-			BigDecimal total = base.add(RfqPoService.vat(base, pct));
-			Listitem li = new Listitem();
-			li.appendChild(right(String.valueOf(l.lineNo)));
-			li.appendChild(new Listcell(l.code));
-			li.appendChild(new Listcell(l.name));
-			li.appendChild(new Listcell(l.uom));
-			li.appendChild(right(l.rfqQty.stripTrailingZeros().toPlainString()));
-			li.appendChild(right(l.already.stripTrailingZeros().toPlainString()));
-			li.appendChild(right(MONEY.format(l.rate)));
-			li.appendChild(right(pct.stripTrailingZeros().toPlainString()));
-			li.appendChild(right(MONEY.format(total)));
-			detailGrid.appendChild(li);
-		}
-	}
-
-	private void createPo() {
-		Row r = selected(true);
-		if (r == null)
-			return;
+	/** Creates the PO of this one product line (the quantity still left) and Completes it. */
+	private void createPo(Row r, int rfqLineId, Button button) {
 		if (!RfqPoService.columnsReady()) {
 			Messagebox.show("Run db/09_create_po_from_cs.sql first.", "Create PO From CS", Messagebox.OK, Messagebox.ERROR);
 			return;
 		}
-		if (!r.csApproved()) {
-			Messagebox.show("The Comparative Statement of " + r.docNo + " is \"" + r.csStatus()
-					+ "\". A PO can be created only after it is Approved.", "Create PO From CS", Messagebox.OK,
-					Messagebox.EXCLAMATION);
-			return;
+		button.setDisabled(true); // no double click
+		try {
+			Result res = service.createCompletedPo(r, rfqLineId);
+			Messagebox.show("PO " + res.docNo + " created.\n" + res.approvalMessage, "Create PO From CS", Messagebox.OK,
+					Messagebox.INFORMATION);
+		} catch (Exception ex) {
+			log.warning("createPo: " + ex.getMessage());
+			Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(), "Create PO From CS",
+					Messagebox.OK, Messagebox.ERROR);
 		}
-		if (r.remaining().signum() <= 0) {
-			Messagebox.show("PO is already created for the whole quantity (" + r.poNos + ").", "Create PO From CS",
-					Messagebox.OK, Messagebox.INFORMATION);
-			return;
-		}
-		CreatePODialog.open(this, r, () -> reload());
+		reload();
 	}
 
-	private static Listcell right(String text) {
+	private static Listcell check(boolean on) {
+		Listcell c = new Listcell();
+		Checkbox cb = new Checkbox();
+		cb.setChecked(on);
+		cb.setDisabled(true);
+		c.appendChild(cb);
+		c.setStyle("text-align:center;");
+		return c;
+	}
+
+	private static Listcell center(String text) {
 		Listcell c = new Listcell(text);
-		c.setStyle("text-align:right;");
+		c.setStyle("text-align:center;");
 		return c;
 	}
 }
