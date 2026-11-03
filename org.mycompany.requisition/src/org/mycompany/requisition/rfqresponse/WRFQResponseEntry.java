@@ -61,8 +61,9 @@ import org.zkoss.zul.Vlayout;
 /**
  * "RFQ Response Entry" form.
  *
- * - Upore shob RFQ er ekta table (RFQ No, Name, Date, PR No, Items, Business Partner Code gulo
- *   por por, Status, CS Status). "Show completed RFQs" tick na thakle shudhu pending RFQ ashe.
+ * - Upore RFQ er table (RFQ No, Name, Date, PR No, Items, Business Partner Code gulo por por,
+ *   Status, CS Status). Shudhu je RFQ gulo ekhono complete hoy ni (Document Status != Completed)
+ *   ashe; "Complete RFQ" korle RFQ ta ei form theke soriye jay (tick dile dekha jay).
  * - Business Partner Code e click -> oi RFQ select hoy + response popup khole.
  * - Prottek RFQ row er Business Partner line er pashe-i oi supplier er Status, Complete ar
  *   Attachment thake (alada Supplier Responses table nei).
@@ -182,7 +183,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		completeRfqBtn.setStyle("background:#1e5aa8;background-image:none;color:#ffffff;border:none;border-radius:6px;"
 				+ "font-weight:600;padding:5px 16px;cursor:pointer;");
 		completeRfqBtn.addEventListener(Events.ON_CLICK, e -> completeRfq());
-		showDoneChk.setChecked(true); // user chay shob RFQ dekhte
+		showDoneChk.setChecked(false); // default: shudhu je RFQ gulo complete hoy ni
 		showDoneChk.addEventListener(Events.ON_CHECK, this);
 		showDoneChk.setStyle("font-weight:600;color:#475569;padding-left:10px;");
 		confirmPanel.addActionListener(this); // OK / Cancel (tick / cross icon)
@@ -363,13 +364,12 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		sql.append("FROM C_RfQ r WHERE r.IsActive='Y' AND r.AD_Client_ID=? ");
 		if (orgId > 0)
 			sql.append("AND r.AD_Org_ID=? ");
-		// Incomplete response ache, ba Topic e emon active subscriber ache jar response ekhono toiri hoy ni
-		sql.append("AND (EXISTS (SELECT 1 FROM C_RfQResponse x WHERE x.C_RfQ_ID=r.C_RfQ_ID ");
-		sql.append("AND x.IsActive='Y' AND x.IsComplete='N') ");
-		sql.append("OR ").append(missingSubscriberSql("r.C_RfQ_ID")).append(" ");
-		if (showDoneChk.isChecked())
-			sql.append("OR EXISTS (SELECT 1 FROM C_RfQResponse z WHERE z.C_RfQ_ID=r.C_RfQ_ID AND z.IsActive='Y') ");
-		sql.append(") ");
+		// Shudhu Document Status = Drafted RFQ ashe. In Progress (CS approval cholche) ba Completed hole ashe na.
+		// "Show completed RFQs" tick dile shob dekhay.
+		if (!showDoneChk.isChecked())
+			sql.append("AND ").append(RfQApprovalService.draftSql()).append(" ");
+		sql.append("AND (EXISTS (SELECT 1 FROM C_RfQResponse x WHERE x.C_RfQ_ID=r.C_RfQ_ID AND x.IsActive='Y') ");
+		sql.append("OR ").append(missingSubscriberSql("r.C_RfQ_ID")).append(") ");
 		sql.append("ORDER BY r.C_RfQ_ID DESC");
 
 		java.util.List<Object[]> rfqs = new java.util.ArrayList<Object[]>();
