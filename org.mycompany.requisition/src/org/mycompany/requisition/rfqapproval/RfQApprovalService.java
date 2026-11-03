@@ -145,6 +145,35 @@ public class RfQApprovalService {
 				+ "ORDER BY h.Updated DESC LIMIT 1)";
 	}
 
+	/**
+	 * SQL (alias r = C_RfQ): true only once the CS got its FINAL approval (Document Status = Completed).
+	 * While the CS is still going through the approval levels the status is In Progress, and a
+	 * rejected CS goes back to Drafted. Same rule as db/10_rfq_docstatus.sql.
+	 */
+	public static String completeSql() {
+		return "(" + statusSql() + "='CO')";
+	}
+
+	/** SQL (alias r = C_RfQ): true while the RFQ is Drafted (not completed yet, or its CS was rejected). */
+	public static String draftSql() {
+		return "(" + statusSql() + "='DR')";
+	}
+
+	/**
+	 * SQL (alias r = C_RfQ): Document Status of the RFQ, same rule as db/10_rfq_docstatus.sql.
+	 * IP = a CS approval level is pending, CO = final approval done (no pending level, latest
+	 * action Approved), DR = anything else. Written with EXISTS so that rows saved in the same
+	 * transaction (same Updated) cannot make the result ambiguous.
+	 */
+	public static String statusSql() {
+		String m = "h.AD_Client_ID=r.AD_Client_ID AND h.DocumentNo=" + docNoExpr()
+				+ " AND h.C_DocType_ID=(" + docTypeSql() + ")";
+		return "(CASE WHEN EXISTS (SELECT 1 FROM " + T_HISTORY + " h WHERE " + m + " AND h.Status='" + S_PENDING + "') THEN 'IP' "
+				+ "WHEN EXISTS (SELECT 1 FROM " + T_HISTORY + " h WHERE " + m + " AND h.Status='" + S_APPROVED + "' "
+				+ "AND h.Updated=(SELECT MAX(h2.Updated) FROM " + T_HISTORY + " h2 WHERE h2.AD_Client_ID=h.AD_Client_ID "
+				+ "AND h2.DocumentNo=h.DocumentNo AND h2.C_DocType_ID=h.C_DocType_ID)) THEN 'CO' ELSE 'DR' END)";
+	}
+
 	/** Document type of the requisition that raised the RFQ (C_RfQ has no own doc type). */
 	private static String docTypeSql() {
 		return "SELECT rq.C_DocType_ID FROM M_Requisition rq WHERE rq.M_Requisition_ID=r.M_Requisition_ID";
