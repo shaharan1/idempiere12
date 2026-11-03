@@ -64,7 +64,8 @@ import org.zkoss.zul.Vlayout;
  * - Upore shob RFQ er ekta table (RFQ No, Name, Date, PR No, Items, Business Partner Code gulo
  *   por por, Status, CS Status). "Show completed RFQs" tick na thakle shudhu pending RFQ ashe.
  * - Business Partner Code e click -> oi RFQ select hoy + response popup khole.
- * - RFQ row select korle niche tar supplier response list (Complete / Attachment) ashe.
+ * - Prottek RFQ row er Business Partner line er pashe-i oi supplier er Status, Complete ar
+ *   Attachment thake (alada Supplier Responses table nei).
  * - Business Partner Code e click -> WRFQResponseDialog (response entry popup).
  * - "Complete" -> IsComplete='Y'. "Attachment" -> standard attachment window.
  *
@@ -85,6 +86,12 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 			+ "border-radius:6px;font-weight:600;padding:5px 16px;";
 	private static final String BTN_OUTLINE = "background:#ffffff;background-image:none;color:#1e4d7b;"
 			+ "border:1px solid #1e4d7b;border-radius:6px;font-weight:600;padding:4px 16px;cursor:pointer;";
+
+	/** Same height for every supplier line, so BP / Status / Complete / Attachment line up */
+	private static final String LINE_STYLE = "display:flex;align-items:center;height:34px;";
+	private static final String BTN_SMALL = "padding:2px 12px;font-size:12px;min-width:84px;";
+	private static final String BTN_ATTACH = "background:#0ea5e9;background-image:none;color:#ffffff;border:none;"
+			+ "border-radius:6px;font-weight:600;cursor:pointer;";
 
 	private static final String CSS = ""
 			+ ".rq-banner{background:linear-gradient(90deg,#0f2b46 0%,#1e5a8c 100%);color:#fff;border-radius:12px;"
@@ -116,15 +123,12 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 	private Button completeRfqBtn = new Button("Complete RFQ");
 	private ConfirmPanel confirmPanel = new ConfirmPanel(true);
 
-	private Listbox respList;
-
 	private boolean rfqHasDocNo;
 
 	private Label statTotal = new Label("0");
 	private Label statDone = new Label("0");
 	private Label statPending = new Label("0");
 	private Checkbox showDoneChk = new Checkbox("Show completed RFQs");
-	private Label emptyLbl = new Label("Select an RFQ above to see its supplier responses.");
 
 	// ------------------------------------------------------------------ init
 
@@ -153,7 +157,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		// RFQ table (master list)
 		rfqList = new Listbox();
 		rfqList.setSclass("rq-list");
-		rfqList.setHeight("340px");
+		rfqList.setHeight("480px");
 		rfqList.setEmptyMessage("No RFQ found.");
 		Listhead rh = new Listhead();
 		rh.appendChild(header("SL", "50px"));
@@ -163,8 +167,10 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		rh.appendChild(header("PR No", "130px"));
 		rh.appendChild(header("Items", "60px"));
 		rh.appendChild(header("Business Partner Code", null));
-		rh.appendChild(header("Responses", "100px"));
-		rh.appendChild(header("Status", "110px"));
+		rh.appendChild(header("Responses", "90px"));
+		rh.appendChild(header("Status", "120px"));
+		rh.appendChild(header("Complete Response Line", "170px"));
+		rh.appendChild(header("Attachment", "130px"));
 		rh.appendChild(header("CS Status", "130px"));
 		rfqList.appendChild(rh);
 		ZKUpdateUtil.setHflex(rfqList, "1");
@@ -181,19 +187,6 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		showDoneChk.setStyle("font-weight:600;color:#475569;padding-left:10px;");
 		confirmPanel.addActionListener(this); // OK / Cancel (tick / cross icon)
 
-		respList = new Listbox();
-		respList.setSclass("rq-list");
-		Listhead head = new Listhead();
-		head.appendChild(header("Select", "60px"));
-		head.appendChild(header("SL No.", "70px"));
-		head.appendChild(header("Business Partner Code", "170px"));
-		head.appendChild(header("Business Partner", "260px"));
-		head.appendChild(header("Address", null));
-		head.appendChild(header("Status", "130px"));
-		head.appendChild(header("Complete Response Line", "170px"));
-		head.appendChild(header("Attachment", "170px"));
-		respList.appendChild(head);
-		ZKUpdateUtil.setHflex(respList, "1");
 	}
 
 	private Listheader header(String label, String width) {
@@ -293,17 +286,6 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		rfqCard.appendChild(rcap);
 		rfqCard.appendChild(rfqList);
 
-		Div listCard = new Div();
-		listCard.setSclass("rq-card");
-		cwrap.appendChild(listCard);
-
-		Label cap = new Label("Supplier Responses");
-		cap.setSclass("rq-section");
-		listCard.appendChild(cap);
-		listCard.appendChild(respList);
-		emptyLbl.setSclass("rq-empty");
-		listCard.appendChild(emptyLbl);
-
 		// ---- South: OK / Cancel ----
 		South south = new South();
 		ZKUpdateUtil.setVflex(south, "min");
@@ -332,7 +314,6 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		statTotal.setValue(String.valueOf(total));
 		statDone.setValue(String.valueOf(done));
 		statPending.setValue(String.valueOf(total - done));
-		emptyLbl.setVisible(total == 0);
 	}
 
 	private void addColumn(Columns cols, String width, String hflex) {
@@ -354,7 +335,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 
 	private static class Resp {
 		int id;
-		String code, name;
+		String code, name, address;
 		boolean complete;
 	}
 
@@ -365,7 +346,6 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 	private void loadRfqList() {
 		int keep = selectedRfqId;
 		clear(rfqList);
-		clear(respList);
 		setStats(0, 0);
 		selectedRfqId = 0;
 		selectedRfqLabel = "";
@@ -431,8 +411,11 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 
 		// shob RFQ er response ek query te
 		java.util.Map<Integer, java.util.List<Resp>> byRfq = new java.util.HashMap<Integer, java.util.List<Resp>>();
-		String rsql = "SELECT r.C_RfQ_ID, r.C_RfQResponse_ID, bp.Value, bp.Name, r.IsComplete "
+		String rsql = "SELECT r.C_RfQ_ID, r.C_RfQResponse_ID, bp.Value, bp.Name, r.IsComplete, "
+				+ "loc.Address1, loc.Address2, loc.City "
 				+ "FROM C_RfQResponse r JOIN C_BPartner bp ON bp.C_BPartner_ID=r.C_BPartner_ID "
+				+ "LEFT JOIN C_BPartner_Location bl ON bl.C_BPartner_Location_ID=r.C_BPartner_Location_ID "
+				+ "LEFT JOIN C_Location loc ON loc.C_Location_ID=bl.C_Location_ID "
 				+ "WHERE r.IsActive='Y' AND r.C_RfQ_ID IN (" + ids + ") ORDER BY r.C_RfQ_ID, r.C_RfQResponse_ID";
 		try {
 			pstmt = DB.prepareStatement(rsql, null);
@@ -443,6 +426,7 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 				rp.code = nvl(rs.getString(3));
 				rp.name = nvl(rs.getString(4));
 				rp.complete = "Y".equals(rs.getString(5));
+				rp.address = joinAddress(rs.getString(6), rs.getString(7), rs.getString(8));
 				Integer k = Integer.valueOf(rs.getInt(1));
 				if (!byRfq.containsKey(k))
 					byRfq.put(k, new java.util.ArrayList<Resp>());
@@ -491,6 +475,8 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		final Listitem item = new Listitem();
 		item.setValue(Integer.valueOf(rfqId));
 		item.setAttribute("label", no + (name.isEmpty() ? "" : " - " + name));
+		item.setAttribute("total", Integer.valueOf(resps.size()));
+		item.setAttribute("done", Integer.valueOf(done));
 		if (sl % 2 == 0)
 			item.setStyle("background:#f8fafc;");
 
@@ -503,13 +489,16 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		item.appendChild(new Listcell(prNos));
 		item.appendChild(new Listcell(String.valueOf(items)));
 
-		// Business Partner Code gulo por por; click -> RFQ select + response popup
-		Listcell cBp = new Listcell();
-		Vlayout stack = new Vlayout();
-		stack.setSpacing("3px");
+		// Prottek supplier er line: BP Code + name | Status | Complete | Attachment.
+		// Char column-i same line height (LINE_STYLE) tai sob line ek shoriye thake.
+		Div bpBox = new Div();
+		Div stBox = new Div();
+		Div cmBox = new Div();
+		Div atBox = new Div();
 		for (final Resp rp : resps) {
-			Hlayout line = new Hlayout();
-			line.setSpacing("8px");
+			// BP code (link -> select RFQ + response popup) + name
+			Div l1 = new Div();
+			l1.setStyle(LINE_STYLE);
 			A link = new A(rp.code);
 			link.setStyle(LINK_STYLE + "color:" + (rp.complete ? "#166534;" : "#b45309;"));
 			link.setTooltiptext(rp.name + (rp.complete ? " (Completed)" : " (Pending)"));
@@ -518,23 +507,59 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 				openResponse(rp.id);
 			});
 			Label nm = new Label(rp.name);
-			nm.setStyle("color:#64748b;font-size:12px;");
-			line.appendChild(link);
-			line.appendChild(nm);
-			stack.appendChild(line);
+			nm.setStyle("color:#64748b;font-size:12px;margin-left:8px;");
+			if (!rp.address.isEmpty())
+				nm.setTooltiptext(rp.address);
+			l1.appendChild(link);
+			l1.appendChild(nm);
+			bpBox.appendChild(l1);
+
+			// Status badge
+			Div l2 = new Div();
+			l2.setStyle(LINE_STYLE);
+			Label sb = new Label(rp.complete ? "Completed" : "Pending");
+			sb.setStyle("display:inline-block;padding:3px 14px;border-radius:999px;font-size:12px;font-weight:600;"
+					+ (rp.complete ? "background:#dcfce7;color:#166534;" : "background:#fef3c7;color:#92400e;"));
+			l2.appendChild(sb);
+			stBox.appendChild(l2);
+
+			// Complete Response Line
+			Div l3 = new Div();
+			l3.setStyle(LINE_STYLE);
+			Button cb = new Button(rp.complete ? "Completed" : "Complete");
+			cb.setStyle((rp.complete ? BTN_DISABLED : BTN_PRIMARY) + BTN_SMALL);
+			cb.setDisabled(rp.complete);
+			cb.addEventListener(Events.ON_CLICK, e -> {
+				selectRfq(item);
+				completeResponse(rp.id);
+			});
+			l3.appendChild(cb);
+			cmBox.appendChild(l3);
+
+			// Attachment
+			Div l4 = new Div();
+			l4.setStyle(LINE_STYLE);
+			Button ab = new Button("Attachment");
+			ab.setStyle(BTN_ATTACH + BTN_SMALL);
+			ab.addEventListener(Events.ON_CLICK, e -> openAttachment(rp.id));
+			l4.appendChild(ab);
+			atBox.appendChild(l4);
 		}
-		cBp.appendChild(stack);
+		Listcell cBp = new Listcell();
+		cBp.appendChild(bpBox);
 		item.appendChild(cBp);
 
 		item.appendChild(new Listcell(done + " / " + resps.size()));
 
-		boolean allDone = !resps.isEmpty() && done == resps.size();
-		Label badge = new Label(allDone ? "Completed" : "Pending");
-		badge.setStyle("display:inline-block;padding:3px 14px;border-radius:999px;font-size:12px;font-weight:600;"
-				+ (allDone ? "background:#dcfce7;color:#166534;" : "background:#fef3c7;color:#92400e;"));
 		Listcell cSt = new Listcell();
-		cSt.appendChild(badge);
+		cSt.appendChild(stBox);
 		item.appendChild(cSt);
+		Listcell cCm = new Listcell();
+		cCm.appendChild(cmBox);
+		item.appendChild(cCm);
+		Listcell cAt = new Listcell();
+		cAt.appendChild(atBox);
+		item.appendChild(cAt);
 
 		String cs = RfQApprovalService.S_APPROVED.equals(csState) ? "Approved"
 				: RfQApprovalService.S_REJECTED.equals(csState) ? "Rejected"
@@ -543,13 +568,14 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		return item;
 	}
 
-	/** RFQ row select kore niche tar supplier list dekhao. */
+	/** RFQ row select kore: Selected RFQ naam + supplier count update. */
 	private void selectRfq(Listitem item) {
 		rfqList.setSelectedItem(item);
 		selectedRfqId = toInt(item.getValue());
 		Object lbl = item.getAttribute("label");
 		selectedRfqLabel = lbl == null ? "" : lbl.toString();
-		loadResponses();
+		rfqNameLabel.setValue(selectedRfqLabel);
+		setStats(toInt(item.getAttribute("total")), toInt(item.getAttribute("done")));
 	}
 
 	/** Selected RFQ id (table er selected row) */
@@ -599,111 +625,6 @@ public class WRFQResponseEntry extends ADForm implements ValueChangeListener, Ev
 		} finally {
 			trx.close();
 		}
-	}
-
-	private void loadResponses() {
-		clear(respList);
-		setStats(0, 0);
-		int rfqId = currentRfqId();
-		if (rfqId <= 0) {
-			rfqNameLabel.setValue("");
-			return;
-		}
-		ensureResponses(rfqId);
-		rfqNameLabel.setValue(selectedRfqLabel);
-
-		StringBuilder sql = new StringBuilder();
-		sql.append("SELECT r.C_RfQResponse_ID, bp.Value, bp.Name, loc.Address1, loc.Address2, loc.City, r.IsComplete ");
-		sql.append("FROM C_RfQResponse r ");
-		sql.append("JOIN C_BPartner bp ON bp.C_BPartner_ID = r.C_BPartner_ID ");
-		sql.append("LEFT JOIN C_BPartner_Location bl ON bl.C_BPartner_Location_ID = r.C_BPartner_Location_ID ");
-		sql.append("LEFT JOIN C_Location loc ON loc.C_Location_ID = bl.C_Location_ID ");
-		sql.append("WHERE r.C_RfQ_ID=? AND r.IsActive='Y' ");
-		sql.append("ORDER BY r.C_RfQResponse_ID");
-
-		PreparedStatement pstmt = null;
-		ResultSet rs = null;
-		try {
-			pstmt = DB.prepareStatement(sql.toString(), null);
-			pstmt.setInt(1, rfqId);
-			rs = pstmt.executeQuery();
-			int sl = 0;
-			int done = 0;
-			while (rs.next()) {
-				sl++;
-				int respId = rs.getInt(1);
-				String code = rs.getString(2);
-				String name = rs.getString(3);
-				String address = joinAddress(rs.getString(4), rs.getString(5), rs.getString(6));
-				boolean complete = "Y".equals(rs.getString(7));
-				if (complete)
-					done++;
-				respList.appendChild(newRow(respId, sl, code, name, address, complete));
-			}
-			setStats(sl, done);
-		} catch (SQLException e) {
-			log.log(Level.SEVERE, sql.toString(), e);
-			throw new AdempiereException(e);
-		} finally {
-			DB.close(rs, pstmt);
-		}
-	}
-
-	private Listitem newRow(final int respId, int sl, String code, String name, String address,
-			boolean complete) {
-		Listitem item = new Listitem();
-		if (sl % 2 == 0)
-			item.setStyle("background:#f8fafc;");
-
-		// Select (read-only tick: complete hole tick)
-		Checkbox chk = new Checkbox();
-		chk.setChecked(complete);
-		chk.setDisabled(true);
-		Listcell c0 = new Listcell();
-		c0.appendChild(chk);
-		item.appendChild(c0);
-
-		item.appendChild(new Listcell(String.valueOf(sl)));
-
-		// Business Partner Code (link -> response popup)
-		A link = new A(nvl(code));
-		link.setStyle(LINK_STYLE);
-		link.addEventListener(Events.ON_CLICK, e -> openResponse(respId));
-		Listcell c2 = new Listcell();
-		c2.appendChild(link);
-		item.appendChild(c2);
-
-		Listcell cName = new Listcell(nvl(name));
-		cName.setStyle("font-weight:600;color:#0f2b46;");
-		item.appendChild(cName);
-		item.appendChild(new Listcell(nvl(address)));
-
-		// Status badge
-		Label badge = new Label(complete ? "Completed" : "Pending");
-		badge.setStyle("display:inline-block;padding:3px 14px;border-radius:999px;font-size:12px;font-weight:600;"
-				+ (complete ? "background:#dcfce7;color:#166534;" : "background:#fef3c7;color:#92400e;"));
-		Listcell cStatus = new Listcell();
-		cStatus.appendChild(badge);
-		item.appendChild(cStatus);
-
-		// Complete button
-		Button completeBtn = new Button(complete ? "Completed" : "Complete");
-		completeBtn.setStyle(complete ? BTN_DISABLED : BTN_PRIMARY);
-		completeBtn.setDisabled(complete);
-		completeBtn.addEventListener(Events.ON_CLICK, e -> completeResponse(respId));
-		Listcell c5 = new Listcell();
-		c5.appendChild(completeBtn);
-		item.appendChild(c5);
-
-		// Attachment button
-		Button attachBtn = new Button("Attachment");
-		attachBtn.setStyle(BTN_OUTLINE);
-		attachBtn.addEventListener(Events.ON_CLICK, e -> openAttachment(respId));
-		Listcell c6 = new Listcell();
-		c6.appendChild(attachBtn);
-		item.appendChild(c6);
-
-		return item;
 	}
 
 	// --------------------------------------------------------------- actions
