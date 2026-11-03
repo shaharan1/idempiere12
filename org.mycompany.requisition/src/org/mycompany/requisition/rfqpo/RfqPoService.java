@@ -15,6 +15,7 @@ import org.compiere.model.MBPartnerLocation;
 import org.compiere.model.MOrder;
 import org.compiere.model.MOrderLine;
 import org.compiere.model.MWarehouse;
+import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -82,6 +83,14 @@ public class RfqPoService {
 		}
 	}
 
+	/** One supplier response line of a CS, as shown in the Create PO grid (winner or not). */
+	public static class CsLine {
+		public int rfqId, rfqLineId, respId, bpId, rank;
+		public String bpCode = "", bpName = "", address = "", productCode = "", productName = "", comment = "";
+		public BigDecimal price = BigDecimal.ZERO;
+		public boolean winner;
+	}
+
 	/** Header defaults taken from the requisition and the supplier. */
 	public static class Defaults {
 		public int orgId, warehouseId, priceListId, paymentTermId;
@@ -99,6 +108,8 @@ public class RfqPoService {
 		public int rfqId, respId, bpId, orgId, warehouseId, docTypeId, priceListId, paymentTermId;
 		public String rfqDocNo, description;
 		public Timestamp dateOrdered, datePromised;
+		/** true = complete the PO right away (no further approval: the CS was already approved). */
+		public boolean complete;
 		public List<LineReq> lines = new ArrayList<LineReq>();
 	}
 
@@ -284,6 +295,88 @@ public class RfqPoService {
 		return list;
 	}
 
+	/**
+	 * Every supplier's response lines of one CS: the winner (recommended) supplier first, then the
+	 * others; per supplier in product order. Rank = position of the price among the suppliers of the
+	 * same product (cheapest first, equal prices share a rank).
+	 */
+	public List<CsLine> listCsLines(int rfqId) {
+		String sql = "SELECT l.C_RfQLine_ID, x.C_RfQResponse_ID, bp.C_BPartner_ID, bp.Value, bp.Name, "
+				+ "(SELECT COALESCE(loc.Address1,'') || CASE WHEN loc.City IS NOT NULL THEN ', ' || loc.City ELSE '' END "
+				+ "   FROM C_BPartner_Location bl JOIN C_Location loc ON loc.C_Location_ID=bl.C_Location_ID "
+				+ "   WHERE bl.C_BPartner_ID=bp.C_BPartner_ID AND bl.IsActive='Y' ORDER BY bl.C_BPartner_Location_ID LIMIT 1), "
+				+ "COALESCE(p.Value,''), COALESCE(p.Name, l.Description, ''), "
+				+ "CASE WHEN COALESCE(sq.XX_NegotiatePrice,0)>0 THEN sq.XX_NegotiatePrice ELSE COALESCE(sq.Price,0) END, "
+				+ "sl.IsSelectedWinner, COALESCE(sl.XX_WinnerComment,'') "
+				+ "FROM C_RfQResponse x "
+				+ "JOIN C_BPartner bp ON bp.C_BPartner_ID=x.C_BPartner_ID "
+				+ "JOIN C_RfQResponseLine sl ON sl.C_RfQResponse_ID=x.C_RfQResponse_ID AND sl.IsActive='Y' "
+				+ "JOIN C_RfQLine l ON l.C_RfQLine_ID=sl.C_RfQLine_ID AND l.IsActive='Y' "
+				+ "JOIN C_RfQResponseLineQty sq ON sq.C_RfQResponseLine_ID=sl.C_RfQResponseLine_ID AND sq.IsActive='Y' "
+				+ "  AND sq.C_RfQResponseLineQty_ID=" + firstQuote("sl") + " "
+				+ "LEFT JOIN M_Product p ON p.M_Product_ID=l.M_Product_ID "
+				+ "WHERE x.C_RfQ_ID=? AND x.IsActive='Y' "
+				+ "ORDER BY bp.Name, x.C_RfQResponse_ID, l.Line, l.C_RfQLine_ID";
+		List<CsLine> all = new ArrayList<CsLine>();
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement(sql, null);
+			ps.setInt(1, rfqId);
+			rs = ps.executeQuery();
+			while (rs.next()) {
+				CsLine c = new CsLine();
+				c.rfqId = rfqId;
+				c.rfqLineId = rs.getInt(1);
+				c.respId = rs.getInt(2);
+				c.bpId = rs.getInt(3);
+				c.bpCode = nvl(rs.getString(4));
+				c.bpName = nvl(rs.getString(5));
+				c.address = nvl(rs.getString(6));
+				c.productCode = nvl(rs.getString(7));
+				c.productName = nvl(rs.getString(8));
+				c.price = nz(rs.getBigDecimal(9));
+				c.winner = "Y".equals(rs.getString(10));
+				c.comment = nvl(rs.getString(11));
+				all.add(c);
+			}
+		} catch (Exception e) {
+			log.severe("listCsLines: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+
+		// rank per product
+		Map<Integer, List<CsLine>> byProduct = new LinkedHashMap<Integer, List<CsLine>>();
+		for (CsLine c : all)
+			byProduct.computeIfAbsent(Integer.valueOf(c.rfqLineId), k -> new ArrayList<CsLine>()).add(c);
+		for (List<CsLine> g : byProduct.values()) {
+			List<CsLine> sorted = new ArrayList<CsLine>(g);
+			sorted.sort((a, b) -> a.price.compareTo(b.price));
+			int rank = 0, pos = 0;
+			BigDecimal prev = null;
+			for (CsLine c : sorted) {
+				pos++;
+				if (prev == null || c.price.compareTo(prev) != 0) {
+					rank = pos;
+					prev = c.price;
+				}
+				c.rank = rank;
+			}
+		}
+
+		// group per supplier response, suppliers that won something first
+		Map<Integer, List<CsLine>> byResp = new LinkedHashMap<Integer, List<CsLine>>();
+		for (CsLine c : all)
+			byResp.computeIfAbsent(Integer.valueOf(c.respId), k -> new ArrayList<CsLine>()).add(c);
+		List<List<CsLine>> groups = new ArrayList<List<CsLine>>(byResp.values());
+		groups.sort((a, b) -> Boolean.compare(b.stream().anyMatch(x -> x.winner), a.stream().anyMatch(x -> x.winner)));
+		List<CsLine> out = new ArrayList<CsLine>();
+		for (List<CsLine> g : groups)
+			out.addAll(g);
+		return out;
+	}
+
 	// ------------------------------------------------------------ dropdown data
 
 	public Defaults loadDefaults(int rfqId, int bpId) {
@@ -383,7 +476,8 @@ public class RfqPoService {
 	public Result createPo(Request req) throws Exception {
 		if (!columnsReady())
 			throw new Exception("Run db/09_create_po_from_cs.sql first (C_Order.XX_RfQ_ID / C_OrderLine.XX_RfQLine_ID are missing).");
-		if (!RfQApprovalService.S_APPROVED.equals(csState(req.rfqId)))
+		if (!"CO".equals(DB.getSQLValueString(null,
+				"SELECT " + RfQApprovalService.statusSql() + " FROM C_RfQ r WHERE r.C_RfQ_ID=?", req.rfqId)))
 			throw new Exception("The Comparative Statement is not Approved yet.");
 		if (req.lines.isEmpty())
 			throw new Exception("Select at least one line.");
@@ -464,6 +558,21 @@ public class RfqPoService {
 
 			orderId = order.getC_Order_ID();
 			docNo = order.getDocumentNo();
+
+			if (req.complete) {
+				MOrder o = new MOrder(Env.getCtx(), orderId, trxName);
+				o.setDocAction(DocAction.ACTION_Complete);
+				if (!o.processIt(DocAction.ACTION_Complete))
+					throw new Exception("Could not complete the PO: " + o.getProcessMsg());
+				o.saveEx();
+				// The PO is completed right here. If a trigger on C_Order made a pending row for it in
+				// the PO approval list, close it so it cannot be approved (= completed) a second time.
+				DB.executeUpdateEx("UPDATE " + RfQApprovalService.T_HISTORY
+						+ " SET Status='" + RfQApprovalService.S_APPROVED + "', Updated=now(), UpdatedBy=? "
+						+ "WHERE AD_Client_ID=? AND DocumentNo=? AND C_DocType_ID=? AND Status='" + RfQApprovalService.S_PENDING + "'",
+						new Object[] { Integer.valueOf(Env.getAD_User_ID(Env.getCtx())),
+								Integer.valueOf(Env.getAD_Client_ID(Env.getCtx())), docNo, Integer.valueOf(docTypeId) }, trxName);
+			}
 			trx.commit();
 		} catch (Exception ex) {
 			trx.rollback();
@@ -475,8 +584,74 @@ public class RfqPoService {
 		Result res = new Result();
 		res.orderId = orderId;
 		res.docNo = docNo;
-		res.approvalMessage = submit(orderId, docTypeId, req.rfqDocNo);
+		res.approvalMessage = req.complete ? "The PO is Completed." : submit(orderId, docTypeId, req.rfqDocNo);
 		return res;
+	}
+
+	/**
+	 * One-click PO for a winner supplier: every line that still has quantity left (or just the one
+	 * line asked for), header values taken from the requisition / supplier, the PO is created and
+	 * Completed in one go.
+	 */
+	public Result createCompletedPo(Row row) throws Exception {
+		return createCompletedPo(row, 0);
+	}
+
+	/** Same, but only for one CS line (rfqLineId > 0): the "Create PO" button of a single product line. */
+	public Result createCompletedPo(Row row, int rfqLineId) throws Exception {
+		Defaults d = loadDefaults(row.rfqId, row.bpId);
+		Request req = new Request();
+		req.rfqId = row.rfqId;
+		req.respId = row.respId;
+		req.bpId = row.bpId;
+		req.rfqDocNo = row.docNo;
+		req.orgId = d.orgId;
+
+		req.warehouseId = d.warehouseId;
+		if (req.warehouseId <= 0) {
+			List<KeyNamePair> wh = warehouses();
+			if (wh.size() == 1)
+				req.warehouseId = wh.get(0).getKey();
+		}
+		if (req.warehouseId <= 0)
+			throw new Exception("No warehouse is set on the requisition of CS " + row.docNo + ".");
+
+		List<KeyNamePair> types = docTypes();
+		if (types.isEmpty())
+			throw new Exception("No Purchase Order document type found.");
+		req.docTypeId = types.get(0).getKey();
+
+		req.priceListId = d.priceListId;
+		if (req.priceListId <= 0)
+			throw new Exception("No purchase price list: set one on the requisition or on supplier " + row.bpName + ".");
+
+		req.paymentTermId = d.paymentTermId;
+		if (req.paymentTermId <= 0)
+			req.paymentTermId = Math.max(0, DB.getSQLValue(null, "SELECT C_PaymentTerm_ID FROM C_PaymentTerm "
+					+ "WHERE IsDefault='Y' AND IsActive='Y' AND AD_Client_ID IN (0,?) ORDER BY AD_Client_ID DESC",
+					Env.getAD_Client_ID(Env.getCtx())));
+		if (req.paymentTermId <= 0)
+			throw new Exception("No PO payment term: set one on supplier " + row.bpName + ".");
+
+		req.dateOrdered = new Timestamp(System.currentTimeMillis());
+		req.datePromised = d.dateRequired != null ? d.dateRequired : req.dateOrdered;
+		req.description = "Created from CS " + row.docNo;
+		req.complete = true;
+
+		for (Line l : loadLines(row.rfqId, row.respId)) {
+			if (rfqLineId > 0 && l.rfqLineId != rfqLineId)
+				continue;
+			if (l.remaining().signum() <= 0)
+				continue;
+			LineReq lr = new LineReq();
+			lr.line = l;
+			lr.qty = l.remaining();
+			lr.taxId = l.taxId;
+			req.lines.add(lr);
+		}
+		if (req.lines.isEmpty())
+			throw new Exception("A PO is already created for the whole quantity of this item.");
+		return createPo(req);
 	}
 
 	/** Hands the Drafted PO to the approval matrix. A failure here leaves the PO Drafted. */
