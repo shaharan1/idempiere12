@@ -170,6 +170,8 @@ public class RfqPoService {
 		sql.append("LEFT JOIN M_RequisitionLine rql ON rql.M_RequisitionLine_ID=l.XX_RequisitionLine_ID ");
 		sql.append("LEFT JOIN M_Product p ON p.M_Product_ID=l.M_Product_ID ");
 		sql.append("WHERE r.AD_Client_ID=? AND r.IsActive='Y' ");
+		// Only RFQs with Document Status = Completed (same rule as the RFQ window field)
+		sql.append("AND ").append(RfQApprovalService.completeSql()).append(" ");
 		sql.append("GROUP BY r.C_RfQ_ID, rs.C_RfQResponse_ID, bp.C_BPartner_ID ");
 		sql.append("ORDER BY r.C_RfQ_ID DESC, bp.Name");
 
