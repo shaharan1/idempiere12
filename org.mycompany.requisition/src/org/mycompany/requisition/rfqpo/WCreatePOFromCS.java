@@ -123,12 +123,12 @@ public class WCreatePOFromCS extends ADForm {
 
 		Listhead head = new Listhead();
 		head.setSizable(true);
-		String[] names  = { "SL No.", "BP Code", "Business Partner", "Address",
+		String[] names  = { "CS / RFQ No.", "Date", "SL No.", "BP Code", "Business Partner", "Address",
 				"PO Creation", "Product Code", "Product Name", "Product Rank",
 				"Price", "Recommended Winner", "Select Winner", "Comments" };
-		String[] hflexs = { "1", "2", "4", "5",
-				"3", "2", "4", "2",
-				"2", "3", "3", "4" };
+		String[] hflexs = { "3", "2", "1", "2", "4", "4",
+				"3", "2", "3", "2",
+				"2", "3", "3", "3" };
 		for (int i = 0; i < names.length; i++) {
 			Listheader h = new Listheader(names[i]);
 			h.setHflex(hflexs[i]);
