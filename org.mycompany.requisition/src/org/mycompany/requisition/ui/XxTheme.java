@@ -21,7 +21,7 @@ public final class XxTheme {
 	private static final CLogger log = CLogger.getCLogger(XxTheme.class);
 
 	/** Bump this after editing the CSS or JS so open browsers pick the new look. */
-	private static final String VERSION = "4";
+	private static final String VERSION = "5";
 
 	private static final String CSS = """
 /* =====================================================================
@@ -48,6 +48,7 @@ public final class XxTheme {
 /* ---------- Responsive Layout & Zoom-Resistant Scaling ---------- */
 .xx-form, .xx-win {
   box-sizing: border-box !important;
+  width: 100% !important;
   max-width: 100% !important;
 }
 
@@ -55,9 +56,23 @@ public final class XxTheme {
   box-sizing: border-box !important;
 }
 
-/* Ensure grids and listboxes do not crush action buttons */
+/* Ensure tables fill 100% width cleanly without leaving empty dead space on the right */
 .xx-form .z-listbox, .xx-win .z-listbox,
 .xx-form .z-grid, .xx-win .z-grid {
+  width: 100% !important;
+}
+
+.xx-form .z-listbox-header-table, .xx-form .z-listbox-body-table,
+.xx-win .z-listbox-header-table, .xx-win .z-listbox-body-table,
+.xx-form .z-grid-header-table, .xx-form .z-grid-body-table,
+.xx-win .z-grid-header-table, .xx-win .z-grid-body-table {
+  width: 100% !important;
+  min-width: 100% !important;
+  table-layout: fixed !important;
+}
+
+/* Ensure listheaders stretch proportionally across the full width */
+.xx-form .z-listhead, .xx-win .z-listhead {
   width: 100% !important;
 }
 
