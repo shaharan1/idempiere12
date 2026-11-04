@@ -106,15 +106,13 @@ public class WPOApprovalForm extends ADForm {
         head.setAttribute("sizable", Boolean.TRUE);
 //        head.setSizable(true);
 
-        addHeader(head, "Document Type", "170px");
-        addHeader(head, "PO Number", "130px");
-        addHeader(head, "Created", "160px");
-        addHeader(head, "Created By", "150px");
-//        addHeader(head, "Updated By", "150px");
-        addHeader(head, "Checked By", "150px");
-        addHeader(head, "Status", "110px");
-//        addHeader(head, "Active", "80px");
-        addHeader(head, "Actions", "420px");
+        addHeader(head, "Document Type", "140px");
+        addHeader(head, "PO Number", "110px");
+        addHeader(head, "Created", "140px");
+        addHeader(head, "Created By", "120px");
+        addHeader(head, "Checked By", "120px");
+        addHeader(head, "Status", "90px");
+        addHeader(head, "Actions", "320px");
 
         approvalList.appendChild(head);
         scrollContainer.appendChild(approvalList);
