@@ -21,7 +21,7 @@ public final class XxTheme {
 	private static final CLogger log = CLogger.getCLogger(XxTheme.class);
 
 	/** Bump this after editing the CSS or JS so open browsers pick the new look. */
-	private static final String VERSION = "3";
+	private static final String VERSION = "4";
 
 	private static final String CSS = """
 /* =====================================================================
@@ -55,32 +55,27 @@ public final class XxTheme {
   box-sizing: border-box !important;
 }
 
-/* Ensure grids and listboxes expand smoothly on zoom and screen resize */
+/* Ensure grids and listboxes do not crush action buttons */
 .xx-form .z-listbox, .xx-win .z-listbox,
 .xx-form .z-grid, .xx-win .z-grid {
   width: 100% !important;
-  table-layout: auto !important;
 }
 
-.xx-form .z-listbox-header-table, .xx-form .z-listbox-body-table,
-.xx-win .z-listbox-header-table, .xx-win .z-listbox-body-table,
-.xx-form .z-grid-header-table, .xx-form .z-grid-body-table,
-.xx-win .z-grid-header-table, .xx-win .z-grid-body-table {
-  width: 100% !important;
-  min-width: 100% !important;
+/* Always preserve full button visibility: no clipping or disappearing on zoom */
+.xx-form button.z-button, .xx-win button.z-button {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
 }
 
-/* Horizontal scrollbar appears cleanly if zoomed in too much instead of breaking layout */
+.xx-form .z-listcell, .xx-win .z-listcell {
+  overflow: visible !important;
+}
+
+/* Responsive scrollbars so user can always scroll smoothly if zoomed in */
 .xx-form .z-listbox-body, .xx-win .z-listbox-body,
 .xx-form .z-grid-body, .xx-win .z-grid-body {
   overflow-x: auto !important;
   overflow-y: auto !important;
-}
-
-/* Table cells handle long text gracefully */
-.xx-form .z-listcell-content, .xx-win .z-listcell-content,
-.xx-form .z-row-inner, .xx-win .z-row-inner {
-  word-break: break-word !important;
 }
 
 /* Responsive Modal Dialog Windows (adapts to viewport on zoom in/out) */
