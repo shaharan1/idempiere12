@@ -165,7 +165,13 @@ public class WCreatePOFromCS extends ADForm {
 			}
 
 			int sl = 0;
-			boolean firstRowOfCs = true;
+			int totalLinesOfCs = 0;
+			for (List<CsLine> vl : vendorLines.values())
+				totalLinesOfCs += vl.size();
+
+			int currentRowInCs = 0;
+			int middleRowIndex = totalLinesOfCs / 2; // the row index that is in the middle of this CS
+
 			for (Map.Entry<Integer, List<CsLine>> entry : vendorLines.entrySet()) {
 				int respId = entry.getKey().intValue();
 				List<CsLine> lines = entry.getValue();
@@ -189,40 +195,90 @@ public class WCreatePOFromCS extends ADForm {
 				for (int lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
 					final CsLine c = lines.get(lineIdx);
 					boolean firstOfVendor = (lineIdx == 0);
+					boolean lastOfVendor = (lineIdx == lines.size() - 1);
+					boolean isCsMiddleRow = (currentRowInCs == middleRowIndex);
+					currentRowInCs++;
 
 					Listitem li = new Listitem();
 					li.setStyle((sl % 2 == 0) ? "background:#f8faff;" : "background:#ffffff;");
 
-					// 1. CS / RFQ No. column
-					if (firstRowOfCs) {
-						Listcell csCell = new Listcell(head.docNo + (head.name != null && !head.name.isEmpty() ? "\n" + head.name : ""));
-						csCell.setStyle("font-weight:700;color:#1e3a8a;white-space:pre-line;");
-						li.appendChild(csCell);
+					// 1. CS / RFQ No. column: Seamless merged column without inner row borders
+					Listcell csCell;
+					if (isCsMiddleRow) {
+						csCell = new Listcell(head.docNo + (head.name != null && !head.name.isEmpty() ? "\n" + head.name : ""));
+						csCell.setStyle("font-weight:700;color:#1e3a8a;white-space:pre-line;text-align:center;border-top:none !important;border-bottom:none !important;background:#f0f7ff;");
 					} else {
-						li.appendChild(new Listcell());
+						csCell = new Listcell();
+						csCell.setStyle("border-top:none !important;border-bottom:none !important;background:#f0f7ff;");
 					}
+					li.appendChild(csCell);
 
-					// 2. Date column
-					if (firstRowOfCs) {
-						Listcell dtCell = new Listcell(head.date == null ? "" : DATE.format(head.date));
-						dtCell.setStyle("font-weight:600;color:#3b82f6;text-align:center;");
-						li.appendChild(dtCell);
-						firstRowOfCs = false;
+					// 2. Date column: Seamless merged column without inner row borders
+					Listcell dtCell;
+					if (isCsMiddleRow) {
+						dtCell = new Listcell(head.date == null ? "" : DATE.format(head.date));
+						dtCell.setStyle("font-weight:600;color:#3b82f6;text-align:center;border-top:none !important;border-bottom:none !important;background:#f0f7ff;");
 					} else {
-						li.appendChild(new Listcell());
+						dtCell = new Listcell();
+						dtCell.setStyle("border-top:none !important;border-bottom:none !important;background:#f0f7ff;");
 					}
+					li.appendChild(dtCell);
 
-					// 3. SL No.
-					li.appendChild(firstOfVendor ? center(String.valueOf(sl)) : new Listcell());
+					// 3. SL No. (Vendor-level seamless column)
+					Listcell slCell;
+					if (firstOfVendor) {
+						slCell = center(String.valueOf(sl));
+						slCell.setStyle("text-align:center;font-weight:600;border-bottom:none !important;");
+					} else {
+						slCell = new Listcell();
+						if (!lastOfVendor)
+							slCell.setStyle("border-top:none !important;border-bottom:none !important;");
+						else
+							slCell.setStyle("border-top:none !important;");
+					}
+					li.appendChild(slCell);
 
-					// 4. BP Code
-					li.appendChild(new Listcell(firstOfVendor ? c.bpCode : ""));
+					// 4. BP Code (Vendor-level seamless column)
+					Listcell bpCodeCell;
+					if (firstOfVendor) {
+						bpCodeCell = new Listcell(c.bpCode);
+						bpCodeCell.setStyle("font-weight:600;border-bottom:none !important;");
+					} else {
+						bpCodeCell = new Listcell();
+						if (!lastOfVendor)
+							bpCodeCell.setStyle("border-top:none !important;border-bottom:none !important;");
+						else
+							bpCodeCell.setStyle("border-top:none !important;");
+					}
+					li.appendChild(bpCodeCell);
 
-					// 5. Business Partner
-					li.appendChild(new Listcell(firstOfVendor ? c.bpName : ""));
+					// 5. Business Partner (Vendor-level seamless column)
+					Listcell bpNameCell;
+					if (firstOfVendor) {
+						bpNameCell = new Listcell(c.bpName);
+						bpNameCell.setStyle("font-weight:600;border-bottom:none !important;");
+					} else {
+						bpNameCell = new Listcell();
+						if (!lastOfVendor)
+							bpNameCell.setStyle("border-top:none !important;border-bottom:none !important;");
+						else
+							bpNameCell.setStyle("border-top:none !important;");
+					}
+					li.appendChild(bpNameCell);
 
-					// 6. Address
-					li.appendChild(new Listcell(firstOfVendor ? c.address : ""));
+					// 6. Address (Vendor-level seamless column)
+					Listcell addrCell;
+					if (firstOfVendor) {
+						addrCell = new Listcell(c.address);
+						addrCell.setStyle("border-bottom:none !important;");
+					} else {
+						addrCell = new Listcell();
+						if (!lastOfVendor)
+							addrCell.setStyle("border-top:none !important;border-bottom:none !important;");
+						else
+							addrCell.setStyle("border-top:none !important;");
+					}
+					li.appendChild(addrCell);
 
 					// 7. PO Creation Column: Only on the first row of each vendor!
 					Listcell action = new Listcell();
