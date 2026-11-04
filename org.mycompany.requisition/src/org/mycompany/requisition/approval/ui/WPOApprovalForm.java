@@ -103,16 +103,18 @@ public class WPOApprovalForm extends ADForm {
         approvalList.setEmptyMessage("No pending approvals assigned to you.");
 
         Listhead head = new Listhead();
-        head.setAttribute("sizable", Boolean.TRUE);
-//        head.setSizable(true);
+        head.setSizable(true);
 
-        addHeader(head, "Document Type", "140px");
-        addHeader(head, "PO Number", "110px");
-        addHeader(head, "Created", "140px");
-        addHeader(head, "Created By", "120px");
-        addHeader(head, "Checked By", "120px");
-        addHeader(head, "Status", "90px");
-        addHeader(head, "Actions", "320px");
+        String[] colNames = { "Document Type", "PO Number", "Created", "Created By", "Checked By", "Status", "Actions" };
+        String[] colHflex = { "3", "2", "3", "2", "2", "2", "4" };
+        String[] minWidths = { "130px", "100px", "130px", "110px", "110px", "90px", "280px" };
+
+        for (int i = 0; i < colNames.length; i++) {
+            Listheader header = new Listheader(colNames[i]);
+            header.setHflex(colHflex[i]);
+            header.setStyle("min-width:" + minWidths[i] + ";text-align:center;");
+            head.appendChild(header);
+        }
 
         approvalList.appendChild(head);
         scrollContainer.appendChild(approvalList);
