@@ -152,15 +152,6 @@ public class WCreatePOFromCS extends ADForm {
 			winnerRows.put(r.rfqId + ":" + r.respId, r);
 
 		for (Row head : csHeads.values()) {
-			// CS Header banner row spanning across all 12 columns
-			Listitem banner = new Listitem();
-			banner.setStyle("background:linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%);color:#ffffff;");
-			Listcell bannerCell = new Listcell("📁 CS " + head.docNo + " — " + head.name + " (" + (head.date == null ? "" : DATE.format(head.date)) + ")");
-			bannerCell.setSpan(12);
-			bannerCell.setStyle("font-weight:700;font-size:13px;color:#ffffff;padding:8px 14px;letter-spacing:0.3px;");
-			banner.appendChild(bannerCell);
-			grid.appendChild(banner);
-
 			Map<String, Line> left = new HashMap<String, Line>();
 			for (Row wr : winnerRows.values())
 				if (wr.rfqId == head.rfqId)
@@ -174,6 +165,7 @@ public class WCreatePOFromCS extends ADForm {
 			}
 
 			int sl = 0;
+			boolean firstRowOfCs = true;
 			for (Map.Entry<Integer, List<CsLine>> entry : vendorLines.entrySet()) {
 				int respId = entry.getKey().intValue();
 				List<CsLine> lines = entry.getValue();
@@ -196,28 +188,51 @@ public class WCreatePOFromCS extends ADForm {
 
 				for (int lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
 					final CsLine c = lines.get(lineIdx);
-					boolean first = (lineIdx == 0);
+					boolean firstOfVendor = (lineIdx == 0);
 
 					Listitem li = new Listitem();
 					li.setStyle((sl % 2 == 0) ? "background:#f8faff;" : "background:#ffffff;");
 
-					li.appendChild(first ? center(String.valueOf(sl)) : new Listcell());
-					li.appendChild(new Listcell(first ? c.bpCode : ""));
-					li.appendChild(new Listcell(first ? c.bpName : ""));
-					li.appendChild(new Listcell(first ? c.address : ""));
+					// 1. CS / RFQ No. column
+					if (firstRowOfCs) {
+						Listcell csCell = new Listcell(head.docNo + (head.name != null && !head.name.isEmpty() ? "\n" + head.name : ""));
+						csCell.setStyle("font-weight:700;color:#1e3a8a;white-space:pre-line;");
+						li.appendChild(csCell);
+					} else {
+						li.appendChild(new Listcell());
+					}
 
-					// PO Creation Column: Only on the first row of each vendor!
+					// 2. Date column
+					if (firstRowOfCs) {
+						Listcell dtCell = new Listcell(head.date == null ? "" : DATE.format(head.date));
+						dtCell.setStyle("font-weight:600;color:#3b82f6;text-align:center;");
+						li.appendChild(dtCell);
+						firstRowOfCs = false;
+					} else {
+						li.appendChild(new Listcell());
+					}
+
+					// 3. SL No.
+					li.appendChild(firstOfVendor ? center(String.valueOf(sl)) : new Listcell());
+
+					// 4. BP Code
+					li.appendChild(new Listcell(firstOfVendor ? c.bpCode : ""));
+
+					// 5. Business Partner
+					li.appendChild(new Listcell(firstOfVendor ? c.bpName : ""));
+
+					// 6. Address
+					li.appendChild(new Listcell(firstOfVendor ? c.address : ""));
+
+					// 7. PO Creation Column: Only on the first row of each vendor!
 					Listcell action = new Listcell();
 					action.setStyle("text-align:center;");
-					if (first) {
+					if (firstOfVendor) {
 						if (canCreatePo) {
 							final Button create = new Button("Create PO (" + winnerLinesCount + ")");
 							create.setStyle("background:#16a34a;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;");
 							create.addEventListener(Events.ON_CLICK, e -> createVendorPo(wr, create));
 							action.appendChild(create);
-						} else {
-							// Invisible / hidden if no winner line exists for this vendor
-							// We leave the cell empty or blank as requested
 						}
 					}
 					li.appendChild(action);
