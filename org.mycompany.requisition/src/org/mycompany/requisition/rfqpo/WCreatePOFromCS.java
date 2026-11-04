@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.adempiere.webui.apps.AEnv;
+import org.adempiere.webui.component.Window;
 import org.adempiere.webui.panel.ADForm;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -31,7 +33,6 @@ import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
 import org.zkoss.zul.Textbox;
 import org.zkoss.zul.Vlayout;
-import org.zkoss.zul.Window;
 
 /**
  * Create PO from CS with Fast-Track Winner Change Request & Approval.
@@ -165,102 +166,121 @@ public class WCreatePOFromCS extends ADForm {
 					for (Line l : service.loadLines(wr.rfqId, wr.respId))
 						left.put(wr.respId + ":" + l.rfqLineId, l);
 
-			int sl = 0, lastResp = -1;
-			for (final CsLine c : service.listCsLines(head.rfqId)) {
-				boolean first = c.respId != lastResp;
-				if (first) {
-					sl++;
-					lastResp = c.respId;
+			// Map: respId -> list of CsLine
+			Map<Integer, List<CsLine>> vendorLines = new LinkedHashMap<Integer, List<CsLine>>();
+			for (CsLine c : service.listCsLines(head.rfqId)) {
+				vendorLines.computeIfAbsent(Integer.valueOf(c.respId), k -> new java.util.ArrayList<CsLine>()).add(c);
+			}
+
+			int sl = 0;
+			for (Map.Entry<Integer, List<CsLine>> entry : vendorLines.entrySet()) {
+				int respId = entry.getKey().intValue();
+				List<CsLine> lines = entry.getValue();
+				sl++;
+
+				final Row wr = winnerRows.get(head.rfqId + ":" + respId);
+
+				// Count winning lines for this vendor that have remaining qty and are approved without pending change
+				int winnerLinesCount = 0;
+				for (CsLine c : lines) {
+					Line wl = left.get(respId + ":" + c.rfqLineId);
+					ChangeRequest pendingReq = WinnerChangeService.getPendingRequest(c.rfqLineId);
+					boolean hasPendingChange = (pendingReq != null);
+					if (c.winner && wl != null && wl.remaining().signum() > 0 && !hasPendingChange) {
+						winnerLinesCount++;
+					}
 				}
 
-				Listitem li = new Listitem();
-				li.setStyle((sl % 2 == 0) ? "background:#f8faff;" : "background:#ffffff;");
+				boolean canCreatePo = (wr != null && wr.csApproved() && winnerLinesCount > 0);
 
-				li.appendChild(first ? center(String.valueOf(sl)) : new Listcell());
-				li.appendChild(new Listcell(first ? c.bpCode : ""));
-				li.appendChild(new Listcell(first ? c.bpName : ""));
-				li.appendChild(new Listcell(first ? c.address : ""));
+				for (int lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
+					final CsLine c = lines.get(lineIdx);
+					boolean first = (lineIdx == 0);
 
-				final Row wr = winnerRows.get(c.rfqId + ":" + c.respId);
-				Line wl = left.get(c.respId + ":" + c.rfqLineId);
+					Listitem li = new Listitem();
+					li.setStyle((sl % 2 == 0) ? "background:#f8faff;" : "background:#ffffff;");
 
-				// Check if there is a pending Winner Change Request for this line
-				ChangeRequest pendingReq = WinnerChangeService.getPendingRequest(c.rfqLineId);
-				boolean hasPendingChange = (pendingReq != null);
+					li.appendChild(first ? center(String.valueOf(sl)) : new Listcell());
+					li.appendChild(new Listcell(first ? c.bpCode : ""));
+					li.appendChild(new Listcell(first ? c.bpName : ""));
+					li.appendChild(new Listcell(first ? c.address : ""));
 
-				boolean canCreate = c.winner && wr != null && wl != null
-						&& wl.remaining().signum() > 0 && wr.csApproved() && !hasPendingChange;
-
-				Listcell action = new Listcell();
-				action.setStyle("text-align:center;");
-				final Button create = new Button("Create PO");
-				create.setStyle(canCreate
-						? "background:#16a34a;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;"
-						: "background:#d1d5db;color:#6b7280;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:default;");
-				create.setDisabled(!canCreate);
-				create.addEventListener(Events.ON_CLICK, e -> createPo(wr, c.rfqLineId, create));
-				action.appendChild(create);
-				li.appendChild(action);
-
-				li.appendChild(new Listcell(c.productCode));
-				li.appendChild(new Listcell(c.productName));
-				li.appendChild(center(String.valueOf(c.rank)));
-
-				Listcell price = new Listcell(MONEY.format(c.price));
-				price.setStyle("text-align:right;");
-				li.appendChild(price);
-
-				// Recommended Winner — read-only
-				li.appendChild(check(c.winner));
-
-				// ---- Select Winner cell with Fast-Track Deviation Request ----
-				final int rfqLineId_f = c.rfqLineId;
-				final int respId_f    = c.respId;
-				final int rfqId_f     = c.rfqId;
-				final String bpName_f = c.bpName;
-				final String pName_f  = c.productName;
-
-				Listcell selCell = new Listcell();
-				selCell.setStyle("text-align:center;");
-
-				if (hasPendingChange && pendingReq.newRespId == c.respId) {
-					// Pending approval badge for requested new winner
-					Label pendingBadge = new Label("⏳ Pending HOD");
-					pendingBadge.setStyle("color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;");
-					pendingBadge.setTooltiptext("Change requested: " + pendingReq.justification);
-					selCell.appendChild(pendingBadge);
-				} else {
-					Checkbox selCb = new Checkbox();
-					selCb.setChecked(c.winner);
-					selCb.setStyle("cursor:pointer;");
-					selCb.addEventListener(Events.ON_CHECK, evt -> {
-						boolean newVal = selCb.isChecked();
-						if (newVal) {
-							// Open Fast-Track Change Request Dialog
-							showWinnerChangeDialog(rfqId_f, rfqLineId_f, respId_f, bpName_f, pName_f, selCb);
+					// PO Creation Column: Only on the first row of each vendor!
+					Listcell action = new Listcell();
+					action.setStyle("text-align:center;");
+					if (first) {
+						if (canCreatePo) {
+							final Button create = new Button("Create PO (" + winnerLinesCount + ")");
+							create.setStyle("background:#16a34a;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;");
+							create.addEventListener(Events.ON_CLICK, e -> createVendorPo(wr, create));
+							action.appendChild(create);
 						} else {
-							// Uncheck
-							selCb.setChecked(true); // Don't allow unchecking without selecting alternative
-							Messagebox.show("To change winner, please check the alternative vendor you want to request.",
-									"Info", Messagebox.OK, Messagebox.INFORMATION);
+							// Invisible / hidden if no winner line exists for this vendor
+							// We leave the cell empty or blank as requested
 						}
-					});
-					selCell.appendChild(selCb);
+					}
+					li.appendChild(action);
+
+					li.appendChild(new Listcell(c.productCode));
+					li.appendChild(new Listcell(c.productName));
+					li.appendChild(center(String.valueOf(c.rank)));
+
+					Listcell price = new Listcell(MONEY.format(c.price));
+					price.setStyle("text-align:right;");
+					li.appendChild(price);
+
+					// Recommended Winner — read-only
+					li.appendChild(check(c.winner));
+
+					// ---- Select Winner cell with Fast-Track Deviation Request ----
+					final int rfqLineId_f = c.rfqLineId;
+					final int respId_f    = c.respId;
+					final int rfqId_f     = c.rfqId;
+					final String bpName_f = c.bpName;
+					final String pName_f  = c.productName;
+
+					ChangeRequest pendingReq = WinnerChangeService.getPendingRequest(c.rfqLineId);
+					boolean hasPendingChange = (pendingReq != null);
+
+					Listcell selCell = new Listcell();
+					selCell.setStyle("text-align:center;");
+
+					if (hasPendingChange && pendingReq.newRespId == c.respId) {
+						Label pendingBadge = new Label("⏳ Pending HOD");
+						pendingBadge.setStyle("color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:600;");
+						pendingBadge.setTooltiptext("Change requested: " + pendingReq.justification);
+						selCell.appendChild(pendingBadge);
+					} else {
+						Checkbox selCb = new Checkbox();
+						selCb.setChecked(c.winner);
+						selCb.setStyle("cursor:pointer;");
+						selCb.addEventListener(Events.ON_CHECK, evt -> {
+							boolean newVal = selCb.isChecked();
+							if (newVal) {
+								showWinnerChangeDialog(rfqId_f, rfqLineId_f, respId_f, bpName_f, pName_f, selCb);
+							} else {
+								selCb.setChecked(true);
+								Messagebox.show("To change winner, please check the alternative vendor you want to request.",
+										"Info", Messagebox.OK, Messagebox.INFORMATION);
+							}
+						});
+						selCell.appendChild(selCb);
+					}
+					li.appendChild(selCell);
+
+					// ---- Comments ----
+					Listcell cm = new Listcell();
+					Textbox tb = new Textbox(c.comment == null ? "" : c.comment);
+					tb.setReadonly(!c.winner);
+					tb.setWidth("97%");
+					tb.setStyle(c.winner
+							? "border:1px solid #60a5fa;border-radius:3px;font-size:12px;"
+							: "border:1px solid #e5e7eb;border-radius:3px;font-size:12px;background:#f9fafb;");
+					cm.appendChild(tb);
+					li.appendChild(cm);
+
+					grid.appendChild(li);
 				}
-				li.appendChild(selCell);
-
-				// ---- Comments ----
-				Listcell cm = new Listcell();
-				Textbox tb = new Textbox(c.comment == null ? "" : c.comment);
-				tb.setReadonly(!c.winner);
-				tb.setWidth("97%");
-				tb.setStyle(c.winner
-						? "border:1px solid #60a5fa;border-radius:3px;font-size:12px;"
-						: "border:1px solid #e5e7eb;border-radius:3px;font-size:12px;background:#f9fafb;");
-				cm.appendChild(tb);
-				li.appendChild(cm);
-
-				grid.appendChild(li);
 			}
 		}
 		countLabel.setValue("Total CS: " + csHeads.size());
@@ -270,8 +290,7 @@ public class WCreatePOFromCS extends ADForm {
 	private void showWinnerChangeDialog(int rfqId, int rfqLineId, int newRespId, String bpName, String prodName, Checkbox selCb) {
 		Window dlg = new Window();
 		dlg.setTitle("Request Winner Change (Deviation Request)");
-		dlg.setBorder("normal");
-		dlg.setMode("modal");
+		dlg.setAttribute(Window.MODE_KEY, Window.MODE_HIGHLIGHTED);
 		dlg.setWidth("480px");
 
 		Vlayout body = new Vlayout();
@@ -332,8 +351,8 @@ public class WCreatePOFromCS extends ADForm {
 			reload();
 		});
 
-		dlg.setPage(grid.getPage());
-		dlg.doModal();
+		dlg.setClosable(true);
+		AEnv.showCenterScreen(dlg);
 	}
 
 	/** HOD Fast-Track Review & Approval Dialog */
@@ -342,8 +361,7 @@ public class WCreatePOFromCS extends ADForm {
 
 		Window dlg = new Window();
 		dlg.setTitle("HOD Winner Change Approvals (" + pendingList.size() + " Pending)");
-		dlg.setBorder("normal");
-		dlg.setMode("modal");
+		dlg.setAttribute(Window.MODE_KEY, Window.MODE_HIGHLIGHTED);
 		dlg.setWidth("750px");
 		dlg.setHeight("480px");
 
@@ -428,12 +446,12 @@ public class WCreatePOFromCS extends ADForm {
 		closeBtn.addEventListener(Events.ON_CLICK, e -> dlg.detach());
 		body.appendChild(closeBtn);
 
-		dlg.setPage(grid.getPage());
-		dlg.doModal();
+		dlg.setClosable(true);
+		AEnv.showCenterScreen(dlg);
 	}
 
-	/** Creates the PO of this one product line (the quantity still left) and Completes it. */
-	private void createPo(Row r, int rfqLineId, Button button) {
+	/** Creates the PO for ALL winning product lines of this vendor and Completes it in ONE PO. */
+	private void createVendorPo(Row r, Button button) {
 		if (!RfqPoService.columnsReady()) {
 			Messagebox.show("Run db/09_create_po_from_cs.sql first.",
 				"Create PO From CS", Messagebox.OK, Messagebox.ERROR);
@@ -441,11 +459,12 @@ public class WCreatePOFromCS extends ADForm {
 		}
 		button.setDisabled(true);
 		try {
-			Result res = service.createCompletedPo(r, rfqLineId);
-			Messagebox.show("PO " + res.docNo + " created.\n" + res.approvalMessage,
+			// createCompletedPo(r, 0) takes ALL winner lines with remaining qty for this vendor
+			Result res = service.createCompletedPo(r, 0);
+			Messagebox.show("Vendor PO " + res.docNo + " created successfully for " + r.bpName + ".\n" + res.approvalMessage,
 				"Create PO From CS", Messagebox.OK, Messagebox.INFORMATION);
 		} catch (Exception ex) {
-			log.warning("createPo: " + ex.getMessage());
+			log.warning("createVendorPo: " + ex.getMessage());
 			Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(),
 				"Create PO From CS", Messagebox.OK, Messagebox.ERROR);
 		}
