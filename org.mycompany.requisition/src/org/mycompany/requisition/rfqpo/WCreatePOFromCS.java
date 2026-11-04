@@ -142,9 +142,7 @@ public class WCreatePOFromCS extends ADForm {
 	}
 
 	private void reload() {
-		while (grid.getItemCount() > 0)
-			grid.removeItemAt(0);
-		grid.getChildren().removeIf(c -> c instanceof Listgroup);
+		grid.getItems().clear();
 
 		Map<Integer, Row> csHeads = new LinkedHashMap<Integer, Row>();
 		for (Row r : service.listRows(pendingOnly.isChecked()))
@@ -154,11 +152,14 @@ public class WCreatePOFromCS extends ADForm {
 			winnerRows.put(r.rfqId + ":" + r.respId, r);
 
 		for (Row head : csHeads.values()) {
-			Listgroup g = new Listgroup();
-			g.setLabel("CS " + head.docNo + "   " + head.name + "   "
-					+ (head.date == null ? "" : DATE.format(head.date)));
-			g.setStyle("background:#dbeafe;font-weight:700;color:#1e3a8a;font-size:13px;");
-			grid.appendChild(g);
+			// CS Header banner row spanning across all 12 columns
+			Listitem banner = new Listitem();
+			banner.setStyle("background:linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%);color:#ffffff;");
+			Listcell bannerCell = new Listcell("📁 CS " + head.docNo + " — " + head.name + " (" + (head.date == null ? "" : DATE.format(head.date)) + ")");
+			bannerCell.setSpan(12);
+			bannerCell.setStyle("font-weight:700;font-size:13px;color:#ffffff;padding:8px 14px;letter-spacing:0.3px;");
+			banner.appendChild(bannerCell);
+			grid.appendChild(banner);
 
 			Map<String, Line> left = new HashMap<String, Line>();
 			for (Row wr : winnerRows.values())
