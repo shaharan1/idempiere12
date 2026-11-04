@@ -636,7 +636,7 @@ public class RfqPoService {
 		req.dateOrdered = new Timestamp(System.currentTimeMillis());
 		req.datePromised = d.dateRequired != null ? d.dateRequired : req.dateOrdered;
 		req.description = "Created from CS " + row.docNo;
-		req.complete = true;
+		req.complete = false; // PO will be created as Drafted and sent to Approval Matrix
 
 		for (Line l : loadLines(row.rfqId, row.respId)) {
 			if (rfqLineId > 0 && l.rfqLineId != rfqLineId)
