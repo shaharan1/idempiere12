@@ -107,12 +107,11 @@ public class WPOApprovalForm extends ADForm {
 
         String[] colNames = { "Document Type", "PO Number", "Created", "Created By", "Checked By", "Status", "Actions" };
         String[] colHflex = { "3", "2", "3", "2", "2", "2", "4" };
-        String[] minWidths = { "130px", "100px", "130px", "110px", "110px", "90px", "280px" };
 
         for (int i = 0; i < colNames.length; i++) {
             Listheader header = new Listheader(colNames[i]);
             header.setHflex(colHflex[i]);
-            header.setStyle("min-width:" + minWidths[i] + ";text-align:center;");
+            header.setStyle("text-align:center;");
             head.appendChild(header);
         }
 
