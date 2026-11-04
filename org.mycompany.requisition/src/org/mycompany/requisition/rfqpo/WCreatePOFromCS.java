@@ -108,30 +108,30 @@ public class WCreatePOFromCS extends ADForm {
 		topBar.appendChild(hodBtn);
 		topBar.appendChild(countLabel);
 
-		// ---- Table wrapper fills remaining vertical space
+		// ---- the table wrapper allows horizontal scrolling without clipping buttons
 		Div tableWrap = new Div();
 		tableWrap.setWidth("100%");
 		tableWrap.setVflex("1");
-		tableWrap.setStyle("flex:1 1 auto;overflow:hidden;");
+		tableWrap.setStyle("flex:1 1 auto;overflow-x:auto;overflow-y:hidden;");
 		root.appendChild(tableWrap);
 
-		// ---- Grid / Listbox
+		// ---- Grid / Listbox with minimum width to guarantee all buttons stay fully intact
 		grid = new Listbox();
 		grid.setWidth("100%");
 		grid.setVflex("1");
-		grid.setStyle("border:none;border-radius:0 0 6px 6px;");
+		grid.setStyle("border:none;border-radius:0 0 6px 6px;min-width:1380px;");
 
 		Listhead head = new Listhead();
 		head.setSizable(true);
 		String[] names  = { "CS / RFQ No.", "Date", "SL No.", "BP Code", "Business Partner", "Address",
 				"PO Creation", "Product Code", "Product Name", "Product Rank",
 				"Price", "Recommended Winner", "Select Winner", "Comments" };
-		String[] hflexs = { "3", "2", "1", "2", "4", "4",
-				"3", "2", "3", "2",
-				"2", "3", "3", "3" };
+		String[] widths = { "120px", "95px", "55px", "90px", "160px", "180px",
+				"115px", "100px", "150px", "85px",
+				"85px", "110px", "100px", "120px" };
 		for (int i = 0; i < names.length; i++) {
 			Listheader h = new Listheader(names[i]);
-			h.setHflex(hflexs[i]);
+			h.setWidth(widths[i]);
 			h.setStyle("text-align:center;white-space:normal;");
 			head.appendChild(h);
 		}
