@@ -164,7 +164,7 @@ public class WCreateRFQDialog extends Window implements EventListener<Event> {
 		topicEditor = new WTableDirEditor("C_RfQ_Topic_ID", true, false, true, topicLookup);
 
 		termsField.setMultiline(true);
-		termsField.setRows(5);
+		termsField.setRows(10);
 		ZKUpdateUtil.setHflex(termsField, "1");
 		initTerms();
 
