@@ -525,25 +525,22 @@ public class WCreatePOFromCS extends ADForm {
 		AEnv.showCenterScreen(dlg);
 	}
 
-	/** Creates the PO for ALL winning product lines of this vendor and Completes it in ONE PO. */
+	/**
+	 * "Create PO" button of a winner supplier: opens the Create PO popup. OK in the popup creates the PO
+	 * as Drafted and sends it to the approval matrix; the list is reloaded afterwards.
+	 */
 	private void createVendorPo(Row r, Button button) {
 		if (!RfqPoService.columnsReady()) {
 			Messagebox.show("Run db/09_create_po_from_cs.sql first.",
 				"Create PO From CS", Messagebox.OK, Messagebox.ERROR);
 			return;
 		}
-		button.setDisabled(true);
-		try {
-			// createCompletedPo(r, 0) takes ALL winner lines with remaining qty for this vendor
-			Result res = service.createCompletedPo(r, 0);
-			Messagebox.show("Vendor PO " + res.docNo + " created successfully for " + r.bpName + ".\n" + res.approvalMessage,
-				"Create PO From CS", Messagebox.OK, Messagebox.INFORMATION);
-		} catch (Exception ex) {
-			log.warning("createVendorPo: " + ex.getMessage());
-			Messagebox.show(ex.getMessage() == null ? ex.toString() : ex.getMessage(),
+		if (!RfqPoService.extraColumnsReady()) {
+			Messagebox.show("Run db/12_create_po_extra_fields.sql first.",
 				"Create PO From CS", Messagebox.OK, Messagebox.ERROR);
+			return;
 		}
-		reload();
+		CreatePODialog.open(grid, r, () -> reload());
 	}
 
 	private static Listcell check(boolean on) {
