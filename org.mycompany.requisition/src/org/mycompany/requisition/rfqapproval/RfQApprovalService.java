@@ -99,7 +99,10 @@ public class RfQApprovalService {
 		public Map<Integer, BigDecimal> unit = new HashMap<Integer, BigDecimal>();
 		public Map<Integer, BigDecimal> total = new HashMap<Integer, BigDecimal>();
 		public Map<Integer, BigDecimal> vat = new HashMap<Integer, BigDecimal>();
+		/** Suppliers with the lowest unit price = system rank 1 (ties all included). */
 		public Set<Integer> lowest = new LinkedHashSet<Integer>();
+		/** Supplier(s) finally selected as winner of this product (C_RfQResponseLine.IsSelectedWinner). */
+		public Set<Integer> winners = new LinkedHashSet<Integer>();
 	}
 
 	public static class Comparison {
@@ -355,7 +358,8 @@ public class RfQApprovalService {
 		Map<Integer, Item> byLine = new HashMap<Integer, Item>();
 		for (Item it : c.items) byLine.put(it.rfqLineId, it);
 		String sql = "SELECT x.C_RfQResponse_ID, sl.C_RfQLine_ID, COALESCE(sq.Price,0), "
-				+ "COALESCE(sq.XX_NegotiatePrice,0), COALESCE(sq.XX_QuotationQty,0), COALESCE(sq.XX_VATAmt,0) "
+				+ "COALESCE(sq.XX_NegotiatePrice,0), COALESCE(sq.XX_QuotationQty,0), COALESCE(sq.XX_VATAmt,0), "
+				+ "COALESCE(sl.IsSelectedWinner,'N') "
 				+ "FROM C_RfQResponse x "
 				+ "JOIN C_RfQResponseLine sl ON sl.C_RfQResponse_ID=x.C_RfQResponse_ID AND sl.IsActive='Y' "
 				+ "JOIN C_RfQResponseLineQty sq ON sq.C_RfQResponseLine_ID=sl.C_RfQResponseLine_ID AND sq.IsActive='Y' "
@@ -379,6 +383,7 @@ public class RfQApprovalService {
 				it.unit.put(resp, unit);
 				it.total.put(resp, unit.multiply(qty).setScale(2, RoundingMode.HALF_UP));
 				it.vat.put(resp, rs.getBigDecimal(6));
+				if ("Y".equals(rs.getString(7))) it.winners.add(resp); // final winner, read fresh on every load
 			}
 		} catch (Exception e) {
 			log.severe("loadPrices: " + e.getMessage());
