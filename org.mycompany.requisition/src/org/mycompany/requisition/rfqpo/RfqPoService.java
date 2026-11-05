@@ -1,7 +1,9 @@
 package org.mycompany.requisition.rfqpo;
 
+import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
@@ -9,12 +11,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import org.compiere.model.MBPartner;
 import org.compiere.model.MBPartnerLocation;
 import org.compiere.model.MOrder;
 import org.compiere.model.MOrderLine;
 import org.compiere.model.MWarehouse;
+import org.compiere.print.ReportEngine;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -77,6 +81,8 @@ public class RfqPoService {
 		public int rfqLineId, respLineId, reqLineId, productId, uomId, taxId, lineNo;
 		public String code = "", name = "", uom = "";
 		public BigDecimal rfqQty = BigDecimal.ZERO, already = BigDecimal.ZERO, rate = BigDecimal.ZERO;
+		/** Rebate / TariffRate flags of the CS response line. */
+		public boolean rebate, tariff;
 
 		public BigDecimal remaining() {
 			return rfqQty.subtract(already).max(BigDecimal.ZERO);
@@ -96,18 +102,25 @@ public class RfqPoService {
 		public int orgId, warehouseId, priceListId, paymentTermId;
 		public String orgName = "";
 		public Timestamp dateRequired;
+		/** Transport / Others / Gross Discount of the supplier's CS response (shown in the popup, editable). */
+		public BigDecimal transportCost = BigDecimal.ZERO, othersCost = BigDecimal.ZERO, grossDiscount = BigDecimal.ZERO;
+		public boolean grossDiscountPct;
 	}
 
 	public static class LineReq {
 		public Line line;
 		public BigDecimal qty;
 		public int taxId;
+		public boolean rebate, tariff;
 	}
 
 	public static class Request {
 		public int rfqId, respId, bpId, orgId, warehouseId, docTypeId, priceListId, paymentTermId;
 		public String rfqDocNo, description;
 		public Timestamp dateOrdered, datePromised;
+		/** Transport / Others cost and Gross Discount (a percent when grossDiscountPct, else an amount). */
+		public BigDecimal transportCost = BigDecimal.ZERO, othersCost = BigDecimal.ZERO, grossDiscount = BigDecimal.ZERO;
+		public boolean grossDiscountPct;
 		/** true = complete the PO right away (no further approval: the CS was already approved). */
 		public boolean complete;
 		public List<LineReq> lines = new ArrayList<LineReq>();
@@ -120,11 +133,33 @@ public class RfqPoService {
 		public String approvalMessage;
 	}
 
+	/** PO print format (the one set up for Purchase Order) rendered to PDF bytes. */
+	public static byte[] orderPdf(int orderId) throws Exception {
+		Properties ctx = Env.getCtx();
+		ReportEngine re = ReportEngine.get(ctx, ReportEngine.ORDER, orderId);
+		if (re == null)
+			throw new Exception("No print format is configured for the Purchase Order.");
+		File f = null;
+		try {
+			f = File.createTempFile("PO_" + orderId + "_", ".pdf");
+			re.getPDF(f);
+			return Files.readAllBytes(f.toPath());
+		} finally {
+			if (f != null)
+				f.delete();
+		}
+	}
+
 	// ------------------------------------------------------------ checks
 
 	/** False until db/09_create_po_from_cs.sql has been run. */
 	public static boolean columnsReady() {
 		return hasColumn("c_order", "xx_rfq_id") && hasColumn("c_orderline", "xx_rfqline_id");
+	}
+
+	/** False until db/12_create_po_extra_fields.sql has been run. */
+	public static boolean extraColumnsReady() {
+		return hasColumn("c_order", "xx_payabletotal") && hasColumn("c_orderline", "xx_isrebate");
 	}
 
 	private static boolean hasColumn(String table, String column) {
@@ -250,7 +285,7 @@ public class RfqPoService {
 				+ "COALESCE(NULLIF(uom.UOMSymbol,''), uom.Name, ''), COALESCE(lq.C_UOM_ID, p.C_UOM_ID, 0), "
 				+ "COALESCE(NULLIF(q.XX_QuotationQty,0), NULLIF(lq.Qty,0), rql.Qty, 0), " + already + ", "
 				+ "CASE WHEN COALESCE(q.XX_NegotiatePrice,0)>0 THEN q.XX_NegotiatePrice ELSE q.Price END, "
-				+ "COALESCE(q.XX_Tax_ID,0) "
+				+ "COALESCE(q.XX_Tax_ID,0), COALESCE(q.XX_IsRebate,'N'), COALESCE(q.XX_IsTariff,'N') "
 				+ "FROM C_RfQLine l "
 				+ "JOIN C_RfQResponseLine sl ON sl.C_RfQLine_ID=l.C_RfQLine_ID AND sl.IsSelectedWinner='Y' AND sl.IsActive='Y' "
 				+ "JOIN C_RfQResponse rs ON rs.C_RfQResponse_ID=sl.C_RfQResponse_ID "
@@ -285,6 +320,8 @@ public class RfqPoService {
 				x.already = nz(rs.getBigDecimal(11));
 				x.rate = nz(rs.getBigDecimal(12));
 				x.taxId = rs.getInt(13);
+				x.rebate = "Y".equals(rs.getString(14));
+				x.tariff = "Y".equals(rs.getString(15));
 				list.add(x);
 			}
 		} catch (Exception e) {
@@ -410,6 +447,35 @@ public class RfqPoService {
 		return d;
 	}
 
+	/** Transport / Others cost and Gross Discount that the supplier gave in its CS response. */
+	public void loadResponseCosts(Defaults d, int respId) {
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement("SELECT COALESCE(XX_TransportCost,0), COALESCE(XX_OthersCost,0), "
+					+ "COALESCE(XX_IsGrossDiscountPct,'N'), COALESCE(XX_GrossDiscount,0) "
+					+ "FROM C_RfQResponse WHERE C_RfQResponse_ID=?", null);
+			ps.setInt(1, respId);
+			rs = ps.executeQuery();
+			if (rs.next()) {
+				d.transportCost = nz(rs.getBigDecimal(1));
+				d.othersCost = nz(rs.getBigDecimal(2));
+				d.grossDiscountPct = "Y".equals(rs.getString(3));
+				d.grossDiscount = nz(rs.getBigDecimal(4));
+			}
+		} catch (Exception e) {
+			log.warning("loadResponseCosts: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+	}
+
+	/** Gross discount amount: a percent of (lines + VAT) or a fixed amount. */
+	public static BigDecimal discountAmount(BigDecimal linesPlusVat, boolean pct, BigDecimal input) {
+		BigDecimal in = input == null ? BigDecimal.ZERO : input;
+		return pct ? linesPlusVat.multiply(in).divide(HUNDRED, 2, RoundingMode.HALF_UP) : in;
+	}
+
 	public List<KeyNamePair> warehouses() {
 		return pairs("SELECT M_Warehouse_ID, Name FROM M_Warehouse WHERE IsActive='Y' AND AD_Client_ID=? ORDER BY Name");
 	}
@@ -481,6 +547,15 @@ public class RfqPoService {
 			throw new Exception("The Comparative Statement is not Approved yet.");
 		if (req.lines.isEmpty())
 			throw new Exception("Select at least one line.");
+		if (!extraColumnsReady())
+			throw new Exception("Run db/12_create_po_extra_fields.sql first (Transport / Others cost, Gross Discount, Rebate, Tariff columns are missing).");
+		if (req.transportCost == null) req.transportCost = BigDecimal.ZERO;
+		if (req.othersCost == null) req.othersCost = BigDecimal.ZERO;
+		if (req.grossDiscount == null) req.grossDiscount = BigDecimal.ZERO;
+		if (req.transportCost.signum() < 0 || req.othersCost.signum() < 0 || req.grossDiscount.signum() < 0)
+			throw new Exception("Transport Cost, Others Cost and Gross Discount cannot be negative.");
+		if (req.grossDiscountPct && req.grossDiscount.compareTo(HUNDRED) > 0)
+			throw new Exception("Gross Discount % cannot be more than 100.");
 
 		// quantities may have been used by another PO since the dialog was opened
 		Map<Integer, Line> fresh = new LinkedHashMap<Integer, Line>();
@@ -500,6 +575,7 @@ public class RfqPoService {
 
 		int orderId;
 		String docNo;
+		BigDecimal payable = BigDecimal.ZERO;
 		int docTypeId = req.docTypeId;
 		Trx trx = Trx.get(Trx.createTrxName("RfqPO"), true);
 		try {
@@ -545,16 +621,25 @@ public class RfqPoService {
 				ol.saveEx();
 
 				// trace back to the CS line, and mark the requisition line as ordered
-				DB.executeUpdateEx("UPDATE C_OrderLine SET XX_RfQLine_ID=? WHERE C_OrderLine_ID=?",
-						new Object[] { Integer.valueOf(lr.line.rfqLineId), Integer.valueOf(ol.getC_OrderLine_ID()) }, trxName);
+				DB.executeUpdateEx("UPDATE C_OrderLine SET XX_RfQLine_ID=?, XX_IsRebate=?, XX_IsTariff=? WHERE C_OrderLine_ID=?",
+						new Object[] { Integer.valueOf(lr.line.rfqLineId), lr.rebate ? "Y" : "N", lr.tariff ? "Y" : "N",
+								Integer.valueOf(ol.getC_OrderLine_ID()) }, trxName);
 				if (lr.line.reqLineId > 0)
 					DB.executeUpdateEx("UPDATE M_RequisitionLine SET C_OrderLine_ID=? "
 							+ "WHERE M_RequisitionLine_ID=? AND C_OrderLine_ID IS NULL",
 							new Object[] { Integer.valueOf(ol.getC_OrderLine_ID()), Integer.valueOf(lr.line.reqLineId) }, trxName);
 				lineNo += 10;
 			}
-			DB.executeUpdateEx("UPDATE C_Order SET XX_RfQ_ID=? WHERE C_Order_ID=?",
-					new Object[] { Integer.valueOf(req.rfqId), Integer.valueOf(order.getC_Order_ID()) }, trxName);
+
+			// Payable = lines + VAT - gross discount + transport + others. The approval matrix is started with it.
+			BigDecimal linesPlusVat = new MOrder(Env.getCtx(), order.getC_Order_ID(), trxName).getGrandTotal();
+			BigDecimal discount = discountAmount(linesPlusVat, req.grossDiscountPct, req.grossDiscount);
+			payable = linesPlusVat.subtract(discount).add(req.transportCost).add(req.othersCost);
+			DB.executeUpdateEx("UPDATE C_Order SET XX_RfQ_ID=?, XX_TransportCost=?, XX_OthersCost=?, "
+					+ "XX_IsGrossDiscountPct=?, XX_GrossDiscount=?, XX_PayableTotal=? WHERE C_Order_ID=?",
+					new Object[] { Integer.valueOf(req.rfqId), req.transportCost, req.othersCost,
+							req.grossDiscountPct ? "Y" : "N", req.grossDiscount, payable,
+							Integer.valueOf(order.getC_Order_ID()) }, trxName);
 
 			orderId = order.getC_Order_ID();
 			docNo = order.getDocumentNo();
@@ -584,7 +669,7 @@ public class RfqPoService {
 		Result res = new Result();
 		res.orderId = orderId;
 		res.docNo = docNo;
-		res.approvalMessage = req.complete ? "The PO is Completed." : submit(orderId, docTypeId, req.rfqDocNo);
+		res.approvalMessage = req.complete ? "The PO is Completed." : submit(orderId, docTypeId, req.rfqDocNo, payable);
 		return res;
 	}
 
@@ -636,6 +721,11 @@ public class RfqPoService {
 		req.dateOrdered = new Timestamp(System.currentTimeMillis());
 		req.datePromised = d.dateRequired != null ? d.dateRequired : req.dateOrdered;
 		req.description = "Created from CS " + row.docNo;
+		loadResponseCosts(d, row.respId);
+		req.transportCost = d.transportCost;
+		req.othersCost = d.othersCost;
+		req.grossDiscountPct = d.grossDiscountPct;
+		req.grossDiscount = d.grossDiscount;
 		req.complete = false; // PO will be created as Drafted and sent to Approval Matrix
 
 		for (Line l : loadLines(row.rfqId, row.respId)) {
@@ -647,6 +737,8 @@ public class RfqPoService {
 			lr.line = l;
 			lr.qty = l.remaining();
 			lr.taxId = l.taxId;
+			lr.rebate = l.rebate;
+			lr.tariff = l.tariff;
 			req.lines.add(lr);
 		}
 		if (req.lines.isEmpty())
@@ -655,10 +747,9 @@ public class RfqPoService {
 	}
 
 	/** Hands the Drafted PO to the approval matrix. A failure here leaves the PO Drafted. */
-	private String submit(int orderId, int docTypeId, String rfqDocNo) {
+	private String submit(int orderId, int docTypeId, String rfqDocNo, BigDecimal payable) {
 		try {
-			BigDecimal grand = new MOrder(Env.getCtx(), orderId, null).getGrandTotal();
-			ApprovalTransaction t = new ApprovalEngineClient().start(MOrder.Table_ID, orderId, grand, docTypeId,
+			ApprovalTransaction t = new ApprovalEngineClient().start(MOrder.Table_ID, orderId, payable, docTypeId,
 					"PO created from Comparative Statement " + rfqDocNo);
 			if (t == null)
 				return "No approval process is configured for this PO. It stays Drafted.";
