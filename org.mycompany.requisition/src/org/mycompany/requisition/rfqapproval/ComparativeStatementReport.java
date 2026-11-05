@@ -26,7 +26,8 @@ import net.sf.jasperreports.engine.data.JRMapCollectionDataSource;
 /**
  * Comparative Statement PDF, laid out pixel for pixel like
  * {@code Comparative_Statement_Print_Format.pdf}: company logos, boxed title,
- * grey CS No/Date box, supplier header grid, green lowest unit price, the seven
+ * grey CS No/Date box, supplier header grid, green lowest unit price (system rank 1,
+ * always shown), a green tick in a circle on the finally selected vendor's rate, the seven
  * total rows, terms, office address, page number and the five signature blocks.
  * <p>
  * The supplier count changes per RFQ, so the JRXML is generated for the RFQ at
@@ -41,7 +42,7 @@ public class ComparativeStatementReport {
 	private static final int TABLE_W = 802;
 	private static final int SUP_W = TABLE_W - LEFT; // 390
 	private static final String ROW = "16";
-	private static final String GREEN = "#90EE90", GREY = "#E5E5E5";
+	private static final String GREEN = "#90EE90", GREY = "#E5E5E5", TICK = "#15803D";
 
 	// vertical offsets inside the title band
 	private static final int TITLE_Y = 50, CS_Y = 97, CS_H = 42;
@@ -110,6 +111,7 @@ public class ComparativeStatementReport {
 				m.put("u" + i, u == null ? "" : money.format(u));
 				m.put("t" + i, t == null ? "" : money.format(t));
 				m.put("l" + i, Boolean.valueOf(it.lowest.contains(k)));
+				m.put("w" + i, Boolean.valueOf(it.winners.contains(k)));
 			}
 			list.add(m);
 		}
@@ -173,6 +175,7 @@ public class ComparativeStatementReport {
 			x.append("<field name=\"u").append(i).append("\" class=\"java.lang.String\"/>\n");
 			x.append("<field name=\"t").append(i).append("\" class=\"java.lang.String\"/>\n");
 			x.append("<field name=\"l").append(i).append("\" class=\"java.lang.Boolean\"/>\n");
+			x.append("<field name=\"w").append(i).append("\" class=\"java.lang.Boolean\"/>\n");
 		}
 
 		title(x);
@@ -249,7 +252,24 @@ public class ComparativeStatementReport {
 			xx = fld(x, xx, unitW, "u" + i, "Right", "hl" + i);
 			xx = fld(x, xx, totW, "t" + i, "Right", null);
 		}
+		// green tick in a circle on the unit price of the finally selected vendor
+		for (int i = 0; i < n; i++)
+			tick(x, LEFT + i * (unitW + totW), i);
 		x.append("</band></detail>\n");
+	}
+
+	/** Dark green circle with a white check mark, printed only when field w<i> is true. */
+	private void tick(StringBuilder x, int bx, int i) {
+		String when = "<printWhenExpression><![CDATA[Boolean.TRUE.equals($F{w" + i + "})]]></printWhenExpression>";
+		x.append("<ellipse><reportElement mode=\"Opaque\" x=\"").append(bx + 2)
+				.append("\" y=\"2\" width=\"12\" height=\"12\" forecolor=\"").append(TICK)
+				.append("\" backcolor=\"").append(TICK).append("\">").append(when).append("</reportElement></ellipse>\n");
+		x.append("<line direction=\"TopDown\"><reportElement x=\"").append(bx + 5)
+				.append("\" y=\"7\" width=\"2\" height=\"3\" forecolor=\"#FFFFFF\">").append(when)
+				.append("</reportElement><graphicElement><pen lineWidth=\"1.25\" lineColor=\"#FFFFFF\"/></graphicElement></line>\n");
+		x.append("<line direction=\"BottomUp\"><reportElement x=\"").append(bx + 7)
+				.append("\" y=\"4\" width=\"4\" height=\"6\" forecolor=\"#FFFFFF\">").append(when)
+				.append("</reportElement><graphicElement><pen lineWidth=\"1.25\" lineColor=\"#FFFFFF\"/></graphicElement></line>\n");
 	}
 
 	private int fld(StringBuilder x, int xx, int w, String field, String align, String style) {
