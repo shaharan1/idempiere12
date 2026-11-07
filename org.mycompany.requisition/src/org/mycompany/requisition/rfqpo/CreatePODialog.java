@@ -102,8 +102,8 @@ public class CreatePODialog {
 			final Decimalbox grossDisc = moneyBox(d.grossDiscount);
 			final Checkbox grossPct = new Checkbox();
 			grossPct.setChecked(d.grossDiscountPct);
-			Label org = new Label(d.orgName);
-			org.setStyle("font-weight:600;");
+			Label orgLabel = new Label(d.orgName);
+			orgLabel.setStyle("font-weight:600;");
 
 			Grid head = new Grid();
 			Columns hc = new Columns();
@@ -115,7 +115,7 @@ public class CreatePODialog {
 			head.appendChild(hc);
 			org.zkoss.zul.Rows hr = new org.zkoss.zul.Rows();
 			head.appendChild(hr);
-			hr.appendChild(rowOf(label("Organization"), org, label("Warehouse*"), warehouse, label("PO Type*"), docType));
+			hr.appendChild(rowOf(label("Organization"), orgLabel, label("Warehouse*"), warehouse, label("PO Type*"), docType));
 			hr.appendChild(rowOf(label("Date Ordered*"), dateOrdered, label("Date Promised*"), datePromised, label("Price List*"), priceList));
 			hr.appendChild(rowOf(label("PO Payment Term*"), payTerm, label("Payment Term"), payNote, label("Supplier"), new Label(row.bpName)));
 			box.appendChild(head);
