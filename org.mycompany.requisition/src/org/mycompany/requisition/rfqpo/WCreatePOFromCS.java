@@ -154,7 +154,10 @@ public class WCreatePOFromCS extends ADForm {
 		for (Row r : service.listRows(false))
 			winnerRows.put(r.rfqId + ":" + r.respId, r);
 
+		int rfqSeq = 0;
+		final int rfqTotal = csHeads.size();
 		for (Row head : csHeads.values()) {
+			rfqSeq++;
 			Map<String, Line> left = new HashMap<String, Line>();
 			for (Row wr : winnerRows.values())
 				if (wr.rfqId == head.rfqId)
@@ -174,6 +177,10 @@ public class WCreatePOFromCS extends ADForm {
 
 			int currentRowInCs = 0;
 			int middleRowIndex = totalLinesOfCs / 2; // the row index that is in the middle of this CS
+
+			// ---- every RFQ is its own bold box: a title bar first, the rows boxed in, a gap after
+			List<Listitem> boxRows = new java.util.ArrayList<Listitem>();
+			grid.appendChild(rfqTitleBar(rfqSeq, rfqTotal, head, vendorLines.size()));
 
 			for (Map.Entry<Integer, List<CsLine>> entry : vendorLines.entrySet()) {
 				int respId = entry.getKey().intValue();
@@ -355,10 +362,71 @@ public class WCreatePOFromCS extends ADForm {
 					li.appendChild(cm);
 
 					grid.appendChild(li);
+					boxRows.add(li);
 				}
 			}
+
+			boxIn(boxRows);
+			if (rfqSeq < rfqTotal)
+				grid.appendChild(rfqGap());
 		}
 		countLabel.setValue("Total CS: " + csHeads.size());
+	}
+
+	private static final String BOX = "3px solid #1e3a8a";
+	private static final int COLS = 14;
+
+	/** Full width, bold title bar that opens one RFQ box: "RFQ 1 of 2". */
+	private Listitem rfqTitleBar(int seq, int total, Row head, int suppliers) {
+		Listitem bar = new Listitem();
+		bar.setSelectable(false);
+		bar.setStyle("background:#1e3a8a;");
+		Listcell c = new Listcell();
+		c.setSpan(COLS);
+		c.setStyle("background:#1e3a8a !important;border:" + BOX + " !important;padding:2px 6px;");
+		String name = head.name != null && !head.name.isEmpty() ? "   |   " + head.name : "";
+		String date = head.date == null ? "" : "   |   " + DATE.format(head.date);
+		Label l = new Label("RFQ " + seq + " of " + total + "   |   " + head.docNo + name + date
+				+ "   |   " + suppliers + (suppliers == 1 ? " supplier" : " suppliers"));
+		l.setStyle("color:#ffffff;font-weight:800;font-size:14px;");
+		c.appendChild(l);
+		bar.appendChild(c);
+		return bar;
+	}
+
+	/** Blank strip between two RFQ boxes. */
+	private Listitem rfqGap() {
+		Listitem gap = new Listitem();
+		gap.setSelectable(false);
+		gap.setStyle("background:#ffffff;");
+		Listcell c = new Listcell();
+		c.setSpan(COLS);
+		c.setStyle("background:#ffffff !important;border:none !important;height:16px;padding:0;font-size:1px;");
+		gap.appendChild(c);
+		return gap;
+	}
+
+	/** Thick outline round the rows of one RFQ (left and right edge, bottom of the last row). */
+	private void boxIn(List<Listitem> rows) {
+		for (int i = 0; i < rows.size(); i++) {
+			List<org.zkoss.zk.ui.Component> cells = rows.get(i).getChildren();
+			for (int j = 0; j < cells.size(); j++) {
+				Listcell cell = (Listcell) cells.get(j);
+				StringBuilder add = new StringBuilder();
+				if (j == 0)
+					add.append("border-left:").append(BOX).append(" !important;");
+				if (j == cells.size() - 1)
+					add.append("border-right:").append(BOX).append(" !important;");
+				if (i == rows.size() - 1)
+					add.append("border-bottom:").append(BOX).append(" !important;");
+				String st = cell.getStyle();
+				if (st == null)
+					st = "";
+				else if (st.length() > 0 && !st.trim().endsWith(";"))
+					st = st + ";";
+				cell.setStyle(st + add);
+			}
+		}
 	}
 
 	/** Fast-Track Winner Change Request Modal Dialog */
