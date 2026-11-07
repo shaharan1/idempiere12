@@ -7,9 +7,11 @@ import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 
 import org.adempiere.exceptions.AdempiereException;
+import org.adempiere.webui.apps.AEnv;
 import org.adempiere.webui.panel.ADForm;
 import org.compiere.model.MOrder;
 import org.compiere.model.MRequisition;
+import org.compiere.model.MRfQ;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -29,6 +31,7 @@ import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
 import org.zkoss.zul.Separator;
 import org.zkoss.zul.Vlayout;
+import org.mycompany.requisition.rfqapproval.RfQApprovalService;
 
 public class WPOApprovalForm extends ADForm {
 
@@ -54,7 +57,7 @@ public class WPOApprovalForm extends ADForm {
         userId = Env.getAD_User_ID(Env.getCtx());
         clientId = Env.getAD_Client_ID(Env.getCtx());
 
-        setTitle("Purchase Order Approval");
+        setTitle("Document Approval");
         setWidth("100%");
         setHeight("100%");
 
@@ -65,7 +68,7 @@ public class WPOApprovalForm extends ADForm {
         root.setStyle("padding:12px;");
 
         // Form title
-        Label title = new Label("Purchase Order Approval");
+        Label title = new Label("Document Approval");
         title.setStyle("font-size:22px;font-weight:bold;color:#23466f;");
         root.appendChild(title);
 
@@ -105,7 +108,7 @@ public class WPOApprovalForm extends ADForm {
         Listhead head = new Listhead();
         head.setSizable(true);
 
-        String[] colNames = { "Document Type", "PO Number", "Created", "Created By", "Checked By", "Status", "Actions" };
+        String[] colNames = { "Document Type", "Document No", "Created", "Created By", "Checked By", "Status", "Actions" };
         String[] colHflex = { "3", "2", "3", "2", "2", "2", "4" };
 
         for (int i = 0; i < colNames.length; i++) {
@@ -129,6 +132,114 @@ public class WPOApprovalForm extends ADForm {
         header.setWidth(width);
         
         head.appendChild(header);
+    }
+
+
+    // =====================================================
+    // The original document behind an approval history row
+    // =====================================================
+
+    /** What kind of document a history row really points at. */
+    private enum Kind { ORDER, REQUISITION, RFQ, UNKNOWN }
+
+    /**
+     * The real document behind one UT_ApprovalHistory row.
+     * <p>
+     * The history row only carries a document number and a C_DocType_ID, and for an
+     * RFQ / Comparative Statement that doc type is the one of its <em>requisition</em>,
+     * so showing it would label a CS as a requisition. This resolves the row against
+     * the real tables, in the same order ut_process_approval uses when it completes
+     * the document (order, requisition, RFQ), so what the inbox shows is what an
+     * approval will act on.
+     */
+    private static final class Origin {
+        Kind kind = Kind.UNKNOWN;
+        /** Document type name as the document itself carries it, e.g. Sales Order. */
+        String typeName;
+        /** The document's own number. */
+        String documentNo;
+        int tableId;
+        int recordId;
+        int rfqId;
+        boolean salesOrder;
+    }
+
+    /** Shown for a Comparative Statement; the only place this wording lives. */
+    private static final String LABEL_CS  = "Comparative Statement (CS)";
+    private static final String LABEL_RFQ = "RFQ";
+
+    private Origin resolveOrigin(String documentNo, int docTypeId, String historyDocTypeName) {
+
+        Origin o = new Origin();
+        o.documentNo = documentNo;
+        o.typeName = historyDocTypeName;
+        if (documentNo == null || documentNo.trim().length() == 0)
+            return o;
+
+        // 1. Sales Order or Purchase Order
+        String orderSql =
+            "SELECT o.c_order_id, o.issotrx, dt.name " +
+            "FROM c_order o " +
+            "LEFT JOIN c_doctype dt ON dt.c_doctype_id = o.c_doctypetarget_id " +
+            "WHERE o.documentno = ? AND o.c_doctypetarget_id = ? AND o.ad_client_id = ? " +
+            "ORDER BY o.c_order_id DESC";
+        try (PreparedStatement ps = DB.prepareStatement(orderSql, null)) {
+            ps.setString(1, documentNo);
+            ps.setInt(2, docTypeId);
+            ps.setInt(3, clientId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    o.kind = Kind.ORDER;
+                    o.tableId = MOrder.Table_ID;
+                    o.recordId = rs.getInt(1);
+                    o.salesOrder = "Y".equals(rs.getString(2));
+                    String name = rs.getString(3);
+                    if (name != null && name.trim().length() > 0)
+                        o.typeName = name;
+                    else
+                        o.typeName = o.salesOrder ? "Sales Order" : "Purchase Order";
+                    return o;
+                }
+            }
+        } catch (SQLException e) {
+            log.warning("Could not resolve order " + documentNo + ": " + e.getMessage());
+        }
+
+        // 2. Requisition
+        String reqSql =
+            "SELECT r.m_requisition_id, dt.name " +
+            "FROM m_requisition r " +
+            "LEFT JOIN c_doctype dt ON dt.c_doctype_id = r.c_doctype_id " +
+            "WHERE r.documentno = ? AND r.c_doctype_id = ? AND r.ad_client_id = ? " +
+            "ORDER BY r.m_requisition_id DESC";
+        try (PreparedStatement ps = DB.prepareStatement(reqSql, null)) {
+            ps.setString(1, documentNo);
+            ps.setInt(2, docTypeId);
+            ps.setInt(3, clientId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    o.kind = Kind.REQUISITION;
+                    o.tableId = MRequisition.Table_ID;
+                    o.recordId = rs.getInt(1);
+                    String name = rs.getString(2);
+                    o.typeName = (name != null && name.trim().length() > 0) ? name : "Requisition";
+                    return o;
+                }
+            }
+        } catch (SQLException e) {
+            log.warning("Could not resolve requisition " + documentNo + ": " + e.getMessage());
+        }
+
+        // 3. RFQ / Comparative Statement
+        int rfqId = RecommendWinnerDialog.findRfqId(documentNo, docTypeId);
+        if (rfqId > 0) {
+            o.kind = Kind.RFQ;
+            o.tableId = MRfQ.Table_ID;
+            o.recordId = rfqId;
+            o.rfqId = rfqId;
+            o.typeName = RfQApprovalService.isCsDocType(rfqId) ? LABEL_CS : LABEL_RFQ;
+        }
+        return o;
     }
 
     private String statusText(String code) {
@@ -175,9 +286,14 @@ public class WPOApprovalForm extends ADForm {
                 while (rs.next()) {
 
                     final String historyId  = rs.getString("ut_approvalhistory_uu");
-                    final String docType    = rs.getString("doctype_name");
+                    final String historyDocType = rs.getString("doctype_name");
                     final String documentNo = rs.getString("documentno");
                     final int docTypeId     = rs.getInt("c_doctype_id");
+
+                    // the document type and number of the document itself,
+                    // not of whatever the history row happens to carry
+                    final Origin origin     = resolveOrigin(documentNo, docTypeId, historyDocType);
+                    final String docType    = origin.typeName;
                     Timestamp ts            = rs.getTimestamp("created");
                     final String created    = ts == null ? "" : fmt.format(ts);
                     final String createdBy  = rs.getString("created_by");
@@ -204,16 +320,16 @@ public class WPOApprovalForm extends ADForm {
                     Button approveButton = new Button("Approve");
                     approveButton.setStyle("background:#198754;color:white;");
                     approveButton.addEventListener(Events.ON_CLICK,
-                        event -> updateHistoryStatus(historyId, documentNo, "A"));
+                        event -> updateHistoryStatus(historyId, origin, "A"));
 
                     Button rejectButton = new Button("Reject");
                     rejectButton.setStyle("background:#dc3545;color:white;");
                     rejectButton.addEventListener(Events.ON_CLICK,
-                        event -> updateHistoryStatus(historyId, documentNo, "R"));
+                        event -> updateHistoryStatus(historyId, origin, "R"));
 
                     Button viewButton = new Button("View");
                     viewButton.addEventListener(Events.ON_CLICK,
-                        event -> showDetails(docType, documentNo, created,
+                        event -> viewDocument(origin, created,
                             createdBy, checkedBy, status));
 
                     buttons.appendChild(approveButton);
@@ -221,8 +337,8 @@ public class WPOApprovalForm extends ADForm {
                     buttons.appendChild(viewButton);
 
                     // Comparative Statement (RFQ): extra button to pick the winners
-                    final int rfqId = RecommendWinnerDialog.findRfqId(documentNo, docTypeId);
-                    if (rfqId > 0) {
+                    if (origin.kind == Kind.RFQ) {
+                        final int rfqId = origin.rfqId;
                         Button winnerButton = new Button("Recommend Winner");
                         winnerButton.setStyle("background:#fd7e14;color:white;");
                         winnerButton.addEventListener(Events.ON_CLICK,
@@ -266,6 +382,22 @@ public class WPOApprovalForm extends ADForm {
     // =====================================================
     // Show the selected history record
     // =====================================================
+    private void viewDocument(Origin origin, String created,
+        String createdBy, String checkedBy, String status) {
+
+        if (origin.tableId > 0 && origin.recordId > 0) {
+            try {
+                // opens the document in its own window: Requisition, Sales Order,
+                // Purchase Order or RFQ, whichever the row really is
+                AEnv.zoom(origin.tableId, origin.recordId);
+                return;
+            } catch (Exception e) {
+                log.warning("View: could not open " + origin.documentNo + ": " + e.getMessage());
+            }
+        }
+        showDetails(origin.typeName, origin.documentNo, created, createdBy, checkedBy, status);
+    }
+
     private void showDetails(
         String docType, String documentNo, String created,
         String createdBy, String checkedBy,
@@ -274,7 +406,7 @@ public class WPOApprovalForm extends ADForm {
 
         String details =
             "Document Type: " + docType
-            + "\nPO Number: " + documentNo
+            + "\nDocument No: " + documentNo
             + "\nCreated: " + created
             + "\nCreated By: " + createdBy
 //            + "\nUpdated By: " + updatedBy
@@ -294,21 +426,22 @@ public class WPOApprovalForm extends ADForm {
     // =====================================================
     private void updateHistoryStatus(
         String historyId,
-        String documentNo,
+        Origin origin,
         String newStatus
     ) {
 
+        final String documentNo = origin.documentNo;
         String action = "A".equals(newStatus) ? "Approve" : "Reject";
 
         Messagebox.show(
             "Do you want to " + action
-            + " document " + documentNo + "?",
+            + " " + origin.typeName + " " + documentNo + "?",
             "Confirm " + action,
             Messagebox.YES | Messagebox.NO,
             Messagebox.QUESTION,
             event -> {
                 if (Messagebox.ON_YES.equals(event.getName())) {
-                    processApproval(historyId, documentNo, newStatus);
+                    processApproval(historyId, origin, newStatus);
                 }
             });
     }
@@ -316,9 +449,11 @@ public class WPOApprovalForm extends ADForm {
     // Runs only after the user clicked Yes
     private void processApproval(
         String historyId,
-        String documentNo,
+        Origin origin,
         String newStatus
     ) {
+
+        final String documentNo = origin.documentNo;
 
         log.warning("POApproval: processApproval called, history="
             + historyId + ", action=" + newStatus + ", user=" + userId);
@@ -327,10 +462,7 @@ public class WPOApprovalForm extends ADForm {
 
         // A Comparative Statement cannot be approved before a winner is recommended
         if ("A".equals(newStatus)) {
-            int rfqCheck = DB.getSQLValue(null,
-                "SELECT c_doctype_id FROM adempiere.ut_approvalhistory WHERE ut_approvalhistory_uu = ?",
-                historyId);
-            int rfqId = RecommendWinnerDialog.findRfqId(documentNo, rfqCheck);
+            int rfqId = origin.kind == Kind.RFQ ? origin.rfqId : 0;
             if (rfqId > 0 && !RecommendWinnerDialog.hasWinner(rfqId)) {
                 Messagebox.show("Click 'Recommend Winner' and save the winners before approving.",
                     "Winner required", Messagebox.OK, Messagebox.EXCLAMATION);
@@ -409,12 +541,10 @@ public class WPOApprovalForm extends ADForm {
         } else if (result.startsWith("NEXT:")) {
             message = "Approved. Sent to the next level approver.";
         } else if (result.startsWith("FINALRFQ:")) {
-            message = "Approved. Comparative Statement " + documentNo + " is fully approved.";
-        } else if (result.startsWith("FINALREQ:")) {
-            message = "Approved. Purchase Requisition " + documentNo
-                + " has been completed.";
+            message = "Approved. " + origin.typeName + " " + documentNo + " is fully approved.";
         } else {
-            message = "Approved. Purchase Order " + documentNo
+            // FINAL: (Sales / Purchase Order) and FINALREQ: (Requisition)
+            message = "Approved. " + origin.typeName + " " + documentNo
                 + " has been completed.";
         }
 
