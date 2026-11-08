@@ -16,6 +16,7 @@ import java.util.Set;
 import org.compiere.model.MSequence;
 import org.compiere.model.MTable;
 import org.compiere.util.CLogger;
+import org.compiere.model.MSysConfig;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
 import org.compiere.util.KeyNamePair;
@@ -802,14 +803,22 @@ public class RfQApprovalService {
 		return S_PENDING;
 	}
 
+	/** AD_SysConfig name: AD_User_ID of the user a submitted CS goes to first (recommends the winner). */
+	public static final String CFG_CS_RECOMMENDER = "XX_CS_RECOMMENDER_ID";
+
 	/**
-	 * The approver a submitted RFQ should go to: the UT_ApprovalMatrix row for
-	 * this document type and submitter, else the first matrix row for the
-	 * document type, else the submitter's supervisor, else the submitter.
+	 * The approver a submitted RFQ should go to. First choice is the configured CS recommender
+	 * (XX_CS_RECOMMENDER_ID, e.g. Pochecker), who recommends the winner and approves it on to the
+	 * next level. Without that setting: the UT_ApprovalMatrix row for this document type and
+	 * submitter, else the first matrix row for the document type, else the submitter's
+	 * supervisor, else the submitter.
 	 */
 	public static int resolveApprover(int rfqId) {
 		int userId = Env.getAD_User_ID(Env.getCtx());
 		int clientId = Env.getAD_Client_ID(Env.getCtx());
+		int recommender = MSysConfig.getIntValue(CFG_CS_RECOMMENDER, 0, clientId);
+		if (recommender > 0)
+			return recommender;
 		int docTypeId = rfqDocTypeId(rfqId);
 		int approver = 0;
 		if (docTypeId > 0) {
