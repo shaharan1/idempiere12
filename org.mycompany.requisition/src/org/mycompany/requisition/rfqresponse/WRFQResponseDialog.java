@@ -108,6 +108,8 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 		Label vatAmtLbl, totalLbl;
 		BigDecimal vatAmt = BigDecimal.ZERO;
 		BigDecimal lineTotal = BigDecimal.ZERO;
+		/** Quoted Price as last seen; tells whether Negotiate Price still follows it. */
+		BigDecimal lastQuoted = BigDecimal.ZERO;
 	}
 
 	private final int respId;
@@ -617,6 +619,10 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 	            r.quotQty = number(qq != null ? qq : r.rfqQty);
 	            r.price = number(rs.getBigDecimal(8));
 	            r.negPrice = number(rs.getBigDecimal(14));
+	            // Negotiate Price starts equal to Quoted Price (older rows saved without one too)
+	            if (nz(r.negPrice.getValue()).signum() == 0 && nz(r.price.getValue()).signum() > 0)
+	                r.negPrice.setValue(r.price.getValue());
+	            r.lastQuoted = nz(r.price.getValue());
 
 	            r.vat = newTaxBox(rs.getInt(15));
 	            r.rebate = new Checkbox();
@@ -722,7 +728,7 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 		return r == null ? BigDecimal.ZERO : r;
 	}
 
-	/** Negotiate price dewa thakle seta, na hole Quoted Price */
+	/** The calculation price: Negotiate Price (it follows Quoted Price until changed); Quoted Price only if Negotiate is empty. */
 	private BigDecimal effectivePrice(LineRow r) {
 		BigDecimal neg = nz(r.negPrice.getValue());
 		return neg.signum() > 0 ? neg : nz(r.price.getValue());
@@ -769,11 +775,30 @@ public class WRFQResponseDialog extends Window implements EventListener<Event> {
 			} else if (ConfirmPanel.A_CANCEL.equals(id)) {
 				detach();
 			} else {
+				syncNegotiate(c);
 				recalc(); // Decimalbox / Checkbox / VAT select change
 			}
 		} catch (Exception ex) {
 			log.log(Level.SEVERE, ex.getMessage(), ex);
 			Messagebox.show(ex.getMessage(), "Error", Messagebox.OK, Messagebox.ERROR);
+		}
+	}
+
+	/**
+	 * Typing a Quoted Price fills the same value into Negotiate Price. Negotiate Price can then be
+	 * changed on its own; the totals always use it. If it was changed by hand it is left alone when
+	 * Quoted Price is edited again.
+	 */
+	private void syncNegotiate(Object target) {
+		for (LineRow r : rows) {
+			if (target == r.price) {
+				BigDecimal q = nz(r.price.getValue());
+				BigDecimal n = nz(r.negPrice.getValue());
+				if (n.signum() == 0 || n.compareTo(r.lastQuoted) == 0)
+					r.negPrice.setValue(q);
+				r.lastQuoted = q;
+				return;
+			}
 		}
 	}
 
