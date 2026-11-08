@@ -9,6 +9,7 @@ import java.util.List;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
+import org.mycompany.requisition.rfqapproval.RfQApprovalService;
 
 /**
  * Service for Fast-track Winner Change requests and HOD approval.
@@ -140,8 +141,74 @@ public class WinnerChangeService {
 		return null;
 	}
 
-	/** Returns all pending change requests across RFQs for HOD review */
+	// ------------------------------------------------------------ who may decide
+
+	/**
+	 * True when the user is the LAST level of the approval matrix for the RFQ's approval doc
+	 * type, i.e. the one who gives the final approval of that CS.
+	 * <p>
+	 * Same rule ut_process_approval uses to decide that nobody comes after an approver: the
+	 * user has no UT_ApprovalMatrix row naming a different supervisor. The user must also take
+	 * part in the chain (as approver or as supervisor), so a user who is not in the matrix at
+	 * all is never final.
+	 */
+	public static boolean isFinalApproverFor(int rfqId, int userId) {
+		int docTypeId = RfQApprovalService.rfqDocTypeId(rfqId);
+		if (docTypeId <= 0 || userId <= 0)
+			return false;
+		int clientId = Env.getAD_Client_ID(Env.getCtx());
+		int inChain = DB.getSQLValue(null,
+				"SELECT COUNT(*) FROM UT_ApprovalMatrix WHERE C_DocType_ID=? AND IsActive='Y' "
+				+ "AND AD_Client_ID IN (0,?) AND (AD_User_ID=? OR Supervisor_ID=?)",
+				docTypeId, clientId, userId, userId);
+		if (inChain <= 0)
+			return false;
+		int hasNext = DB.getSQLValue(null,
+				"SELECT COUNT(*) FROM UT_ApprovalMatrix WHERE C_DocType_ID=? AND IsActive='Y' "
+				+ "AND AD_Client_ID IN (0,?) AND AD_User_ID=? AND Supervisor_ID>0 AND Supervisor_ID<>?",
+				docTypeId, clientId, userId, userId);
+		return hasNext <= 0;
+	}
+
+	/** True when the user is the final approver for at least one document type (shows the button). */
+	public static boolean isFinalApproverAnywhere(int userId) {
+		if (userId <= 0)
+			return false;
+		int clientId = Env.getAD_Client_ID(Env.getCtx());
+		return DB.getSQLValue(null,
+				"SELECT COUNT(*) FROM UT_ApprovalMatrix m WHERE m.IsActive='Y' AND m.AD_Client_ID IN (0,?) "
+				+ "AND (m.AD_User_ID=? OR m.Supervisor_ID=?) "
+				+ "AND NOT EXISTS (SELECT 1 FROM UT_ApprovalMatrix x WHERE x.C_DocType_ID=m.C_DocType_ID "
+				+ "AND x.IsActive='Y' AND x.AD_Client_ID IN (0,?) AND x.AD_User_ID=? "
+				+ "AND x.Supervisor_ID>0 AND x.Supervisor_ID<>?)",
+				clientId, userId, userId, clientId, userId, userId) > 0;
+	}
+
+	/** Server side guard: only the final approver of the request's CS may approve or reject it. */
+	private static void requireFinalApprover(int changeId) throws Exception {
+		int rfqId = DB.getSQLValue(null,
+				"SELECT C_RfQ_ID FROM XX_RfQWinnerChange WHERE XX_RfQWinnerChange_ID=?", changeId);
+		if (rfqId <= 0)
+			throw new Exception("Invalid change request ID: " + changeId);
+		if (!isFinalApproverFor(rfqId, Env.getAD_User_ID(Env.getCtx())))
+			throw new Exception("Only the final approver of this CS can approve or reject a winner change.");
+	}
+
+	/**
+	 * Pending change requests the logged in user may decide: only those of CSs for which the
+	 * user is the final approver. Anyone else gets an empty list.
+	 */
 	public static List<ChangeRequest> listPendingRequests() {
+		int userId = Env.getAD_User_ID(Env.getCtx());
+		List<ChangeRequest> mine = new ArrayList<ChangeRequest>();
+		for (ChangeRequest cr : listAllPendingRequests())
+			if (isFinalApproverFor(cr.rfqId, userId))
+				mine.add(cr);
+		return mine;
+	}
+
+	/** Returns all pending change requests across RFQs (no permission filter) */
+	private static List<ChangeRequest> listAllPendingRequests() {
 		ensureTable();
 		List<ChangeRequest> list = new ArrayList<ChangeRequest>();
 		String sql = "SELECT c.XX_RfQWinnerChange_ID, c.C_RfQ_ID, c.C_RfQLine_ID, c.Old_RfQResponse_ID, c.New_RfQResponse_ID, "
@@ -193,6 +260,7 @@ public class WinnerChangeService {
 	/** Approves the winner change request and updates CS winner flags */
 	public static void approveRequest(int changeId, String approverComment) throws Exception {
 		ensureTable();
+		requireFinalApprover(changeId);
 
 		// Get request details
 		String sql = "SELECT C_RfQLine_ID, Old_RfQResponse_ID, New_RfQResponse_ID, Justification FROM XX_RfQWinnerChange WHERE XX_RfQWinnerChange_ID=?";
@@ -256,6 +324,7 @@ public class WinnerChangeService {
 	/** Rejects the winner change request */
 	public static void rejectRequest(int changeId, String approverComment) throws Exception {
 		ensureTable();
+		requireFinalApprover(changeId);
 		int userId = Env.getAD_User_ID(Env.getCtx());
 		DB.executeUpdateEx(
 				"UPDATE XX_RfQWinnerChange SET Status='R', ApprovedBy=?, ApprovedDate=now(), ApproverComment=?, Updated=now(), UpdatedBy=? "
