@@ -97,6 +97,8 @@ public class WCreatePOFromCS extends ADForm {
 			"background:#f59e0b;color:#1e3a8a;border:none;border-radius:4px;" +
 			"padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;margin-left:6px;");
 		hodBtn.addEventListener(Events.ON_CLICK, e -> showHodApprovalDialog());
+		// only the final approver of the approval matrix sees and uses this button
+		hodBtn.setVisible(WinnerChangeService.isFinalApproverAnywhere(Env.getAD_User_ID(Env.getCtx())));
 
 		countLabel = new Label();
 		countLabel.setStyle("color:#bfdbfe;font-size:12px;margin-left:auto;");
@@ -500,6 +502,11 @@ public class WCreatePOFromCS extends ADForm {
 
 	/** HOD Fast-Track Review & Approval Dialog */
 	private void showHodApprovalDialog() {
+		if (!WinnerChangeService.isFinalApproverAnywhere(Env.getAD_User_ID(Env.getCtx()))) {
+			Messagebox.show("Only the final approver can review winner change requests.", "Not allowed",
+					Messagebox.OK, Messagebox.EXCLAMATION);
+			return;
+		}
 		List<ChangeRequest> pendingList = WinnerChangeService.listPendingRequests();
 
 		Window dlg = new Window();
