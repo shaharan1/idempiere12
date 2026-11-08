@@ -182,10 +182,36 @@ public class RfQApprovalService {
 		return "SELECT rq.C_DocType_ID FROM M_Requisition rq WHERE rq.M_Requisition_ID=r.M_Requisition_ID";
 	}
 
-	/** RFQ's document type id (inherited from its requisition), or 0. */
+	/** SQL: the requisition of the first RFQ line that came from a requisition line. */
+	private static final String LINE_REQUISITION_SQL =
+			"SELECT rl.M_Requisition_ID FROM C_RfQLine l "
+			+ "JOIN M_RequisitionLine rl ON rl.M_RequisitionLine_ID=l.XX_RequisitionLine_ID "
+			+ "WHERE l.C_RfQ_ID=? AND l.XX_RequisitionLine_ID>0 ORDER BY l.C_RfQLine_ID";
+
+	/** RFQ's document type id (inherited from its requisition), or 0 when it has none. */
 	public static int rfqDocTypeId(int rfqId) {
-		return DB.getSQLValue(null, "SELECT rq.C_DocType_ID FROM C_RfQ r "
+		int id = DB.getSQLValue(null, "SELECT rq.C_DocType_ID FROM C_RfQ r "
 				+ "JOIN M_Requisition rq ON rq.M_Requisition_ID=r.M_Requisition_ID WHERE r.C_RfQ_ID=?", rfqId);
+		if (id <= 0)   // header not linked: take it from the requisition the lines came from
+			id = DB.getSQLValue(null, "SELECT rq.C_DocType_ID FROM M_Requisition rq WHERE rq.M_Requisition_ID=("
+					+ LINE_REQUISITION_SQL + " LIMIT 1)", rfqId);
+		return id > 0 ? id : 0;
+	}
+
+	/**
+	 * An RFQ is matched to its approval row through C_RfQ.M_Requisition_ID. When the header was
+	 * left empty, fill it from the requisition of its first line so the inbox, Recommend Winner
+	 * and the final approval can all find the RFQ.
+	 */
+	private static void linkRequisition(int rfqId) {
+		try {
+			DB.executeUpdateEx("UPDATE C_RfQ SET M_Requisition_ID=(" + LINE_REQUISITION_SQL + " LIMIT 1) "
+					+ "WHERE C_RfQ_ID=? AND M_Requisition_ID IS NULL "
+					+ "AND EXISTS (SELECT 1 FROM C_RfQLine l WHERE l.C_RfQ_ID=? AND l.XX_RequisitionLine_ID>0)",
+					new Object[] { Integer.valueOf(rfqId), Integer.valueOf(rfqId), Integer.valueOf(rfqId) }, null);
+		} catch (Exception e) {
+			log.warning("linkRequisition " + rfqId + ": " + e.getMessage());
+		}
 	}
 
 	/**
@@ -807,7 +833,11 @@ public class RfQApprovalService {
 	 * {@code AD_Note} for the audit trail.
 	 */
 	private void logHistory(int rfqId, String action, String message, int toUserId) throws Exception {
+		linkRequisition(rfqId);
 		int docTypeId = rfqDocTypeId(rfqId);
+		if (docTypeId <= 0)
+			throw new Exception("This RFQ is not linked to a requisition, so its approval document type "
+					+ "cannot be found. Create the RFQ from 'Create RFQ From PR'.");
 		String docNo = DB.getSQLValueString(null,
 				"SELECT " + docNoExpr() + " FROM C_RfQ r WHERE r.C_RfQ_ID=?", rfqId);
 		if (docNo == null) docNo = "";
@@ -842,7 +872,7 @@ public class RfQApprovalService {
 								status, String.valueOf(checked) }, trxName);
 			}
 			logNote(trxName, clientId, orgId, userId, rfqId, action, message, toUserId);
-			trx.commit();
+			trx.commit(true);
 		} catch (Exception e) {
 			trx.rollback();
 			throw e;
