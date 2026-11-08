@@ -498,14 +498,16 @@ public class RecommendWinnerDialog {
 		gb.setStyle("margin-top:8px;");
 		gb.appendChild(new Caption("History records"));
 		lb.setWidth("100%");
-		lb.setHeight("170px");
-		String[] names = { "Create Date and Time", "User", "Supplier", "Product", "Quoted Qty", "Quoted Price",
-				"Negotiate Price", "Rank", "Winner", "Comment" };
-		String[] widths = { "170px", "150px", "160px", "190px", "90px", "100px", "110px", "50px", "60px", "200px" };
+		lb.setHeight("120px");
+		String[] names = { "Create Date and Time", "User", "Winners", "Comment" };
+		String[] widths = { "170px", "150px", null, "260px" };
 		Listhead head = new Listhead();
 		for (int i = 0; i < names.length; i++) {
 			Listheader h = new Listheader(names[i]);
-			h.setWidth(widths[i]);
+			if (widths[i] != null)
+				h.setWidth(widths[i]);
+			else
+				h.setHflex("1");
 			head.appendChild(h);
 		}
 		lb.appendChild(head);
@@ -513,44 +515,74 @@ public class RecommendWinnerDialog {
 		return gb;
 	}
 
-	/** All saved recommendations of the RFQ (every user, every save), newest first. */
+	/**
+	 * History of the RFQ, newest first, ONE line per save. Reads the existing log
+	 * (XX_RfQ_WinnerLog, written one row per quote at every save) and folds the rows of a
+	 * save (same time stamp, same user) into a single line: who, when, the winner of each
+	 * product and the comment. Nothing new is written for this.
+	 */
 	private static void fillHistory(Listbox lb, int rfqId) {
 		while (lb.getItemCount() > 0)
 			lb.removeItemAt(0);
 		SimpleDateFormat fmt = new SimpleDateFormat("dd MMM yyyy hh:mm:ss a", Locale.ENGLISH);
-		String lastStamp = null, lastUser = null;
-		try (PreparedStatement ps = DB.prepareStatement("SELECT h.Created, u.Name, h.BPartnerName, h.ProductName, "
-				+ "h.QuotedQty, h.QuotedPrice, h.NegotiatePrice, h.Rank, h.IsWinner, h.Comment "
+		try (PreparedStatement ps = DB.prepareStatement("SELECT h.Created, h.CreatedBy, u.Name, h.ProductName, "
+				+ "h.BPartnerName, h.QuotedPrice, h.NegotiatePrice, h.IsWinner, h.Comment "
 				+ "FROM XX_RfQ_WinnerLog h LEFT JOIN AD_User u ON u.AD_User_ID=h.CreatedBy "
 				+ "WHERE h.C_RfQ_ID=? ORDER BY h.Created DESC, h.XX_RfQ_WinnerLog_ID", null)) {
 			ps.setInt(1, rfqId);
 			try (ResultSet rs = ps.executeQuery()) {
+				java.sql.Timestamp stamp = null;
+				int user = -1;
+				String userName = "";
+				List<String> winners = new ArrayList<String>();
+				List<String> comments = new ArrayList<String>();
+				boolean open = false;
 				while (rs.next()) {
-					String stamp = rs.getTimestamp(1) == null ? "" : fmt.format(rs.getTimestamp(1));
-					String user = nz(rs.getString(2));
-					boolean same = stamp.equals(lastStamp) && user.equals(lastUser);
-					Listitem li = new Listitem();
-					li.appendChild(new Listcell(same ? "" : stamp));
-					li.appendChild(new Listcell(same ? "" : user));
-					li.appendChild(new Listcell(nz(rs.getString(3))));
-					li.appendChild(new Listcell(nz(rs.getString(4))));
-					li.appendChild(right(num(rs.getBigDecimal(5))));
-					li.appendChild(right(num(rs.getBigDecimal(6))));
-					li.appendChild(right(num(rs.getBigDecimal(7))));
-					li.appendChild(right(String.valueOf(rs.getInt(8))));
-					Checkbox w = new Checkbox();
-					w.setChecked("Y".equals(rs.getString(9)));
-					w.setDisabled(true);
-					li.appendChild(cellOf(w));
-					li.appendChild(new Listcell(nz(rs.getString(10))));
-					lb.appendChild(li);
-					lastStamp = stamp;
-					lastUser = user;
+					java.sql.Timestamp t = rs.getTimestamp(1);
+					int u = rs.getInt(2);
+					boolean sameSave = open && t != null && t.equals(stamp) && u == user;
+					if (!sameSave) {
+						if (open)
+							addHistoryLine(lb, fmt, stamp, userName, winners, comments);
+						stamp = t;
+						user = u;
+						userName = nz(rs.getString(3));
+						winners = new ArrayList<String>();
+						comments = new ArrayList<String>();
+						open = true;
+					}
+					if ("Y".equals(rs.getString(8))) {
+						BigDecimal neg = rs.getBigDecimal(7);
+						BigDecimal price = neg != null && neg.signum() > 0 ? neg : rs.getBigDecimal(6);
+						winners.add(nz(rs.getString(4)) + ": " + nz(rs.getString(5))
+								+ (price == null ? "" : " @ " + num(price)));
+					}
+					String cm = nz(rs.getString(9)).trim();
+					if (cm.length() > 0 && !comments.contains(cm))
+						comments.add(cm);
 				}
+				if (open)
+					addHistoryLine(lb, fmt, stamp, userName, winners, comments);
 			}
 		} catch (Exception ex) { // table XX_RfQ_WinnerLog missing: run db/07_recommend_winner.sql
 			log.warning("history: " + ex.getMessage());
 		}
+	}
+
+	private static void addHistoryLine(Listbox lb, SimpleDateFormat fmt, java.sql.Timestamp stamp, String user,
+			List<String> winners, List<String> comments) {
+		String w = winners.isEmpty() ? "No winner ticked" : String.join("; ", winners);
+		String c = String.join(" | ", comments);
+		Listitem li = new Listitem();
+		li.appendChild(new Listcell(stamp == null ? "" : fmt.format(stamp)));
+		li.appendChild(new Listcell(user));
+		Listcell wc = new Listcell(w);
+		wc.setTooltiptext(w);
+		li.appendChild(wc);
+		Listcell cc = new Listcell(c);
+		cc.setTooltiptext(c);
+		li.appendChild(cc);
+		lb.appendChild(li);
 	}
 
 	/** One history record per row for this save, all with the same time stamp (one transaction). */
