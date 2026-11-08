@@ -538,6 +538,8 @@ public class WPOApprovalForm extends ADForm {
                 + "processed, or it may not be assigned to your user.";
         } else if ("REJECTED".equals(result)) {
             message = "Document " + documentNo + " has been rejected.";
+        } else if (result.startsWith("RETURNED:")) {
+            message = documentNo + " has been rejected and sent back to the previous level approver.";
         } else if (result.startsWith("NEXT:")) {
             message = "Approved. Sent to the next level approver.";
         } else if (result.startsWith("FINALRFQ:")) {
