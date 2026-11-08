@@ -27,7 +27,6 @@ import org.zkoss.zk.ui.Component;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
-import org.zkoss.zul.A;
 import org.zkoss.zul.Borderlayout;
 import org.zkoss.zul.Center;
 import org.zkoss.zul.Checkbox;
@@ -39,9 +38,6 @@ import org.zkoss.zul.Listheader;
 import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
 import org.zkoss.zul.North;
-import org.zkoss.zul.South;
-import org.zkoss.zul.Div;
-import org.zkoss.zul.Vlayout;
 
 import org.mycompany.requisition.rfq.WCreateRFQDialog.LineRow;
 
@@ -52,13 +48,12 @@ import org.mycompany.requisition.rfq.WCreateRFQDialog.LineRow;
  *  1. The form opens with ONE big table that lists every requisition that still has lines
  *     available for an RFQ. The lines (BP Code, Product, UOM, Qty ...) of each requisition
  *     sit one after another, so a requisition reads as one block.
- *  2. Click a requisition code (link): a popup ({@link WRequisitionLineSelectionDialog}) lists its products;
- *     tick the ones wanted and "Add Line" -> they go to the "Selected Lines" basket (bottom).
- *     (Or tick product lines directly in the big table and click "Add Line".)
- *  3. Repeat for other requisitions - the basket collects lines of several requisitions.
- *  4. "Create RFQ" opens {@link WCreateRFQDialog} with the basket: RFQ Topic, date, term,
+ *  2. Select lines straight in that table by ticking the product lines (one, several, or lines of
+ *     several requisitions). No popup, no "Add Line" / "Selected Lines" basket.
+ *  3. The ticks survive a Search / Refresh.
+ *  4. "Create RFQ" opens {@link WCreateRFQDialog} with every ticked line already listed there: RFQ Topic, date, term,
  *     attachment -> OK creates ONE RFQ.
- *  4. The list refreshes (the used lines disappear).
+ *  5. The list refreshes (the used lines disappear).
  *
  * Eligibility rule (same as before / RequisitionRFQService):
  *  - M_RequisitionLine.XX_RfQ_ID is null and C_OrderLine_ID is null, line is active.
@@ -91,15 +86,11 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 	private Textbox searchBox = new Textbox();
 	private Button searchBtn = new Button("Search");
 	private Button refreshBtn = new Button("Refresh");
-	private Button addLineBtn = new Button("Add Line");
 	private Checkbox selectAll = new Checkbox("Select All");
 	private Label selectedLbl = new Label("Selected lines: 0");
 	private Label countLbl = new Label("");
 	private Button createBtn = new Button("Create RFQ");
-	private Button removeBtn = new Button("Remove Selected");
-	private Label cartLbl = new Label("Selected Lines: 0");
-	private Listbox cartList;
-	/** basket: requisition line id -> line (can hold lines of several requisitions) */
+	/** the ticked lines: requisition line id -> line (can hold lines of several requisitions) */
 	private Map<Integer, LineRow> cart = new LinkedHashMap<Integer, LineRow>();
 
 	private Listbox reqList;
@@ -136,9 +127,7 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 
 		searchBtn.addEventListener(Events.ON_CLICK, this);
 		refreshBtn.addEventListener(Events.ON_CLICK, this);
-		addLineBtn.addEventListener(Events.ON_CLICK, this);
 		createBtn.addEventListener(Events.ON_CLICK, this);
-		removeBtn.addEventListener(Events.ON_CLICK, this);
 		selectAll.addEventListener(Events.ON_CHECK, this);
 
 		reqList = new Listbox();
@@ -167,17 +156,6 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		reqList.appendChild(head);
 		ZKUpdateUtil.setHflex(reqList, "1");
 		ZKUpdateUtil.setVflex(reqList, "1");
-
-		// basket of selected lines
-		cartList = new Listbox();
-		cartList.setCheckmark(true);
-		cartList.setMultiple(true);
-		cartList.setHeight("170px");
-		ZKUpdateUtil.setHflex(cartList, "1");
-		Listhead ch = new Listhead();
-		for (String h : new String[] { "Requisition", "BP Code", "Product Code", "Product Name", "UOM", "Qty" })
-			ch.appendChild(new Listheader(h));
-		cartList.appendChild(ch);
 	}
 
 	// ---------------------------------------------------------------- layout
@@ -202,7 +180,6 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		bar.appendChild(searchBtn);
 		bar.appendChild(refreshBtn);
 		bar.appendChild(selectAll);
-		bar.appendChild(addLineBtn);
 		bar.appendChild(selectedLbl);
 		bar.appendChild(countLbl);
 		bar.appendChild(createBtn);
@@ -212,20 +189,6 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		Center center = new Center();
 		mainLayout.appendChild(center);
 		center.appendChild(reqList);
-
-		// ---- South: basket (Selected Lines) ----
-		South south = new South();
-		ZKUpdateUtil.setVflex(south, "min");
-		mainLayout.appendChild(south);
-		Vlayout sbox = new Vlayout();
-		ZKUpdateUtil.setHflex(sbox, "1");
-		Div sbar = new Div();
-		sbar.setStyle("padding:6px;");
-		sbar.appendChild(cartLbl);
-		sbar.appendChild(removeBtn);
-		sbox.appendChild(sbar);
-		sbox.appendChild(cartList);
-		south.appendChild(sbox);
 	}
 
 	// ------------------------------------------------------------------ data
@@ -273,15 +236,14 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 				// every product line has its own tick box
 				Checkbox chk = new Checkbox();
 				chk.addEventListener(Events.ON_CHECK, this);
+				chk.setAttribute("line", r);
 				reqChecks.put(Integer.valueOf(r.reqLineId), chk);
-				chk.setDisabled(cart.containsKey(Integer.valueOf(r.reqLineId)));
+				chk.setChecked(cart.containsKey(Integer.valueOf(r.reqLineId)));
 				c0.appendChild(chk);
 				if (first) {
-					A link = new A(nvl(h.docNo));
-					link.setStyle("color:#1d4ed8; font-weight:700; text-decoration:underline; cursor:pointer;");
-					link.setAttribute("reqId", en.getKey());
-					link.addEventListener(Events.ON_CLICK, this);
-					c1.appendChild(link);
+					Label docNo = new Label(nvl(h.docNo));
+					docNo.setStyle("color:#1e3a8a; font-weight:700;");
+					c1.appendChild(docNo);
 
 					c2.setLabel(h.date == null ? "" : df.format(h.date));
 					c3.setLabel(nvl(h.requester));
@@ -297,7 +259,7 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 				item.appendChild(cell(st, r.bpCode));
 				item.appendChild(cell(st, r.bpName));
 				item.appendChild(cell(st, r.productValue));
-				item.appendChild(cell(st, nvl(r.productName) + (cart.containsKey(Integer.valueOf(r.reqLineId)) ? "  \u2714 added" : "")));
+				item.appendChild(cell(st, nvl(r.productName)));
 				item.appendChild(cell(st, r.uomName));
 				item.appendChild(cell(st, r.qty == null ? "" : r.qty.stripTrailingZeros().toPlainString()));
 				item.appendChild(cell(st, r.desc));
@@ -437,38 +399,16 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 				searchBox.setValue("");
 				loadList();
 			} else if (c == selectAll) {
-				for (Checkbox chk : reqChecks.values())
+				for (Checkbox chk : reqChecks.values()) {
 					chk.setChecked(selectAll.isChecked());
-				updateSelectedCount();
-			} else if (c == addLineBtn) {
-				int added = 0;
-				for (List<LineRow> g : reqLines.values())
-					for (LineRow r : g) {
-						Checkbox chk = reqChecks.get(Integer.valueOf(r.reqLineId));
-						if (chk != null && chk.isChecked() && !chk.isDisabled()) {
-							cart.put(Integer.valueOf(r.reqLineId), r);
-							added++;
-						}
-					}
-				if (added == 0) {
-					warn("Tick at least one product line, or click a requisition code to pick products.");
-				} else {
-					refreshCart();
-					loadList();
+					syncSelection(chk);
 				}
+				updateSelectedCount();
 			} else if (c == createBtn) {
 				openCreateDialog();
-			} else if (c == removeBtn) {
-				for (Listitem it : new ArrayList<Listitem>(cartList.getSelectedItems()))
-					cart.remove(Integer.valueOf(((LineRow) it.getValue()).reqLineId));
-				refreshCart();
-				loadList();
-			} else if (c instanceof A) {
-				Object id = c.getAttribute("reqId");
-				if (id instanceof Integer)
-					openPicker((Integer) id);
 			} else if (c instanceof Checkbox) {
-				updateSelectedCount();   // a line tick box
+				syncSelection((Checkbox) c);   // a line tick box
+				updateSelectedCount();
 			}
 		} catch (Exception ex) {
 			log.log(Level.SEVERE, ex.getMessage(), ex);
@@ -476,69 +416,32 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		}
 	}
 
-	private void updateSelectedCount() {
-		int n = 0;
-		for (Checkbox chk : reqChecks.values())
-			if (chk.isChecked())
-				n++;
-		selectedLbl.setValue("Selected lines: " + n);
-	}
-
-	/** Popup with the products of one requisition; ticked ones go to the basket. */
-	private void openPicker(Integer reqId) {
-		Set<Integer> ids = new LinkedHashSet<Integer>();
-		ids.add(reqId);
-		List<LineRow> lines = new ArrayList<LineRow>();
-		for (LineRow r : query(null, ids, 0, null))   // fresh read
-			if (!cart.containsKey(Integer.valueOf(r.reqLineId)))
-				lines.add(r);
-		if (lines.isEmpty()) {
-			warn("No more available lines in this requisition (already used, or already in Selected Lines).");
+	/** Keeps the selection map in step with one tick box. */
+	private void syncSelection(Checkbox chk) {
+		Object o = chk.getAttribute("line");
+		if (!(o instanceof LineRow))
 			return;
-		}
-		WRequisitionLineSelectionDialog dlg = new WRequisitionLineSelectionDialog(lines, new java.util.function.Consumer<List<LineRow>>() {
-			@Override
-			public void accept(List<LineRow> picked) {
-				for (LineRow r : picked)
-					cart.put(Integer.valueOf(r.reqLineId), r);
-				refreshCart();
-				loadList();
-			}
-		});
-		appendChild(dlg);
-		org.mycompany.requisition.ui.XxTheme.apply(dlg);
-		dlg.doModal();
+		LineRow r = (LineRow) o;
+		if (chk.isChecked())
+			cart.put(Integer.valueOf(r.reqLineId), r);
+		else
+			cart.remove(Integer.valueOf(r.reqLineId));
 	}
 
-	/** Redraws the Selected Lines table. */
-	private void refreshCart() {
-		for (Listitem old : new ArrayList<Listitem>(cartList.getItems()))
-			old.detach();
-		for (LineRow r : cart.values()) {
-			Listitem it = new Listitem();
-			it.setValue(r);
-			it.appendChild(new Listcell(nvl(r.reqNo)));
-			it.appendChild(new Listcell(nvl(r.bpCode)));
-			it.appendChild(new Listcell(nvl(r.productValue)));
-			it.appendChild(new Listcell(nvl(r.productName)));
-			it.appendChild(new Listcell(nvl(r.uomName)));
-			it.appendChild(new Listcell(r.qty == null ? "" : r.qty.stripTrailingZeros().toPlainString()));
-			cartList.appendChild(it);
-		}
-		cartLbl.setValue("Selected Lines: " + cart.size() + "   ");
+	private void updateSelectedCount() {
+		selectedLbl.setValue("Selected lines: " + cart.size());
 	}
 
-	/** Opens the separate "Create RFQ" window with every line in the basket. */
+	/** Opens the separate "Create RFQ" window with every ticked line. */
 	private void openCreateDialog() {
 		if (cart.isEmpty()) {
-			warn("No line selected. Click a requisition code and pick products first.");
+			warn("No line selected. Tick one or more lines in the table, then click Create RFQ.");
 			return;
 		}
 		WCreateRFQDialog dlg = new WCreateRFQDialog(m_WindowNo, new ArrayList<LineRow>(cart.values()), new Runnable() {
 			@Override
 			public void run() {
 				cart.clear();
-				refreshCart();
 				loadList();   // used lines disappear from the list
 			}
 		});
