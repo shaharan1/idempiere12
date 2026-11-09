@@ -888,7 +888,7 @@ public class WRequisitionEntryForm extends ADForm {
 		win.setTitle("Attachment");
 		win.setWidth("560px");
 		win.setClosable(true);
-		win.setAttribute(org.zkoss.zul.Window.MODE_KEY, org.zkoss.zul.Window.MODE_HIGHLIGHTED);
+		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
 		org.mycompany.requisition.ui.XxTheme.apply(win);
 
 		Div body = new Div();
@@ -1288,7 +1288,7 @@ public class WRequisitionEntryForm extends ADForm {
 			win.setHeight("92%");
 			win.setClosable(true);
 			win.setSizable(true);
-			win.setAttribute(org.zkoss.zul.Window.MODE_KEY, org.zkoss.zul.Window.MODE_HIGHLIGHTED);
+			win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
 			org.mycompany.requisition.ui.XxTheme.apply(win);
 
 			Div body = new Div();
