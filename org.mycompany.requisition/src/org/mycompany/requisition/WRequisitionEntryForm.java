@@ -87,7 +87,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "1";
+	private static final String CSS_VERSION = "2";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -180,35 +180,37 @@ public class WRequisitionEntryForm extends ADForm {
 	 */
 	private static final String CSS = """
 .xx-req { background:#f1f4f9; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
-.xx-req .xx-card { background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); margin:10px 12px 0; overflow:visible; }
-.xx-req .xx-card-header { display:flex; align-items:center; padding:.6rem 1rem; background:#f8f9fa; border-bottom:1px solid #dee2e6; border-radius:.5rem .5rem 0 0; font-weight:600; font-size:.95rem; color:#212529; }
+.xx-req .xx-card { background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); margin:6px 10px 0; overflow:visible; }
+.xx-req .xx-card-header { display:flex; align-items:center; padding:.25rem .75rem; background:#f8f9fa; border-bottom:1px solid #dee2e6; border-radius:.5rem .5rem 0 0; font-weight:600; font-size:.82rem; color:#212529; }
 .xx-req .xx-card-header::before { content:""; width:4px; height:1.1em; background:#0d6efd; border-radius:2px; margin-right:.6rem; }
-.xx-req .xx-card-body { padding:1rem; }
-.xx-req .xx-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem 1rem; }
+.xx-req .xx-card-body { padding:.5rem .75rem .6rem; }
+.xx-req .xx-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.4rem .6rem; text-align:left; }
+.xx-req .xx-grid7 { grid-template-columns:repeat(7,minmax(0,1fr)); }
 .xx-req .xx-span2 { grid-column:span 2; }
 .xx-req .xx-span3 { grid-column:span 3; }
-@media (max-width:1000px) { .xx-req .xx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span3 { grid-column:span 2; } }
-@media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3 { grid-column:span 1; } }
+.xx-req .xx-span4 { grid-column:span 4; }
+@media (max-width:1100px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(3,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 3; } }
+@media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
 .xx-req .xx-field { min-width:0; }
-.xx-req .form-label { display:block; margin-bottom:.25rem; font-size:.8rem; font-weight:600; color:#495057; }
+.xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
 .xx-req .form-label.xx-req-mark::after { content:" *"; color:#dc3545; }
 .xx-req .form-control, .xx-req .z-textbox, .xx-req .z-decimalbox, .xx-req .z-datebox-input, .xx-req .z-combobox-input {
-  display:block; width:100%; min-height:34px; padding:.375rem .75rem; font-size:.875rem; line-height:1.5; color:#212529;
+  display:block; width:100%; min-height:26px; padding:.15rem .5rem; font-size:.8rem; line-height:1.4; color:#212529;
   background:#fff; border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:none; }
 .xx-req .z-datebox, .xx-req .z-combobox { width:100%; display:inline-flex; align-items:stretch; }
 .xx-req .z-datebox-input, .xx-req .z-combobox-input { flex:1 1 auto; min-width:0; border-top-right-radius:0 !important; border-bottom-right-radius:0 !important; }
-.xx-req .z-datebox-button, .xx-req .z-combobox-button { display:flex; align-items:center; justify-content:center; width:34px; border:1px solid #ced4da !important; border-left:0 !important; border-radius:0 .375rem .375rem 0 !important; background:#e9ecef; color:#495057; cursor:pointer; }
+.xx-req .z-datebox-button, .xx-req .z-combobox-button { display:flex; align-items:center; justify-content:center; width:26px; border:1px solid #ced4da !important; border-left:0 !important; border-radius:0 .375rem .375rem 0 !important; background:#e9ecef; color:#495057; cursor:pointer; }
 .xx-req .z-datebox-button:hover, .xx-req .z-combobox-button:hover { background:#dde1e5; }
 .xx-req .z-textbox:focus, .xx-req .z-decimalbox:focus, .xx-req .z-datebox-input:focus, .xx-req .z-combobox-input:focus {
   border-color:#86b7fe !important; box-shadow:0 0 0 .25rem rgba(13,110,253,.25) !important; outline:0; }
-.xx-req .xx-readonly { background:#e9ecef; display:flex; align-items:center; min-height:34px; }
-.xx-req .xx-readonly .z-label { font-size:.875rem; color:#495057; }
+.xx-req .xx-readonly { background:#e9ecef; display:flex; align-items:center; min-height:26px; }
+.xx-req .xx-readonly .z-label { font-size:.8rem; color:#495057; }
 .xx-req .xx-attach-note { display:block; margin-top:.25rem; font-size:.75rem; color:#6c757d; }
 .z-combobox-popup, .z-combobox-content { border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:0 .5rem 1rem rgba(0,0,0,.15) !important; }
-.z-comboitem { padding:.4rem .75rem !important; font-size:.875rem; }
+.z-comboitem { padding:.25rem .6rem !important; font-size:.8rem; }
 .z-comboitem-over, .z-comboitem-over-seld { background:#e7f1ff !important; }
 .z-comboitem-selected { background:#cfe2ff !important; }
-.xx-form.xx-req button.z-button.btn { display:inline-flex; align-items:center; justify-content:center; padding:.375rem .9rem; min-height:34px; font-size:.875rem; font-weight:600; line-height:1.5; border-radius:.375rem !important; text-shadow:none !important; transform:none; transition:background-color .15s,border-color .15s,box-shadow .15s; }
+.xx-form.xx-req button.z-button.btn { display:inline-flex; align-items:center; justify-content:center; padding:.15rem .7rem; min-height:26px; font-size:.8rem; font-weight:600; line-height:1.5; border-radius:.375rem !important; text-shadow:none !important; transform:none; transition:background-color .15s,border-color .15s,box-shadow .15s; }
 .xx-form.xx-req button.z-button.btn:hover { filter:none; transform:none; }
 .xx-form.xx-req button.z-button.btn:focus { box-shadow:0 0 0 .25rem rgba(13,110,253,.35); outline:0; }
 .xx-form.xx-req button.z-button.btn-block { width:100%; }
@@ -223,7 +225,8 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-form.xx-req button.z-button.btn-outline-primary:hover { background:#0d6efd !important; color:#fff !important; }
 .xx-form.xx-req button.z-button.btn-outline-danger { background:#fff !important; border:1px solid #dc3545 !important; color:#dc3545 !important; box-shadow:none !important; }
 .xx-form.xx-req button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
-.xx-req .xx-footer { display:flex; justify-content:flex-end; gap:.5rem; padding:.75rem 1rem; margin:10px 12px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
+.xx-req .z-listbox { min-height:280px; }
+.xx-req .xx-footer { display:flex; justify-content:flex-end; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 """;
 
 	private void installCss() {
@@ -342,7 +345,6 @@ public class WRequisitionEntryForm extends ADForm {
 		g.appendChild(field("Type", true, cbType.box, 1));
 		g.appendChild(field("Location", true, cbLocation.box, 1));
 		g.appendChild(field("Warehouse", false, pWarehouse.box, 1));
-
 		g.appendChild(field("User", false, readonly(lblUser), 1));
 		g.appendChild(field("Priority", true, cbPriority.box, 1));
 		ZKUpdateUtil.setWidth(dtDoc, "100%");
@@ -351,9 +353,9 @@ public class WRequisitionEntryForm extends ADForm {
 		g.appendChild(field("Date Required", true, dtRequired, 1));
 
 		txtDescription.setMultiline(true);
-		txtDescription.setRows(2);
+		txtDescription.setRows(1);
 		txtDescription.setSclass("form-control");
-		txtDescription.setStyle("resize:vertical;");
+		txtDescription.setStyle("resize:none;");
 		ZKUpdateUtil.setWidth(txtDescription, "100%");
 		g.appendChild(field("Description", false, txtDescription, 3));
 
@@ -371,25 +373,24 @@ public class WRequisitionEntryForm extends ADForm {
 	/** line entry card (Segment ... Add Product) */
 	private Div buildLineEntry() {
 		Div g = new Div();
-		g.setSclass("xx-grid");
-		// row 0
+		g.setSclass("xx-grid xx-grid7");
+		// row 0 (7 columns)
 		g.appendChild(field("Segment", true, cbSegment.box, 1));
 		g.appendChild(field("Department", true, pDept.box, 1));
-		txtSpec.setMultiline(true);
-		txtSpec.setRows(1);
-		txtSpec.setSclass("form-control");
-		txtSpec.setStyle("resize:vertical;");
-		ZKUpdateUtil.setWidth(txtSpec, "100%");
-		g.appendChild(field("Specification", false, txtSpec, 1));
-		ZKUpdateUtil.setWidth(dtLine, "100%");
-		g.appendChild(field("Date Required (Line)", false, dtLine, 1));
-		// row 1
 		g.appendChild(field("Parent Category", true, pParent.box, 1));
 		g.appendChild(field("Sub-Category", false, pSub.box, 1));
 		g.appendChild(field("Product", true, pProduct.box, 1));
 		g.appendChild(field("UOM", false, readonly(lblUom), 1));
-		// row 2
 		g.appendChild(field("Available Qty", false, readonly(lblAvail), 1));
+		// row 1 (2 + 1 + 1 + 1 + 2 = 7)
+		txtSpec.setMultiline(true);
+		txtSpec.setRows(1);
+		txtSpec.setSclass("form-control");
+		txtSpec.setStyle("resize:none;");
+		ZKUpdateUtil.setWidth(txtSpec, "100%");
+		g.appendChild(field("Specification", false, txtSpec, 2));
+		ZKUpdateUtil.setWidth(dtLine, "100%");
+		g.appendChild(field("Date Required (Line)", false, dtLine, 1));
 		ZKUpdateUtil.setWidth(decQty, "100%");
 		decQty.setSclass("form-control");
 		g.appendChild(field("Qty", true, decQty, 1));
@@ -397,7 +398,7 @@ public class WRequisitionEntryForm extends ADForm {
 		decRate.setSclass("form-control");
 		g.appendChild(field("Rate", false, decRate, 1));
 		btnAdd.setSclass("btn btn-primary btn-block");
-		g.appendChild(field("\u00A0", false, btnAdd, 1));
+		g.appendChild(field("\u00A0", false, btnAdd, 2));
 
 		return card("Add Product", g);
 	}
