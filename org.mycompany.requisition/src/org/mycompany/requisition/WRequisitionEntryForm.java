@@ -10,12 +10,10 @@ import java.util.List;
 import java.util.logging.Level;
 
 import org.adempiere.exceptions.AdempiereException;
-import org.adempiere.webui.apps.AEnv;
 import org.adempiere.webui.component.Button;
 import org.adempiere.webui.component.Datebox;
 import org.adempiere.webui.component.Label;
 import org.adempiere.webui.component.Textbox;
-import org.adempiere.webui.component.Window;
 import org.adempiere.webui.panel.ADForm;
 import org.adempiere.webui.session.SessionManager;
 import org.adempiere.webui.util.ZKUpdateUtil;
@@ -28,11 +26,17 @@ import org.compiere.util.Env;
 import org.compiere.util.Trx;
 import org.zkoss.util.media.Media;
 import org.zkoss.zk.ui.Component;
+import org.zkoss.zk.ui.Executions;
 import org.zkoss.zk.ui.event.Events;
+import org.zkoss.zk.ui.event.InputEvent;
+import org.zkoss.zk.ui.event.OpenEvent;
 import org.zkoss.zk.ui.event.UploadEvent;
+import org.zkoss.zk.ui.util.Clients;
 import org.zkoss.zul.Borderlayout;
 import org.zkoss.zul.Caption;
 import org.zkoss.zul.Center;
+import org.zkoss.zul.Combobox;
+import org.zkoss.zul.Comboitem;
 import org.zkoss.zul.Decimalbox;
 import org.zkoss.zul.Div;
 import org.zkoss.zul.Groupbox;
@@ -49,6 +53,10 @@ import org.zkoss.zul.South;
  * Requisition Form: header (Type, Location, Warehouse, Priority, dates, description,
  * attachment), line entry (Segment, Department, Parent Category, Sub-Category, Product,
  * Qty, Rate) and the list of lines added, then OK saves, Cancel closes.
+ * <p>
+ * Every drop-down / search field is a type-ahead combo: type a letter and the list shows
+ * only the entries that contain it (Type, Location, Priority, Segment from memory;
+ * Warehouse, Department, Categories, Product from the database, max 50 rows per search).
  * <p>
  * It saves a standard Drafted M_Requisition with M_RequisitionLine rows (through the model
  * classes), so the approval inbox (trigger on M_Requisition), "Create RFQ From PR" and the
@@ -75,7 +83,11 @@ public class WRequisitionEntryForm extends ADForm {
 	/** standard "_PriorityRule" list */
 	private static final int REF_PRIORITY = 154;
 
-	private static final String BORDER = "#9fb4cc";
+	/** max rows a type-ahead search brings back */
+	private static final int SEARCH_LIMIT = 50;
+
+	/** bump when the CSS below changes so open browsers take the new look */
+	private static final String CSS_VERSION = "1";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -84,9 +96,9 @@ public class WRequisitionEntryForm extends ADForm {
 	// ---- header
 	private final Label lblOrg = new Label();
 	private final Label lblUser = new Label();
-	private Listbox cbType;
-	private Listbox cbLocation;
-	private Listbox cbPriority;
+	private Choice cbType;
+	private Choice cbLocation;
+	private Choice cbPriority;
 	private Picker pWarehouse;
 	private final Datebox dtDoc = new Datebox();
 	private final Datebox dtRequired = new Datebox();
@@ -96,7 +108,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private final List<Media> attachments = new ArrayList<Media>();
 
 	// ---- line entry
-	private Listbox cbSegment;
+	private Choice cbSegment;
 	private Picker pDept;
 	private Picker pParent;
 	private Picker pSub;
@@ -113,8 +125,8 @@ public class WRequisitionEntryForm extends ADForm {
 	private final Listbox lineList = new Listbox();
 	private final List<Line> lines = new ArrayList<Line>();
 
-	private final Button btnOk = new Button("\u2714");
-	private final Button btnCancel = new Button("\u2716");
+	private final Button btnOk = new Button("\u2714  Save");
+	private final Button btnCancel = new Button("\u2716  Cancel");
 
 	/** one product line waiting to be saved */
 	private static final class Line {
@@ -140,6 +152,9 @@ public class WRequisitionEntryForm extends ADForm {
 	@Override
 	protected void initForm() {
 		org.mycompany.requisition.ui.XxTheme.wrap(this);
+		String sc = getSclass();
+		setSclass(sc == null || sc.isEmpty() ? "xx-req" : sc + " xx-req");
+		installCss();
 		try {
 			buildUi();
 			loadData();
@@ -155,6 +170,76 @@ public class WRequisitionEntryForm extends ADForm {
 	}
 
 	// =====================================================================
+	// look (Bootstrap 5 style, scoped to .xx-req so the rest of iDempiere is untouched)
+	// =====================================================================
+
+	/**
+	 * Bootstrap's own bootstrap.min.css cannot be loaded here: its global reset would
+	 * restyle the whole iDempiere page. These rules use Bootstrap 5's class names,
+	 * colours, radii, shadows and focus ring, but only below .xx-req.
+	 */
+	private static final String CSS = """
+.xx-req { background:#f1f4f9; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+.xx-req .xx-card { background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); margin:10px 12px 0; overflow:visible; }
+.xx-req .xx-card-header { display:flex; align-items:center; padding:.6rem 1rem; background:#f8f9fa; border-bottom:1px solid #dee2e6; border-radius:.5rem .5rem 0 0; font-weight:600; font-size:.95rem; color:#212529; }
+.xx-req .xx-card-header::before { content:""; width:4px; height:1.1em; background:#0d6efd; border-radius:2px; margin-right:.6rem; }
+.xx-req .xx-card-body { padding:1rem; }
+.xx-req .xx-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem 1rem; }
+.xx-req .xx-span2 { grid-column:span 2; }
+.xx-req .xx-span3 { grid-column:span 3; }
+@media (max-width:1000px) { .xx-req .xx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span3 { grid-column:span 2; } }
+@media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3 { grid-column:span 1; } }
+.xx-req .xx-field { min-width:0; }
+.xx-req .form-label { display:block; margin-bottom:.25rem; font-size:.8rem; font-weight:600; color:#495057; }
+.xx-req .form-label.xx-req-mark::after { content:" *"; color:#dc3545; }
+.xx-req .form-control, .xx-req .z-textbox, .xx-req .z-decimalbox, .xx-req .z-datebox-input, .xx-req .z-combobox-input {
+  display:block; width:100%; min-height:34px; padding:.375rem .75rem; font-size:.875rem; line-height:1.5; color:#212529;
+  background:#fff; border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:none; }
+.xx-req .z-datebox, .xx-req .z-combobox { width:100%; display:inline-flex; align-items:stretch; }
+.xx-req .z-datebox-input, .xx-req .z-combobox-input { flex:1 1 auto; min-width:0; border-top-right-radius:0 !important; border-bottom-right-radius:0 !important; }
+.xx-req .z-datebox-button, .xx-req .z-combobox-button { display:flex; align-items:center; justify-content:center; width:34px; border:1px solid #ced4da !important; border-left:0 !important; border-radius:0 .375rem .375rem 0 !important; background:#e9ecef; color:#495057; cursor:pointer; }
+.xx-req .z-datebox-button:hover, .xx-req .z-combobox-button:hover { background:#dde1e5; }
+.xx-req .z-textbox:focus, .xx-req .z-decimalbox:focus, .xx-req .z-datebox-input:focus, .xx-req .z-combobox-input:focus {
+  border-color:#86b7fe !important; box-shadow:0 0 0 .25rem rgba(13,110,253,.25) !important; outline:0; }
+.xx-req .xx-readonly { background:#e9ecef; display:flex; align-items:center; min-height:34px; }
+.xx-req .xx-readonly .z-label { font-size:.875rem; color:#495057; }
+.xx-req .xx-attach-note { display:block; margin-top:.25rem; font-size:.75rem; color:#6c757d; }
+.z-combobox-popup, .z-combobox-content { border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:0 .5rem 1rem rgba(0,0,0,.15) !important; }
+.z-comboitem { padding:.4rem .75rem !important; font-size:.875rem; }
+.z-comboitem-over, .z-comboitem-over-seld { background:#e7f1ff !important; }
+.z-comboitem-selected { background:#cfe2ff !important; }
+.xx-form.xx-req button.z-button.btn { display:inline-flex; align-items:center; justify-content:center; padding:.375rem .9rem; min-height:34px; font-size:.875rem; font-weight:600; line-height:1.5; border-radius:.375rem !important; text-shadow:none !important; transform:none; transition:background-color .15s,border-color .15s,box-shadow .15s; }
+.xx-form.xx-req button.z-button.btn:hover { filter:none; transform:none; }
+.xx-form.xx-req button.z-button.btn:focus { box-shadow:0 0 0 .25rem rgba(13,110,253,.35); outline:0; }
+.xx-form.xx-req button.z-button.btn-block { width:100%; }
+.xx-form.xx-req button.z-button.btn-sm { min-height:26px; padding:.1rem .5rem; font-size:.75rem; }
+.xx-form.xx-req button.z-button.btn-primary { background:#0d6efd !important; border:1px solid #0d6efd !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-primary:hover { background:#0b5ed7 !important; border-color:#0a58ca !important; }
+.xx-form.xx-req button.z-button.btn-success { background:#198754 !important; border:1px solid #198754 !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-success:hover { background:#157347 !important; border-color:#146c43 !important; }
+.xx-form.xx-req button.z-button.btn-danger { background:#dc3545 !important; border:1px solid #dc3545 !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-danger:hover { background:#bb2d3b !important; border-color:#b02a37 !important; }
+.xx-form.xx-req button.z-button.btn-outline-primary { background:#fff !important; border:1px solid #0d6efd !important; color:#0d6efd !important; }
+.xx-form.xx-req button.z-button.btn-outline-primary:hover { background:#0d6efd !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-outline-danger { background:#fff !important; border:1px solid #dc3545 !important; color:#dc3545 !important; box-shadow:none !important; }
+.xx-form.xx-req button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
+.xx-req .xx-footer { display:flex; justify-content:flex-end; gap:.5rem; padding:.75rem 1rem; margin:10px 12px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
+""";
+
+	private void installCss() {
+		if (Executions.getCurrent() == null)
+			return;
+		try {
+			String css = CSS.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n");
+			Clients.evalJavaScript("(function(){var V='" + CSS_VERSION + "';var s=document.getElementById('xx-req-css');"
+					+ "if(!s){s=document.createElement('style');s.id='xx-req-css';document.head.appendChild(s);}"
+					+ "if(s.getAttribute('data-v')!==V){s.setAttribute('data-v',V);s.textContent='" + css + "';}})();");
+		} catch (Exception e) {
+			log.warning("requisition css not installed: " + e);
+		}
+	}
+
+	// =====================================================================
 	// UI
 	// =====================================================================
 
@@ -166,10 +251,10 @@ public class WRequisitionEntryForm extends ADForm {
 		ZKUpdateUtil.setWidth(main, "100%");
 		ZKUpdateUtil.setHeight(main, "100%");
 
-		cbType = newSelect();
-		cbLocation = newSelect();
-		cbPriority = newSelect();
-		cbSegment = newSelect();
+		cbType = new Choice();
+		cbLocation = new Choice();
+		cbPriority = new Choice();
+		cbSegment = new Choice();
 
 		pWarehouse = new Picker("Warehouse",
 				"SELECT M_Warehouse_ID, Value, Name FROM M_Warehouse WHERE IsActive='Y' AND AD_Client_ID=" + clientId,
@@ -224,7 +309,7 @@ public class WRequisitionEntryForm extends ADForm {
 		Center center = new Center();
 		main.appendChild(center);
 		Groupbox gb = new Groupbox();
-		gb.setStyle("margin:6px 8px;border:1px solid " + BORDER + ";background:#e3edf7;");
+		gb.setSclass("xx-card");
 		Caption cap = new Caption("Requisition Line");
 		cap.setStyle("font-weight:600;");
 		gb.appendChild(cap);
@@ -238,11 +323,9 @@ public class WRequisitionEntryForm extends ADForm {
 		ZKUpdateUtil.setVflex(south, "min");
 		main.appendChild(south);
 		Div foot = new Div();
-		foot.setStyle("text-align:right;padding:6px 14px;");
-		btnOk.setStyle("width:58px;height:32px;background:#fff;color:#2e7d32;font-weight:700;"
-				+ "border:1px solid #b9c7d6;border-radius:3px;margin-right:6px;");
-		btnCancel.setStyle("width:58px;height:32px;background:#fff;color:#c62828;font-weight:700;"
-				+ "border:1px solid #b9c7d6;border-radius:3px;");
+		foot.setSclass("xx-footer");
+		btnOk.setSclass("btn btn-success");
+		btnCancel.setSclass("btn btn-danger");
 		foot.appendChild(btnOk);
 		foot.appendChild(btnCancel);
 		south.appendChild(foot);
@@ -250,104 +333,73 @@ public class WRequisitionEntryForm extends ADForm {
 		wireEvents();
 	}
 
-	/** header panel: 4 label/field pairs per row, same order as the screen */
-	private Groupbox buildHeader() {
-		Groupbox gb = new Groupbox();
-		gb.setStyle("margin:6px 8px 0;border:1px solid " + BORDER + ";background:#e3edf7;");
-		Caption cap = new Caption("Requisition");
-		cap.setStyle("font-weight:600;");
-		gb.appendChild(cap);
+	/** header card: 4 fields per row, same order as the screen */
+	private Div buildHeader() {
+		Div g = new Div();
+		g.setSclass("xx-grid");
+		lblOrg.setValue("");
+		g.appendChild(field("Organization", false, readonly(lblOrg), 1));
+		g.appendChild(field("Type", true, cbType.box, 1));
+		g.appendChild(field("Location", true, cbLocation.box, 1));
+		g.appendChild(field("Warehouse", false, pWarehouse.box, 1));
 
-		Div g = gridDiv("8% 17% 8% 17% 8% 17% 8% 17%");
-		// row 0
-		g.appendChild(lbl("Organization", true, 0, 1));
-		lblOrg.setStyle("font-size:12px;");
-		g.appendChild(cell(boxed(lblOrg, "#e9edf1"), 0, 1));
-		g.appendChild(lbl("Type", true, 0, 1));
-		g.appendChild(cell(cbType, 0, 1));
-		g.appendChild(lbl("Location", true, 0, 1));
-		g.appendChild(cell(cbLocation, 0, 1));
-		g.appendChild(lbl("Warehouse", false, 0, 1));
-		g.appendChild(cell(pWarehouse.box, 0, 1));
-		// row 1
-		g.appendChild(lbl("User", false, 1, 1));
-		lblUser.setStyle("font-size:12px;");
-		g.appendChild(cell(lblUser, 1, 1));
-		g.appendChild(lbl("Priority", true, 1, 1));
-		g.appendChild(cell(cbPriority, 1, 1));
-		g.appendChild(lbl("Document Date", true, 1, 1));
-		dtDoc.setWidth("140px");
-		g.appendChild(cell(dtDoc, 1, 1));
-		g.appendChild(lbl("Date Required", true, 1, 1));
-		dtRequired.setWidth("140px");
-		g.appendChild(cell(dtRequired, 1, 1));
-		// row 2: description + attachment
-		g.appendChild(lbl("Description", false, 2, 1));
+		g.appendChild(field("User", false, readonly(lblUser), 1));
+		g.appendChild(field("Priority", true, cbPriority.box, 1));
+		ZKUpdateUtil.setWidth(dtDoc, "100%");
+		g.appendChild(field("Document Date", true, dtDoc, 1));
+		ZKUpdateUtil.setWidth(dtRequired, "100%");
+		g.appendChild(field("Date Required", true, dtRequired, 1));
+
 		txtDescription.setMultiline(true);
-		txtDescription.setRows(1);
+		txtDescription.setRows(2);
+		txtDescription.setSclass("form-control");
 		txtDescription.setStyle("resize:vertical;");
-		ZKUpdateUtil.setHflex(txtDescription, "1");
-		g.appendChild(cell(txtDescription, 2, 6));
+		ZKUpdateUtil.setWidth(txtDescription, "100%");
+		g.appendChild(field("Description", false, txtDescription, 3));
+
 		btnAttach.setUpload("true,multiple=true");
-		btnAttach.setStyle("width:100%;height:28px;color:#1d4ed8;font-weight:600;background:#fff;"
-				+ "border:1px solid #b9c7d6;");
-		lblAttach.setStyle("font-size:11px;color:#475569;");
+		btnAttach.setSclass("btn btn-outline-primary btn-block");
+		lblAttach.setSclass("xx-attach-note");
 		Div att = new Div();
-		att.setStyle("width:100%;");
 		att.appendChild(btnAttach);
 		att.appendChild(lblAttach);
-		g.appendChild(cell(att, 2, 1));
-		gb.appendChild(g);
-		return gb;
+		g.appendChild(field("Attachment", false, att, 1));
+
+		return card("Requisition", g);
 	}
 
-	/** line entry panel (Segment ... Add Product) */
+	/** line entry card (Segment ... Add Product) */
 	private Div buildLineEntry() {
-		Div box = new Div();
-		box.setStyle("margin:6px 8px 0;border:1px solid " + BORDER + ";background:#e3edf7;");
-		Div g = gridDiv("6% 11% 7% 14% 8% 28% 11% 15%");
+		Div g = new Div();
+		g.setSclass("xx-grid");
 		// row 0
-		g.appendChild(lbl("Segment", true, 0, 1));
-		g.appendChild(cell(cbSegment, 0, 1));
-		g.appendChild(lbl("Department", true, 0, 1));
-		g.appendChild(cell(pDept.box, 0, 1));
-		g.appendChild(lbl("Specification", false, 0, 1));
+		g.appendChild(field("Segment", true, cbSegment.box, 1));
+		g.appendChild(field("Department", true, pDept.box, 1));
 		txtSpec.setMultiline(true);
 		txtSpec.setRows(1);
+		txtSpec.setSclass("form-control");
 		txtSpec.setStyle("resize:vertical;");
-		ZKUpdateUtil.setHflex(txtSpec, "1");
-		g.appendChild(cell(txtSpec, 0, 1));
-		g.appendChild(lbl("Date Required (Line)", false, 0, 1));
-		dtLine.setWidth("140px");
-		g.appendChild(cell(dtLine, 0, 1));
+		ZKUpdateUtil.setWidth(txtSpec, "100%");
+		g.appendChild(field("Specification", false, txtSpec, 1));
+		ZKUpdateUtil.setWidth(dtLine, "100%");
+		g.appendChild(field("Date Required (Line)", false, dtLine, 1));
 		// row 1
-		g.appendChild(lbl("Parent Category*", true, 1, 1));
-		g.appendChild(cell(pParent.box, 1, 1));
-		g.appendChild(lbl("Sub-Category", false, 1, 1));
-		g.appendChild(cell(pSub.box, 1, 1));
-		g.appendChild(lbl("Product", true, 1, 1));
-		g.appendChild(cell(pProduct.box, 1, 1));
-		g.appendChild(lbl("UOM", false, 1, 1));
-		lblUom.setStyle("font-size:12px;");
-		g.appendChild(cell(lblUom, 1, 1));
+		g.appendChild(field("Parent Category", true, pParent.box, 1));
+		g.appendChild(field("Sub-Category", false, pSub.box, 1));
+		g.appendChild(field("Product", true, pProduct.box, 1));
+		g.appendChild(field("UOM", false, readonly(lblUom), 1));
 		// row 2
-		g.appendChild(lbl("Available Qty", false, 2, 1));
-		lblAvail.setStyle("font-size:12px;");
-		g.appendChild(cell(lblAvail, 2, 1));
-		g.appendChild(lbl("Qty", true, 2, 1));
-		decQty.setWidth("110px");
-		g.appendChild(cell(decQty, 2, 1));
-		g.appendChild(lbl("Rate", false, 2, 1));
-		decRate.setWidth("110px");
-		g.appendChild(cell(decRate, 2, 1));
-		g.appendChild(cell(new Label(), 2, 1));
-		btnAdd.setStyle("height:28px;background:#fff;color:#1d4ed8;font-weight:600;border:1px solid #b9c7d6;");
-		Div addBox = new Div();
-		addBox.setStyle("text-align:right;width:100%;");
-		addBox.appendChild(btnAdd);
-		g.appendChild(cell(addBox, 2, 1));
-		box.appendChild(g);
-		return box;
+		g.appendChild(field("Available Qty", false, readonly(lblAvail), 1));
+		ZKUpdateUtil.setWidth(decQty, "100%");
+		decQty.setSclass("form-control");
+		g.appendChild(field("Qty", true, decQty, 1));
+		ZKUpdateUtil.setWidth(decRate, "100%");
+		decRate.setSclass("form-control");
+		g.appendChild(field("Rate", false, decRate, 1));
+		btnAdd.setSclass("btn btn-primary btn-block");
+		g.appendChild(field("\u00A0", false, btnAdd, 1));
+
+		return card("Add Product", g);
 	}
 
 	private void buildLineList() {
@@ -371,62 +423,155 @@ public class WRequisitionEntryForm extends ADForm {
 
 	// ---- small layout helpers
 
-	private Div gridDiv(String columns) {
-		Div g = new Div();
-		g.setStyle("display:grid;grid-template-columns:" + columns + ";width:100%;");
-		return g;
+	/** card with a title bar */
+	private Div card(String title, Component body) {
+		Div card = new Div();
+		card.setSclass("xx-card");
+		Div hd = new Div();
+		hd.setSclass("xx-card-header");
+		hd.appendChild(new Label(title));
+		Div bd = new Div();
+		bd.setSclass("xx-card-body");
+		bd.appendChild(body);
+		card.appendChild(hd);
+		card.appendChild(bd);
+		return card;
 	}
 
-	private String rowBg(int row) {
-		return row % 2 == 0 ? "#eaf2fb" : "#dbe7f3";
-	}
-
-	private Div lbl(String text, boolean required, int row, int span) {
-		Label l = new Label(text);
-		l.setStyle("font-size:12px;font-weight:600;color:" + (required ? "#d32f2f" : "#1f2937") + ";");
-		return cell(l, row, span);
-	}
-
-	private Div cell(Component c, int row, int span) {
+	/** Bootstrap style form group: label on top, input below */
+	private Div field(String text, boolean required, Component c, int span) {
 		Div d = new Div();
-		d.setStyle("display:flex;align-items:center;box-sizing:border-box;min-height:30px;padding:3px 6px;"
-				+ "background:" + rowBg(row) + ";" + (span > 1 ? "grid-column:span " + span + ";" : ""));
+		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : ""));
+		Label l = new Label(text);
+		l.setSclass("form-label" + (required ? " xx-req-mark" : ""));
+		d.appendChild(l);
 		d.appendChild(c);
 		return d;
 	}
 
 	/** a grey read-only box that holds a label */
-	private Div boxed(Label l, String bg) {
+	private Div readonly(Label l) {
 		Div d = new Div();
-		d.setStyle("width:100%;box-sizing:border-box;padding:3px 6px;border:1px solid #c5ced8;background:" + bg
-				+ ";");
+		d.setSclass("form-control xx-readonly");
 		d.appendChild(l);
 		return d;
 	}
 
-	/** native drop-down, first entry empty */
-	private Listbox newSelect() {
-		Listbox lb = new Listbox();
-		lb.setMold("select");
-		lb.appendItem("", "");
-		lb.setSelectedIndex(0);
-		ZKUpdateUtil.setHflex(lb, "1");
-		return lb;
+	// =====================================================================
+	// type-ahead combos
+	// =====================================================================
+
+	/** shared setup of a type-ahead Combobox */
+	private static Combobox newCombo(String placeholder) {
+		Combobox cb = new Combobox();
+		cb.setAutodrop(true); // open the list while typing
+		cb.setAutocomplete(false); // we filter ourselves ("contains", not "starts with")
+		cb.setButtonVisible(true);
+		cb.setPlaceholder(placeholder);
+		ZKUpdateUtil.setWidth(cb, "100%");
+		return cb;
 	}
 
-	// =====================================================================
-	// search picker: read-only box + magnifier, opens a search popup
-	// =====================================================================
+	private static void clearItems(Combobox cb) {
+		while (cb.getItemCount() > 0)
+			cb.removeItemAt(0);
+	}
+
+	/** drop-down with a small fixed list (value + name); type to narrow it down */
+	private final class Choice {
+		final Combobox box = newCombo("Type or select...");
+		private final List<String[]> all = new ArrayList<String[]>();
+		String value = "";
+		String name = "";
+		private String typed = "";
+
+		Choice() {
+			box.addEventListener(Events.ON_CHANGING, e -> {
+				typed = ((InputEvent) e).getValue();
+				show(typed);
+			});
+			box.addEventListener(Events.ON_OPEN, e -> {
+				if (((OpenEvent) e).isOpen())
+					show(typed);
+			});
+			box.addEventListener(Events.ON_FOCUS, e -> box.select());
+			box.addEventListener(Events.ON_SELECT, e -> {
+				Comboitem it = box.getSelectedItem();
+				if (it == null)
+					return;
+				Object v = it.getValue();
+				value = v == null ? "" : String.valueOf(v);
+				name = it.getLabel();
+				typed = "";
+			});
+			box.addEventListener(Events.ON_CHANGE, e -> {
+				String t = box.getValue() == null ? "" : box.getValue().trim();
+				typed = "";
+				if (t.isEmpty()) {
+					value = "";
+					name = "";
+				} else if (!t.equals(name)) {
+					String[] hit = null;
+					for (String[] a : all)
+						if (a[1].equalsIgnoreCase(t)) {
+							hit = a;
+							break;
+						}
+					if (hit != null) {
+						value = hit[0];
+						name = hit[1];
+						box.setValue(name);
+					} else
+						box.setValue(name); // not a valid entry: go back to the last good one
+				}
+			});
+		}
+
+		void add(String v, String n) {
+			all.add(new String[] { v == null ? "" : v, n == null ? "" : n });
+		}
+
+		int count() {
+			return all.size();
+		}
+
+		void selectAt(int i) {
+			String[] a = all.get(i);
+			value = a[0];
+			name = a[1];
+			box.setValue(name);
+		}
+
+		void reset() {
+			value = "";
+			name = "";
+			typed = "";
+			box.setValue("");
+		}
+
+		private void show(String q) {
+			clearItems(box);
+			String s = q == null ? "" : q.trim().toLowerCase();
+			int n = 0;
+			for (String[] a : all) {
+				if (!s.isEmpty() && !a[1].toLowerCase().contains(s))
+					continue;
+				Comboitem it = box.appendItem(a[1]);
+				it.setValue(a[0]);
+				if (++n >= 200)
+					break;
+			}
+		}
+	}
 
 	private interface Filter {
 		/** extra " AND ..." for the query; add its ? values to params */
 		String where(List<Object> params);
 	}
 
+	/** drop-down backed by a query; each keystroke searches Value/Name (contains, max SEARCH_LIMIT rows) */
 	private final class Picker {
-		final Div box = new Div();
-		private final Label text = new Label();
-		private final Button btn = new Button("\uD83D\uDD0D");
+		final Combobox box = newCombo("Type to search...");
 		private final String title;
 		private final String select;
 		private final String order;
@@ -436,6 +581,7 @@ public class WRequisitionEntryForm extends ADForm {
 		String code = "";
 		String name = "";
 		Runnable onChange;
+		private String typed = "";
 
 		Picker(String title, String select, String order, boolean showCode, Filter filter) {
 			this.title = title;
@@ -443,23 +589,51 @@ public class WRequisitionEntryForm extends ADForm {
 			this.order = order;
 			this.showCode = showCode;
 			this.filter = filter;
-			box.setStyle("display:flex;width:100%;height:26px;box-sizing:border-box;border:1px solid #b6c3d1;"
-					+ "background:#fff;");
-			text.setStyle("flex:1;min-width:0;padding:4px 6px;font-size:12px;overflow:hidden;"
-					+ "white-space:nowrap;text-overflow:ellipsis;");
-			btn.setStyle("width:30px;height:24px;border:none;border-left:1px solid #b6c3d1;background:#f3f6fa;"
-					+ "cursor:pointer;");
-			box.appendChild(text);
-			box.appendChild(btn);
-			btn.addEventListener(Events.ON_CLICK, e -> open());
-			text.addEventListener(Events.ON_CLICK, e -> open());
+			box.setPlaceholder("Type to search " + title.toLowerCase() + "...");
+			box.addEventListener(Events.ON_CHANGING, e -> {
+				typed = ((InputEvent) e).getValue();
+				load(typed);
+			});
+			box.addEventListener(Events.ON_OPEN, e -> {
+				if (((OpenEvent) e).isOpen())
+					load(typed);
+			});
+			box.addEventListener(Events.ON_FOCUS, e -> box.select());
+			box.addEventListener(Events.ON_SELECT, e -> {
+				Comboitem it = box.getSelectedItem();
+				if (it == null)
+					return;
+				Object o = it.getValue();
+				if (o instanceof Object[]) {
+					Object[] v = (Object[]) o;
+					typed = "";
+					if (((Integer) v[0]).intValue() != id)
+						set(((Integer) v[0]).intValue(), (String) v[1], (String) v[2], true);
+				}
+			});
+			box.addEventListener(Events.ON_CHANGE, e -> {
+				String t = box.getValue() == null ? "" : box.getValue().trim();
+				typed = "";
+				if (t.isEmpty()) {
+					if (id > 0)
+						clear(true);
+				} else if (!t.equals(display())) {
+					// free text that was not picked from the list: go back to the last good value
+					box.setValue(display());
+				}
+			});
+		}
+
+		private String display() {
+			return id <= 0 ? "" : (showCode ? code + " - " + name : name);
 		}
 
 		void set(int newId, String newCode, String newName, boolean fire) {
 			id = newId;
 			code = newCode == null ? "" : newCode;
 			name = newName == null ? "" : newName;
-			text.setValue(id <= 0 ? "" : (showCode ? code + " - " + name : name));
+			typed = "";
+			box.setValue(display());
 			if (fire && onChange != null)
 				onChange.run();
 		}
@@ -468,88 +642,34 @@ public class WRequisitionEntryForm extends ADForm {
 			set(0, "", "", fire);
 		}
 
-		void open() {
-			final Window win = new Window();
-			win.setTitle(title);
-			win.setWidth("560px");
-			win.setHeight("440px");
-			win.setClosable(true);
-			win.setAttribute(Window.MODE_KEY, Window.MODE_HIGHLIGHTED);
-
-			Div body = new Div();
-			body.setStyle("padding:10px;");
-			final Textbox q = new Textbox();
-			q.setWidth("300px");
-			q.setPlaceholder("Type code or name, press Enter");
-			Button go = new Button("Search");
-			Button clr = new Button("Clear selection");
-			final Listbox lb = new Listbox();
-			lb.setHeight("320px");
-			Listhead lh = new Listhead();
-			Listheader h1 = new Listheader("Code");
-			h1.setWidth("150px");
-			lh.appendChild(h1);
-			Listheader h2 = new Listheader("Name");
-			h2.setHflex("1");
-			lh.appendChild(h2);
-			lb.appendChild(lh);
-
-			Div bar = new Div();
-			bar.setStyle("margin-bottom:8px;");
-			bar.appendChild(q);
-			bar.appendChild(go);
-			bar.appendChild(clr);
-			body.appendChild(bar);
-			body.appendChild(lb);
-			win.appendChild(body);
-
-			Runnable load = () -> {
-				while (lb.getItemCount() > 0)
-					lb.removeItemAt(0);
-				List<Object> params = new ArrayList<Object>();
-				String extra = filter == null ? "" : filter.where(params);
-				String pat = "%" + (q.getValue() == null ? "" : q.getValue().trim().toUpperCase()) + "%";
-				params.add(pat);
-				params.add(pat);
-				String sql = select + extra + " AND (UPPER(Value) LIKE ? OR UPPER(Name) LIKE ?) ORDER BY " + order
-						+ " LIMIT 200";
-				try (PreparedStatement ps = DB.prepareStatement(sql, null)) {
-					for (int i = 0; i < params.size(); i++) {
-						Object o = params.get(i);
-						if (o instanceof Integer)
-							ps.setInt(i + 1, ((Integer) o).intValue());
-						else
-							ps.setString(i + 1, String.valueOf(o));
-					}
-					try (ResultSet rs = ps.executeQuery()) {
-						while (rs.next()) {
-							Listitem li = new Listitem();
-							li.setValue(new Object[] { Integer.valueOf(rs.getInt(1)), rs.getString(2), rs.getString(3) });
-							li.appendChild(new Listcell(rs.getString(2)));
-							li.appendChild(new Listcell(rs.getString(3)));
-							lb.appendChild(li);
-						}
-					}
-				} catch (Exception ex) {
-					log.log(Level.SEVERE, sql, ex);
+		private void load(String q) {
+			clearItems(box);
+			List<Object> params = new ArrayList<Object>();
+			String extra = filter == null ? "" : filter.where(params);
+			String pat = "%" + (q == null ? "" : q.trim().toUpperCase()) + "%";
+			params.add(pat);
+			params.add(pat);
+			String sql = select + extra + " AND (UPPER(Value) LIKE ? OR UPPER(Name) LIKE ?) ORDER BY " + order
+					+ " LIMIT " + SEARCH_LIMIT;
+			try (PreparedStatement ps = DB.prepareStatement(sql, null)) {
+				for (int i = 0; i < params.size(); i++) {
+					Object o = params.get(i);
+					if (o instanceof Integer)
+						ps.setInt(i + 1, ((Integer) o).intValue());
+					else
+						ps.setString(i + 1, String.valueOf(o));
 				}
-			};
-			q.addEventListener(Events.ON_OK, e -> load.run());
-			go.addEventListener(Events.ON_CLICK, e -> load.run());
-			clr.addEventListener(Events.ON_CLICK, e -> {
-				clear(true);
-				win.detach();
-			});
-			lb.addEventListener(Events.ON_SELECT, e -> {
-				Listitem sel = lb.getSelectedItem();
-				if (sel == null)
-					return;
-				Object[] v = (Object[]) sel.getValue();
-				set(((Integer) v[0]).intValue(), (String) v[1], (String) v[2], true);
-				win.detach();
-			});
-			AEnv.showCenterScreen(win);
-			load.run();
+				try (ResultSet rs = ps.executeQuery()) {
+					while (rs.next()) {
+						String c = rs.getString(2);
+						String n = rs.getString(3);
+						Comboitem it = box.appendItem(showCode ? c + " - " + n : n);
+						it.setValue(new Object[] { Integer.valueOf(rs.getInt(1)), c, n });
+					}
+				}
+			} catch (Exception ex) {
+				log.log(Level.SEVERE, sql, ex);
+			}
 		}
 	}
 
@@ -576,14 +696,14 @@ public class WRequisitionEntryForm extends ADForm {
 		Date today = new Date();
 		dtDoc.setValue(today);
 		// a document type that is the only one is the obvious choice
-		if (cbType.getItemCount() == 2)
-			cbType.setSelectedIndex(1);
+		if (cbType.count() == 1)
+			cbType.selectAt(0);
 	}
 
-	private void fill(Listbox lb, String sql) {
+	private void fill(Choice c, String sql) {
 		try (PreparedStatement ps = DB.prepareStatement(sql, null); ResultSet rs = ps.executeQuery()) {
 			while (rs.next())
-				lb.appendItem(rs.getString(2), rs.getString(1));
+				c.add(rs.getString(1), rs.getString(2));
 		} catch (Exception e) {
 			log.log(Level.SEVERE, sql, e);
 		}
@@ -692,14 +812,14 @@ public class WRequisitionEntryForm extends ADForm {
 	// lines
 	// =====================================================================
 
-	private String selValue(Listbox lb) {
-		Listitem it = lb.getSelectedItem();
-		return it == null ? "" : String.valueOf(it.getValue());
+	// (the old Listbox version used String.valueOf(item.getValue()); ZK's generic getValue()
+	// made Java pick valueOf(char[]) -> ClassCastException. Choice keeps plain Strings.)
+	private String selValue(Choice c) {
+		return c.value == null ? "" : c.value;
 	}
 
-	private String selName(Listbox lb) {
-		Listitem it = lb.getSelectedItem();
-		return it == null ? "" : it.getLabel();
+	private String selName(Choice c) {
+		return c.name == null ? "" : c.name;
 	}
 
 	private Timestamp ts(Datebox d) {
@@ -784,7 +904,7 @@ public class WRequisitionEntryForm extends ADForm {
 			li.appendChild(new Listcell(l.rate.signum() == 0 ? "" : l.rate.multiply(l.qty).toPlainString()));
 			Listcell rm = new Listcell();
 			Button x = new Button("\u2716");
-			x.setStyle("color:#c62828;background:#fff;border:1px solid #d0d7de;width:30px;height:22px;");
+			x.setSclass("btn btn-sm btn-outline-danger");
 			x.addEventListener(Events.ON_CLICK, e -> {
 				lines.remove(l);
 				refreshLines();
@@ -915,10 +1035,12 @@ public class WRequisitionEntryForm extends ADForm {
 		refreshLines();
 		attachments.clear();
 		lblAttach.setValue("");
-		cbType.setSelectedIndex(cbType.getItemCount() == 2 ? 1 : 0);
-		cbLocation.setSelectedIndex(0);
-		cbPriority.setSelectedIndex(0);
-		cbSegment.setSelectedIndex(0);
+		cbType.reset();
+		if (cbType.count() == 1)
+			cbType.selectAt(0);
+		cbLocation.reset();
+		cbPriority.reset();
+		cbSegment.reset();
 		pWarehouse.clear(false);
 		pDept.clear(false);
 		pParent.clear(false);
