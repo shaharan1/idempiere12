@@ -18,6 +18,7 @@ import org.adempiere.webui.panel.ADForm;
 import org.adempiere.webui.session.SessionManager;
 import org.adempiere.webui.util.ZKUpdateUtil;
 import org.compiere.model.MAttachment;
+import org.compiere.model.MAttachmentEntry;
 import org.compiere.model.MRequisition;
 import org.compiere.model.MRequisitionLine;
 import org.compiere.util.CLogger;
@@ -32,31 +33,32 @@ import org.zkoss.zk.ui.event.InputEvent;
 import org.zkoss.zk.ui.event.OpenEvent;
 import org.zkoss.zk.ui.event.UploadEvent;
 import org.zkoss.zk.ui.util.Clients;
-import org.zkoss.zul.Borderlayout;
-import org.zkoss.zul.Caption;
-import org.zkoss.zul.Center;
 import org.zkoss.zul.Combobox;
 import org.zkoss.zul.Comboitem;
 import org.zkoss.zul.Decimalbox;
 import org.zkoss.zul.Div;
-import org.zkoss.zul.Groupbox;
 import org.zkoss.zul.Listbox;
 import org.zkoss.zul.Listcell;
 import org.zkoss.zul.Listhead;
 import org.zkoss.zul.Listheader;
 import org.zkoss.zul.Listitem;
 import org.zkoss.zul.Messagebox;
-import org.zkoss.zul.North;
-import org.zkoss.zul.South;
 
 /**
  * Requisition Form: header (Type, Location, Warehouse, Priority, dates, description,
  * attachment), line entry (Segment, Department, Parent Category, Sub-Category, Product,
- * Qty, Rate) and the list of lines added, then OK saves, Cancel closes.
+ * Qty, Rate) and the list of lines added, then Save saves, Cancel closes.
  * <p>
- * Every drop-down / search field is a type-ahead combo: type a letter and the list shows
- * only the entries that contain it (Type, Location, Priority, Segment from memory;
- * Warehouse, Department, Categories, Product from the database, max 50 rows per search).
+ * Every drop-down / search field is a type-ahead combo: click it (or press Enter) and the whole
+ * list drops down; type a letter and the list shows only the entries that start with it (Type,
+ * Location, Priority, Segment from memory; Warehouse, Department, Categories, Product from the
+ * database, max 50 rows per search).
+ * <p>
+ * "All Requisition" lists every requisition the user created (status, who it is with). Click one
+ * to load it back into this form: while no approver has approved it (and it is still Drafted) it
+ * can be changed and saved again; after the first approval, or once completed, it opens read-only.
+ * The same product cannot be added twice to one requisition, and the Qty of a line can be
+ * changed straight in the line table.
  * <p>
  * It saves a standard Drafted M_Requisition with M_RequisitionLine rows (through the model
  * classes), so the approval inbox (trigger on M_Requisition), "Create RFQ From PR" and the
@@ -82,12 +84,14 @@ public class WRequisitionEntryForm extends ADForm {
 	static final String REF_SEGMENT = "XX Requisition Segment";
 	/** standard "_PriorityRule" list */
 	private static final int REF_PRIORITY = 154;
+	/** standard "_Document Status" list */
+	private static final int REF_DOCSTATUS = 131;
 
 	/** max rows a type-ahead search brings back */
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "4";
+	private static final String CSS_VERSION = "5";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -106,6 +110,8 @@ public class WRequisitionEntryForm extends ADForm {
 	private final Button btnAttach = new Button("Attachment");
 	private final Label lblAttach = new Label();
 	private final List<Media> attachments = new ArrayList<Media>();
+	/** files that were already attached to the requisition being edited (never saved again) */
+	private final List<Media> existingMedia = new ArrayList<Media>();
 
 	// ---- line entry
 	private Choice cbSegment;
@@ -124,12 +130,27 @@ public class WRequisitionEntryForm extends ADForm {
 	// ---- lines
 	private final Listbox lineList = new Listbox();
 	private final List<Line> lines = new ArrayList<Line>();
+	/** M_RequisitionLine_ID of lines removed while editing (deleted at Save) */
+	private final List<Integer> deletedLineIds = new ArrayList<Integer>();
 
 	private final Button btnOk = new Button("\u2714  Save");
 	private final Button btnCancel = new Button("\u2716  Cancel");
+	private final Button btnAll = new Button("All Requisition");
+	private final Button btnNew = new Button("+  New Requisition");
 
-	/** one product line waiting to be saved */
+	// ---- view / edit of an existing requisition
+	private final Div banner = new Div();
+	private final Label lblBanner = new Label();
+	/** M_Requisition_ID being edited / viewed, 0 = a new requisition */
+	private int editId = 0;
+	private String editDocNo = "";
+	/** true when the loaded requisition may not be changed any more */
+	private boolean readOnly = false;
+
+	/** one product line of the requisition */
 	private static final class Line {
+		/** M_RequisitionLine_ID, 0 = not saved yet */
+		int lineId;
 		String segVal = "";
 		String segName = "";
 		int deptId;
@@ -170,13 +191,14 @@ public class WRequisitionEntryForm extends ADForm {
 	}
 
 	// =====================================================================
-	// look (Bootstrap 5 style, scoped to .xx-req so the rest of iDempiere is untouched)
+	// look (Bootstrap 5 style, scoped to .xx-req / .xx-reqwin so the rest of iDempiere is untouched)
 	// =====================================================================
 
 	/**
 	 * Bootstrap's own bootstrap.min.css cannot be loaded here: its global reset would
 	 * restyle the whole iDempiere page. These rules use Bootstrap 5's class names,
-	 * colours, radii, shadows and focus ring, but only below .xx-req.
+	 * colours, radii, shadows and focus ring, but only below .xx-req (the form) and
+	 * .xx-reqwin (its pop-up windows).
 	 */
 	private static final String CSS = """
 .xx-req { background:#f1f4f9; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
@@ -204,6 +226,7 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-req .z-datebox-button:hover, .xx-req .z-combobox-button:hover { background:#dde1e5; }
 .xx-req .z-textbox:focus, .xx-req .z-decimalbox:focus, .xx-req .z-datebox-input:focus, .xx-req .z-combobox-input:focus {
   border-color:#86b7fe !important; box-shadow:0 0 0 .25rem rgba(13,110,253,.25) !important; outline:0; }
+.xx-req .z-textbox[disabled], .xx-req .z-decimalbox[disabled], .xx-req .z-datebox-input[disabled], .xx-req .z-combobox-input[disabled] { background:#e9ecef !important; color:#6c757d; }
 .xx-req .xx-readonly { background:#e9ecef; display:flex; align-items:center; min-height:26px; }
 .xx-req .xx-readonly .z-label { font-size:.8rem; color:#495057; }
 .xx-req .xx-attach-note { display:block; margin-top:.25rem; font-size:.75rem; color:#6c757d; }
@@ -211,25 +234,45 @@ public class WRequisitionEntryForm extends ADForm {
 .z-comboitem { padding:.25rem .6rem !important; font-size:.8rem; }
 .z-comboitem-over, .z-comboitem-over-seld { background:#e7f1ff !important; }
 .z-comboitem-selected { background:#cfe2ff !important; }
-.xx-form.xx-req button.z-button.btn { display:inline-flex; align-items:center; justify-content:center; padding:.15rem .7rem; min-height:26px; font-size:.8rem; font-weight:600; line-height:1.5; border-radius:.375rem !important; text-shadow:none !important; transform:none; transition:background-color .15s,border-color .15s,box-shadow .15s; }
-.xx-form.xx-req button.z-button.btn:hover { filter:none; transform:none; }
-.xx-form.xx-req button.z-button.btn:focus { box-shadow:0 0 0 .25rem rgba(13,110,253,.35); outline:0; }
+.xx-form.xx-req button.z-button.btn, .xx-reqwin button.z-button.btn { display:inline-flex; align-items:center; justify-content:center; padding:.15rem .7rem; min-height:26px; font-size:.8rem; font-weight:600; line-height:1.5; border-radius:.375rem !important; text-shadow:none !important; transform:none; transition:background-color .15s,border-color .15s,box-shadow .15s; }
+.xx-form.xx-req button.z-button.btn:hover, .xx-reqwin button.z-button.btn:hover { filter:none; transform:none; }
+.xx-form.xx-req button.z-button.btn:focus, .xx-reqwin button.z-button.btn:focus { box-shadow:0 0 0 .25rem rgba(13,110,253,.35); outline:0; }
 .xx-form.xx-req button.z-button.btn-block { width:100%; }
-.xx-form.xx-req button.z-button.btn-sm { min-height:26px; padding:.1rem .5rem; font-size:.75rem; }
-.xx-form.xx-req button.z-button.btn-primary { background:#0d6efd !important; border:1px solid #0d6efd !important; color:#fff !important; }
-.xx-form.xx-req button.z-button.btn-primary:hover { background:#0b5ed7 !important; border-color:#0a58ca !important; }
-.xx-form.xx-req button.z-button.btn-success { background:#198754 !important; border:1px solid #198754 !important; color:#fff !important; }
-.xx-form.xx-req button.z-button.btn-success:hover { background:#157347 !important; border-color:#146c43 !important; }
-.xx-form.xx-req button.z-button.btn-danger { background:#dc3545 !important; border:1px solid #dc3545 !important; color:#fff !important; }
-.xx-form.xx-req button.z-button.btn-danger:hover { background:#bb2d3b !important; border-color:#b02a37 !important; }
-.xx-form.xx-req button.z-button.btn-outline-primary { background:#fff !important; border:1px solid #0d6efd !important; color:#0d6efd !important; }
-.xx-form.xx-req button.z-button.btn-outline-primary:hover { background:#0d6efd !important; color:#fff !important; }
-.xx-form.xx-req button.z-button.btn-outline-danger { background:#fff !important; border:1px solid #dc3545 !important; color:#dc3545 !important; box-shadow:none !important; }
-.xx-form.xx-req button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
-.xx-req .z-listbox { min-height:280px; }
+.xx-form.xx-req button.z-button.btn-sm, .xx-reqwin button.z-button.btn-sm { min-height:26px; padding:.1rem .5rem; font-size:.75rem; }
+.xx-form.xx-req button.z-button.btn-primary, .xx-reqwin button.z-button.btn-primary { background:#0d6efd !important; border:1px solid #0d6efd !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-primary:hover, .xx-reqwin button.z-button.btn-primary:hover { background:#0b5ed7 !important; border-color:#0a58ca !important; }
+.xx-form.xx-req button.z-button.btn-success, .xx-reqwin button.z-button.btn-success { background:#198754 !important; border:1px solid #198754 !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-success:hover, .xx-reqwin button.z-button.btn-success:hover { background:#157347 !important; border-color:#146c43 !important; }
+.xx-form.xx-req button.z-button.btn-danger, .xx-reqwin button.z-button.btn-danger { background:#dc3545 !important; border:1px solid #dc3545 !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-danger:hover, .xx-reqwin button.z-button.btn-danger:hover { background:#bb2d3b !important; border-color:#b02a37 !important; }
+.xx-form.xx-req button.z-button.btn-outline-primary, .xx-reqwin button.z-button.btn-outline-primary { background:#fff !important; border:1px solid #0d6efd !important; color:#0d6efd !important; }
+.xx-form.xx-req button.z-button.btn-outline-primary:hover, .xx-reqwin button.z-button.btn-outline-primary:hover { background:#0d6efd !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn-outline-danger, .xx-reqwin button.z-button.btn-outline-danger { background:#fff !important; border:1px solid #dc3545 !important; color:#dc3545 !important; box-shadow:none !important; }
+.xx-form.xx-req button.z-button.btn-outline-danger:hover, .xx-reqwin button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
+.xx-form.xx-req button.z-button.btn[disabled], .xx-reqwin button.z-button.btn[disabled] { opacity:.55; cursor:not-allowed; }
 .xx-req .xx-main { background:#f1f4f9; }
 .xx-req .xx-card-header + .z-listbox, .xx-req .xx-card > .z-listbox { margin:0; }
-.xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:flex-end; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
+/* line tables: a visible box round every line and cell */
+.xx-req .z-listbox, .xx-reqwin .z-listbox { min-height:200px; border:1px solid #adb5bd !important; border-radius:.375rem; }
+.xx-req .z-listbox .z-listheader, .xx-reqwin .z-listbox .z-listheader { border-right:1px solid rgba(255,255,255,.45) !important; }
+.xx-req .z-listbox .z-listcell, .xx-reqwin .z-listbox .z-listcell { border-right:1px solid #ced4da !important; border-bottom:1px solid #ced4da !important; }
+.xx-req .z-listbox .z-listitem:nth-child(even) > .z-listcell, .xx-reqwin .z-listbox .z-listitem:nth-child(even) > .z-listcell { background:#f8fafc; }
+.xx-req .z-listbox .z-listitem:hover > .z-listcell, .xx-reqwin .z-listbox .z-listitem:hover > .z-listcell { background:#e7f1ff; }
+.xx-req .z-listbox .z-listcell .z-decimalbox { min-height:24px; text-align:right; }
+.xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
+.xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
+/* view / edit banner */
+.xx-req .xx-banner { margin:6px 10px 0; padding:.4rem .9rem; border-radius:.5rem; border:1px solid #b6d4fe; background:#cfe2ff; color:#084298; }
+.xx-req .xx-banner .z-label { font-size:.82rem; font-weight:600; color:inherit; }
+.xx-req .xx-banner.xx-banner-ro { border-color:#ffecb5; background:#fff3cd; color:#664d03; }
+/* status badges of the All Requisition list */
+.xx-reqwin .xx-badge { display:inline-block; padding:.15rem .55rem; border-radius:999px; font-size:.72rem; font-weight:600; color:#fff; }
+.xx-reqwin .xx-badge-draft { background:#6c757d; }
+.xx-reqwin .xx-badge-wait { background:#fd7e14; }
+.xx-reqwin .xx-badge-prog { background:#0d6efd; }
+.xx-reqwin .xx-badge-ok { background:#198754; }
+.xx-reqwin .xx-badge-bad { background:#dc3545; }
+.xx-reqwin .xx-link { color:#0d6efd; font-weight:700; text-decoration:underline; cursor:pointer; }
 """;
 
 	/**
@@ -247,6 +290,17 @@ public class WRequisitionEntryForm extends ADForm {
 			+ "var w=null;try{w=zk.Widget.$(e.target);}catch(x){}"
 			+ "if(w&&!(w.isOpen&&w.isOpen())){e.preventDefault();e.stopPropagation();openIt(e.target);}}},true);})();";
 
+	/**
+	 * Drop-down / search fields of this form: a click inside the text box opens the list (the
+	 * list itself is filled by the server when the field gets the focus). Clicking the small
+	 * arrow keeps its normal open/close behaviour.
+	 */
+	private static final String COMBO_JS = "(function(){if(window.__xxComboV==='1')return;window.__xxComboV='1';"
+			+ "document.addEventListener('click',function(e){var t=e.target;"
+			+ "if(!(t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req')))return;"
+			+ "if(t.disabled)return;var w=null;try{w=zk.Widget.$(t);}catch(x){}"
+			+ "if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
+
 	private void installCss() {
 		if (Executions.getCurrent() == null)
 			return;
@@ -256,6 +310,7 @@ public class WRequisitionEntryForm extends ADForm {
 					+ "if(!s){s=document.createElement('style');s.id='xx-req-css';document.head.appendChild(s);}"
 					+ "if(s.getAttribute('data-v')!==V){s.setAttribute('data-v',V);s.textContent='" + css + "';}})();");
 			Clients.evalJavaScript(DATE_JS);
+			Clients.evalJavaScript(COMBO_JS);
 		} catch (Exception e) {
 			log.warning("requisition css not installed: " + e);
 		}
@@ -322,6 +377,12 @@ public class WRequisitionEntryForm extends ADForm {
 					return "";
 				});
 
+		// banner: shown while an existing requisition is open (edit / view only)
+		banner.setSclass("xx-banner");
+		banner.setVisible(false);
+		banner.appendChild(lblBanner);
+		main.appendChild(banner);
+
 		main.appendChild(buildHeader());
 		main.appendChild(buildLineEntry());
 
@@ -330,10 +391,21 @@ public class WRequisitionEntryForm extends ADForm {
 
 		Div foot = new Div();
 		foot.setSclass("xx-footer");
+		btnAll.setSclass("btn btn-primary");
+		btnNew.setSclass("btn btn-outline-primary");
+		btnNew.setVisible(false);
+		Div left = new Div();
+		left.setSclass("xx-foot-grp");
+		left.appendChild(btnAll);
+		left.appendChild(btnNew);
 		btnOk.setSclass("btn btn-success");
 		btnCancel.setSclass("btn btn-danger");
-		foot.appendChild(btnOk);
-		foot.appendChild(btnCancel);
+		Div right = new Div();
+		right.setSclass("xx-foot-grp");
+		right.appendChild(btnOk);
+		right.appendChild(btnCancel);
+		foot.appendChild(left);
+		foot.appendChild(right);
 		main.appendChild(foot);
 
 		wireEvents();
@@ -411,7 +483,7 @@ public class WRequisitionEntryForm extends ADForm {
 		String[][] cols = { { "Line", "55px" }, { "Segment", "130px" }, { "Department", "140px" },
 				{ "Product Code", "120px" }, { "Product Name", null }, { "UOM", "60px" },
 				{ "Specification", "170px" }, { "Date Required", "100px" }, { "Available", "80px" },
-				{ "Qty", "80px" }, { "Rate", "80px" }, { "Amount", "95px" }, { "", "50px" } };
+				{ "Qty", "100px" }, { "Rate", "80px" }, { "Amount", "95px" }, { "", "50px" } };
 		for (String[] c : cols) {
 			Listheader h = new Listheader(c[0]);
 			if (c[1] != null)
@@ -421,6 +493,7 @@ public class WRequisitionEntryForm extends ADForm {
 			head.appendChild(h);
 		}
 		lineList.appendChild(head);
+		lineList.setEmptyMessage("No product added yet. Fill the fields above and click + Add Product.");
 		ZKUpdateUtil.setWidth(lineList, "100%");
 		lineList.setHeight("340px");
 	}
@@ -469,7 +542,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static Combobox newCombo(String placeholder) {
 		Combobox cb = new Combobox();
 		cb.setAutodrop(true); // open the list while typing
-		cb.setAutocomplete(false); // we filter ourselves ("contains", not "starts with")
+		cb.setAutocomplete(false); // we filter ourselves ("starts with")
 		cb.setButtonVisible(true);
 		cb.setPlaceholder(placeholder);
 		ZKUpdateUtil.setWidth(cb, "100%");
@@ -495,7 +568,13 @@ public class WRequisitionEntryForm extends ADForm {
 		js("(function(){var w=zk.Widget.$('#" + cb.getUuid() + "');if(w&&w.close)w.close();})();");
 	}
 
-	/** drop-down with a small fixed list (value + name); type a letter and only names starting with it are listed */
+	/** drops the list down (after the server has filled it); does nothing when it is already open */
+	private static void openList(Combobox cb) {
+		js("(function(){var w=zk.Widget.$('#" + cb.getUuid()
+				+ "');if(w&&w.open&&!(w.isOpen&&w.isOpen()))w.open();})();");
+	}
+
+	/** drop-down with a small fixed list (value + name); click / Enter shows all, a letter shows the names starting with it */
 	private final class Choice {
 		final Combobox box = newCombo("Type or select...");
 		private final List<String[]> all = new ArrayList<String[]>();
@@ -512,7 +591,13 @@ public class WRequisitionEntryForm extends ADForm {
 				if (((OpenEvent) e).isOpen())
 					show(typed);
 			});
-			box.addEventListener(Events.ON_FOCUS, e -> box.select());
+			// click or Tab into the field: the whole list
+			box.addEventListener(Events.ON_FOCUS, e -> {
+				typed = "";
+				show("");
+				openList(box);
+				box.select();
+			});
 			box.addEventListener(Events.ON_SELECT, e -> {
 				Comboitem it = box.getSelectedItem();
 				if (it == null)
@@ -521,10 +606,22 @@ public class WRequisitionEntryForm extends ADForm {
 				value = v == null ? "" : String.valueOf(v);
 				name = it.getLabel();
 				typed = "";
+				show(""); // next click shows the whole list again
+				box.setValue(name);
 			});
-			// leaving the field or pressing Enter: take what was typed (first name that starts with it)
+			// leaving the field: take what was typed (first name that starts with it)
 			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
-			box.addEventListener(Events.ON_OK, e -> resolve(box.getValue()));
+			// Enter: nothing typed (or the value is already chosen) -> drop the whole list down
+			box.addEventListener(Events.ON_OK, e -> {
+				String t = box.getValue() == null ? "" : box.getValue().trim();
+				if (t.isEmpty() || t.equals(name)) {
+					typed = "";
+					show("");
+					openList(box);
+				} else {
+					resolve(t);
+				}
+			});
 		}
 
 		private void resolve(String text) {
@@ -575,6 +672,19 @@ public class WRequisitionEntryForm extends ADForm {
 			box.setValue(name);
 		}
 
+		/** select the entry with this value (no match: nothing changes) */
+		void selectValue(String v) {
+			if (v == null)
+				return;
+			for (String[] a : all)
+				if (a[0].equals(v)) {
+					value = a[0];
+					name = a[1];
+					box.setValue(name);
+					return;
+				}
+		}
+
 		void reset() {
 			value = "";
 			name = "";
@@ -602,7 +712,7 @@ public class WRequisitionEntryForm extends ADForm {
 		String where(List<Object> params);
 	}
 
-	/** drop-down backed by a query; type a letter and only Value/Name starting with it are listed (max SEARCH_LIMIT) */
+	/** drop-down backed by a query; click / Enter shows the first rows, a letter shows Value/Name starting with it (max SEARCH_LIMIT) */
 	private final class Picker {
 		final Combobox box = newCombo("Type to search...");
 		private final String title;
@@ -631,7 +741,13 @@ public class WRequisitionEntryForm extends ADForm {
 				if (((OpenEvent) e).isOpen())
 					load(typed);
 			});
-			box.addEventListener(Events.ON_FOCUS, e -> box.select());
+			// click or Tab into the field: the list of this field
+			box.addEventListener(Events.ON_FOCUS, e -> {
+				typed = "";
+				load("");
+				openList(box);
+				box.select();
+			});
 			box.addEventListener(Events.ON_SELECT, e -> {
 				Comboitem it = box.getSelectedItem();
 				if (it == null)
@@ -642,10 +758,23 @@ public class WRequisitionEntryForm extends ADForm {
 					typed = "";
 					if (((Integer) v[0]).intValue() != id)
 						set(((Integer) v[0]).intValue(), (String) v[1], (String) v[2], true);
+					else
+						box.setValue(display());
+					load(""); // next click shows the whole list again
 				}
 			});
 			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
-			box.addEventListener(Events.ON_OK, e -> resolve(box.getValue()));
+			// Enter: nothing typed (or the value is already chosen) -> drop the list down
+			box.addEventListener(Events.ON_OK, e -> {
+				String t = box.getValue() == null ? "" : box.getValue().trim();
+				if (t.isEmpty() || t.equals(display())) {
+					typed = "";
+					load("");
+					openList(box);
+				} else {
+					resolve(t);
+				}
+			});
 		}
 
 		/** Enter / leaving the field: first row that starts with the typed text */
@@ -808,6 +937,8 @@ public class WRequisitionEntryForm extends ADForm {
 		btnOk.addEventListener(Events.ON_CLICK, e -> save());
 		btnCancel.addEventListener(Events.ON_CLICK, e -> close());
 		btnAttach.addEventListener(Events.ON_CLICK, e -> openAttachments());
+		btnAll.addEventListener(Events.ON_CLICK, e -> openAllRequisitions());
+		btnNew.addEventListener(Events.ON_CLICK, e -> newRequisition());
 	}
 
 	/** UOM and Available Qty follow the product (and the warehouse) */
@@ -860,122 +991,6 @@ public class WRequisitionEntryForm extends ADForm {
 		return null;
 	}
 
-	// =====================================================================
-	// attachments pop-up
-	// =====================================================================
-
-	private void updateAttachLabel() {
-		lblAttach.setValue(attachments.isEmpty() ? "No file attached" : attachments.size() + " file(s) attached");
-	}
-
-	private static String sizeOf(Media m) {
-		long n;
-		try {
-			n = m.isBinary() ? m.getByteData().length : m.getStringData().length();
-		} catch (Exception e) {
-			return "";
-		}
-		if (n < 1024)
-			return n + " B";
-		if (n < 1024 * 1024)
-			return (n + 512) / 1024 + " KB";
-		return String.format("%.1f MB", n / (1024.0 * 1024.0));
-	}
-
-	/** pop-up: add files and see (or remove) the ones already attached */
-	private void openAttachments() {
-		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
-		win.setTitle("Attachment");
-		win.setWidth("560px");
-		win.setClosable(true);
-		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
-		org.mycompany.requisition.ui.XxTheme.apply(win);
-
-		Div body = new Div();
-		body.setStyle("padding:12px;");
-		final Listbox lb = new Listbox();
-		lb.setHeight("240px");
-		Listhead lh = new Listhead();
-		Listheader h0 = new Listheader("#");
-		h0.setWidth("40px");
-		lh.appendChild(h0);
-		Listheader h1 = new Listheader("File name");
-		h1.setHflex("1");
-		lh.appendChild(h1);
-		Listheader h2 = new Listheader("Size");
-		h2.setWidth("90px");
-		lh.appendChild(h2);
-		Listheader h3 = new Listheader("");
-		h3.setWidth("60px");
-		lh.appendChild(h3);
-		lb.appendChild(lh);
-
-		final Label count = new Label();
-		final Runnable[] refresh = new Runnable[1];
-		refresh[0] = () -> {
-			while (lb.getItemCount() > 0)
-				lb.removeItemAt(0);
-			int n = 0;
-			for (final Media m : attachments) {
-				n++;
-				Listitem li = new Listitem();
-				li.appendChild(new Listcell(String.valueOf(n)));
-				Listcell nameCell = new Listcell();
-				org.zkoss.zul.A link = new org.zkoss.zul.A(m.getName());
-				link.setStyle("color:#0d6efd;text-decoration:underline;cursor:pointer;font-weight:600;");
-				link.setTooltiptext("Click to open");
-				link.addEventListener(Events.ON_CLICK, ev -> openMedia(m));
-				nameCell.appendChild(link);
-				li.appendChild(nameCell);
-				li.appendChild(new Listcell(sizeOf(m)));
-				Listcell rm = new Listcell();
-				Button x = new Button("✖");
-				x.setSclass("btn btn-sm btn-outline-danger");
-				x.addEventListener(Events.ON_CLICK, ev -> {
-					attachments.remove(m);
-					refresh[0].run();
-				});
-				rm.appendChild(x);
-				li.appendChild(rm);
-				lb.appendChild(li);
-			}
-			count.setValue(attachments.isEmpty() ? "No file attached" : attachments.size() + " file(s) attached");
-			updateAttachLabel();
-		};
-
-		Button add = new Button("+  Add File");
-		add.setSclass("btn btn-primary");
-		add.setUpload("true,multiple=true");
-		add.addEventListener(Events.ON_UPLOAD, ev -> {
-			if (ev instanceof UploadEvent) {
-				Media[] ms = ((UploadEvent) ev).getMedias();
-				if (ms != null)
-					for (Media m : ms)
-						if (m != null)
-							attachments.add(m);
-				refresh[0].run();
-			}
-		});
-		Button done = new Button("Close");
-		done.setSclass("btn btn-danger");
-		done.addEventListener(Events.ON_CLICK, ev -> win.detach());
-
-		Div bar = new Div();
-		bar.setStyle("display:flex;align-items:center;gap:10px;margin-bottom:8px;");
-		bar.appendChild(add);
-		bar.appendChild(count);
-		Div foot = new Div();
-		foot.setStyle("text-align:right;margin-top:10px;");
-		foot.appendChild(done);
-
-		body.appendChild(bar);
-		body.appendChild(lb);
-		body.appendChild(foot);
-		win.appendChild(body);
-		refresh[0].run();
-		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
-	}
-
 	/** a product picked first fills its categories */
 	private void fillCategoryFromProduct() {
 		if (pProduct.id <= 0 || pParent.id > 0)
@@ -1010,6 +1025,127 @@ public class WRequisitionEntryForm extends ADForm {
 	}
 
 	// =====================================================================
+	// attachments pop-up
+	// =====================================================================
+
+	private void updateAttachLabel() {
+		lblAttach.setValue(attachments.isEmpty() ? "No file attached" : attachments.size() + " file(s) attached");
+	}
+
+	private static String sizeOf(Media m) {
+		long n;
+		try {
+			n = m.isBinary() ? m.getByteData().length : m.getStringData().length();
+		} catch (Exception e) {
+			return "";
+		}
+		if (n < 1024)
+			return n + " B";
+		if (n < 1024 * 1024)
+			return (n + 512) / 1024 + " KB";
+		return String.format("%.1f MB", n / (1024.0 * 1024.0));
+	}
+
+	/** pop-up: add files and see (or remove) the ones already attached */
+	private void openAttachments() {
+		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+		win.setTitle("Attachment");
+		win.setWidth("560px");
+		win.setClosable(true);
+		win.setSclass("xx-reqwin");
+		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
+		org.mycompany.requisition.ui.XxTheme.apply(win);
+
+		Div body = new Div();
+		body.setStyle("padding:12px;");
+		final Listbox lb = new Listbox();
+		lb.setHeight("240px");
+		Listhead lh = new Listhead();
+		Listheader h0 = new Listheader("#");
+		h0.setWidth("40px");
+		lh.appendChild(h0);
+		Listheader h1 = new Listheader("File name");
+		h1.setHflex("1");
+		lh.appendChild(h1);
+		Listheader h2 = new Listheader("Size");
+		h2.setWidth("90px");
+		lh.appendChild(h2);
+		Listheader h3 = new Listheader("");
+		h3.setWidth("60px");
+		lh.appendChild(h3);
+		lb.appendChild(lh);
+
+		final Label count = new Label();
+		final Runnable[] refresh = new Runnable[1];
+		refresh[0] = () -> {
+			while (lb.getItemCount() > 0)
+				lb.removeItemAt(0);
+			int n = 0;
+			for (final Media m : new ArrayList<Media>(attachments)) {
+				n++;
+				Listitem li = new Listitem();
+				li.appendChild(new Listcell(String.valueOf(n)));
+				Listcell nameCell = new Listcell();
+				org.zkoss.zul.A link = new org.zkoss.zul.A(m.getName());
+				link.setStyle("color:#0d6efd;text-decoration:underline;cursor:pointer;font-weight:600;");
+				link.setTooltiptext("Click to open");
+				link.addEventListener(Events.ON_CLICK, ev -> openMedia(m));
+				nameCell.appendChild(link);
+				li.appendChild(nameCell);
+				li.appendChild(new Listcell(sizeOf(m)));
+				Listcell rm = new Listcell();
+				// files saved earlier, or any file of a read-only requisition, are not removable
+				if (!readOnly && !existingMedia.contains(m)) {
+					Button x = new Button("\u2716");
+					x.setSclass("btn btn-sm btn-outline-danger");
+					x.addEventListener(Events.ON_CLICK, ev -> {
+						attachments.remove(m);
+						refresh[0].run();
+					});
+					rm.appendChild(x);
+				}
+				li.appendChild(rm);
+				lb.appendChild(li);
+			}
+			count.setValue(attachments.isEmpty() ? "No file attached" : attachments.size() + " file(s) attached");
+			updateAttachLabel();
+		};
+
+		Button add = new Button("+  Add File");
+		add.setSclass("btn btn-primary");
+		add.setUpload("true,multiple=true");
+		add.setVisible(!readOnly);
+		add.addEventListener(Events.ON_UPLOAD, ev -> {
+			if (ev instanceof UploadEvent) {
+				Media[] ms = ((UploadEvent) ev).getMedias();
+				if (ms != null)
+					for (Media m : ms)
+						if (m != null)
+							attachments.add(m);
+				refresh[0].run();
+			}
+		});
+		Button done = new Button("Close");
+		done.setSclass("btn btn-danger");
+		done.addEventListener(Events.ON_CLICK, ev -> win.detach());
+
+		Div bar = new Div();
+		bar.setStyle("display:flex;align-items:center;gap:10px;margin-bottom:8px;");
+		bar.appendChild(add);
+		bar.appendChild(count);
+		Div foot = new Div();
+		foot.setStyle("text-align:right;margin-top:10px;");
+		foot.appendChild(done);
+
+		body.appendChild(bar);
+		body.appendChild(lb);
+		body.appendChild(foot);
+		win.appendChild(body);
+		refresh[0].run();
+		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
+	}
+
+	// =====================================================================
 	// lines
 	// =====================================================================
 
@@ -1033,6 +1169,8 @@ public class WRequisitionEntryForm extends ADForm {
 	}
 
 	private void addLine() {
+		if (readOnly)
+			return;
 		if (selValue(cbSegment).length() == 0) {
 			warn("Segment is required.");
 			return;
@@ -1048,6 +1186,17 @@ public class WRequisitionEntryForm extends ADForm {
 		if (pProduct.id <= 0) {
 			warn("Product is required.");
 			return;
+		}
+		// one requisition: one line per product
+		int at = 0;
+		for (Line x : lines) {
+			at++;
+			if (x.productId == pProduct.id) {
+				warn("This product (" + pProduct.code + " - " + pProduct.name + ") is already in this requisition "
+						+ "(line " + (at * 10) + ").\n\nThe same product cannot be added twice. "
+						+ "To change the quantity, edit the Qty of that line in the Requisition Line table below.");
+				return;
+			}
 		}
 		BigDecimal qty = decQty.getValue();
 		if (qty == null || qty.signum() <= 0) {
@@ -1084,6 +1233,10 @@ public class WRequisitionEntryForm extends ADForm {
 		productChanged();
 	}
 
+	private static String money(BigDecimal v) {
+		return v.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
+	}
+
 	private void refreshLines() {
 		while (lineList.getItemCount() > 0)
 			lineList.removeItemAt(0);
@@ -1100,27 +1253,417 @@ public class WRequisitionEntryForm extends ADForm {
 			li.appendChild(new Listcell(l.spec));
 			li.appendChild(new Listcell(l.dateReq == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format(l.dateReq)));
 			li.appendChild(new Listcell(l.avail.stripTrailingZeros().toPlainString()));
-			li.appendChild(new Listcell(l.qty.stripTrailingZeros().toPlainString()));
+
+			// Qty: edit it right here (more or less); Amount follows
+			final Label amount = new Label(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
+			Listcell qtyCell = new Listcell();
+			if (readOnly) {
+				qtyCell.appendChild(new Label(l.qty.stripTrailingZeros().toPlainString()));
+			} else {
+				final Decimalbox qb = new Decimalbox();
+				qb.setSclass("form-control");
+				ZKUpdateUtil.setWidth(qb, "100%");
+				qb.setValue(l.qty.stripTrailingZeros());
+				org.zkoss.zk.ui.event.EventListener<org.zkoss.zk.ui.event.Event> apply = ev -> {
+					BigDecimal v = qb.getValue();
+					if (v == null || v.signum() <= 0) {
+						warn("Qty must be greater than 0. To remove the line use the \u2716 button.");
+						qb.setValue(l.qty.stripTrailingZeros());
+						return;
+					}
+					l.qty = v;
+					amount.setValue(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
+				};
+				qb.addEventListener(Events.ON_CHANGE, apply);
+				qb.addEventListener(Events.ON_OK, apply);
+				qtyCell.appendChild(qb);
+			}
+			li.appendChild(qtyCell);
 			li.appendChild(new Listcell(l.rate.signum() == 0 ? "" : l.rate.toPlainString()));
-			li.appendChild(new Listcell(l.rate.signum() == 0 ? "" : l.rate.multiply(l.qty).toPlainString()));
+			Listcell amtCell = new Listcell();
+			amtCell.appendChild(amount);
+			li.appendChild(amtCell);
+
 			Listcell rm = new Listcell();
-			Button x = new Button("\u2716");
-			x.setSclass("btn btn-sm btn-outline-danger");
-			x.addEventListener(Events.ON_CLICK, e -> {
-				lines.remove(l);
-				refreshLines();
-			});
-			rm.appendChild(x);
+			if (!readOnly) {
+				Button x = new Button("\u2716");
+				x.setSclass("btn btn-sm btn-outline-danger");
+				x.addEventListener(Events.ON_CLICK, e -> {
+					if (l.lineId > 0)
+						deletedLineIds.add(Integer.valueOf(l.lineId));
+					lines.remove(l);
+					refreshLines();
+				});
+				rm.appendChild(x);
+			}
 			li.appendChild(rm);
 			lineList.appendChild(li);
 		}
 	}
 
 	// =====================================================================
-	// save
+	// view / edit an existing requisition
+	// =====================================================================
+
+	/**
+	 * Why the requisition can not be changed any more, null when it can: it must still be Drafted
+	 * and no approver may have approved it yet (UT_ApprovalHistory status A).
+	 */
+	private String lockReason(int requisitionId) {
+		String st = str("SELECT DocStatus FROM M_Requisition WHERE M_Requisition_ID=" + requisitionId);
+		if (!"DR".equals(st)) {
+			String nm = str("SELECT Name FROM AD_Ref_List WHERE AD_Reference_ID=" + REF_DOCSTATUS + " AND Value='"
+					+ st.replace("'", "") + "'");
+			return "its status is " + (nm.isEmpty() ? st : nm);
+		}
+		int approved = DB.getSQLValue(null, "SELECT COUNT(*) FROM UT_ApprovalHistory h JOIN M_Requisition r "
+				+ "ON r.DocumentNo=h.DocumentNo AND r.C_DocType_ID=h.C_DocType_ID AND r.AD_Client_ID=h.AD_Client_ID "
+				+ "WHERE r.M_Requisition_ID=? AND h.Status='A'", requisitionId);
+		if (approved > 0)
+			return "it has already been approved by " + approved + " approver" + (approved > 1 ? "s" : "");
+		return null;
+	}
+
+	/** switch the fields on / off for a new, an editable or a read-only requisition */
+	private void applyMode() {
+		boolean ro = readOnly;
+		boolean existing = editId > 0;
+		cbType.box.setDisabled(ro || existing); // the type decides the approval path: fixed once saved
+		cbLocation.box.setDisabled(ro);
+		cbPriority.box.setDisabled(ro);
+		pWarehouse.box.setDisabled(ro);
+		dtDoc.setDisabled(ro);
+		dtRequired.setDisabled(ro);
+		txtDescription.setDisabled(ro);
+		cbSegment.box.setDisabled(ro);
+		pDept.box.setDisabled(ro);
+		pParent.box.setDisabled(ro);
+		pSub.box.setDisabled(ro);
+		pProduct.box.setDisabled(ro);
+		txtSpec.setDisabled(ro);
+		dtLine.setDisabled(ro);
+		decQty.setDisabled(ro);
+		decRate.setDisabled(ro);
+		btnAdd.setDisabled(ro);
+		btnOk.setVisible(!ro);
+		btnNew.setVisible(existing);
+		banner.setVisible(existing);
+	}
+
+	/** back to an empty new requisition */
+	private void newRequisition() {
+		resetForm();
+	}
+
+	/** All Requisition -> a row was clicked */
+	private void openRequisition(final int id) {
+		if (editId == 0 && !lines.isEmpty()) {
+			Messagebox.show("The requisition you are entering will be discarded. Continue?", "Requisition",
+					Messagebox.YES | Messagebox.NO, Messagebox.QUESTION, (org.zkoss.zk.ui.event.Event ev) -> {
+						if (Messagebox.ON_YES.equals(ev.getName()))
+							loadRequisition(id);
+					});
+			return;
+		}
+		loadRequisition(id);
+	}
+
+	private void loadRequisition(int id) {
+		MRequisition req = new MRequisition(Env.getCtx(), id, null);
+		if (req.get_ID() != id) {
+			warn("Requisition not found.");
+			return;
+		}
+		resetForm();
+		editId = id;
+		editDocNo = req.getDocumentNo();
+		String why = lockReason(id);
+		readOnly = why != null;
+
+		cbType.selectValue(String.valueOf(req.getC_DocType_ID()));
+		cbLocation.selectValue(str("SELECT XX_Location FROM M_Requisition WHERE M_Requisition_ID=" + id));
+		cbPriority.selectValue(req.getPriorityRule());
+		if (req.getM_Warehouse_ID() > 0)
+			pWarehouse.set(req.getM_Warehouse_ID(),
+					str("SELECT Value FROM M_Warehouse WHERE M_Warehouse_ID=" + req.getM_Warehouse_ID()),
+					str("SELECT Name FROM M_Warehouse WHERE M_Warehouse_ID=" + req.getM_Warehouse_ID()), false);
+		dtDoc.setValue(req.getDateDoc());
+		dtRequired.setValue(req.getDateRequired());
+		txtDescription.setValue(req.getDescription() == null ? "" : req.getDescription());
+
+		loadLines(id, req.getM_Warehouse_ID());
+		loadExistingAttachments(id);
+
+		refreshLines();
+		applyMode();
+		if (readOnly) {
+			banner.setSclass("xx-banner xx-banner-ro");
+			lblBanner.setValue("\uD83D\uDD12  Requisition " + editDocNo + " is view only: " + why + ".");
+		} else {
+			banner.setSclass("xx-banner");
+			lblBanner.setValue("\u270E  Editing Requisition " + editDocNo
+					+ ". No approver has approved it yet, so you can still change it. Click Save to keep the changes.");
+		}
+	}
+
+	private void loadLines(int id, int warehouseId) {
+		String sql = "SELECT rl.M_RequisitionLine_ID, rl.M_Product_ID, p.Value, p.Name, COALESCE(u.Name,''), rl.Qty, "
+				+ "COALESCE(rl.PriceActual,0), COALESCE(rl.Description,''), COALESCE(rl.XX_Segment,''), "
+				+ "COALESCE((SELECT l.Name FROM AD_Ref_List l JOIN AD_Reference rf ON rf.AD_Reference_ID=l.AD_Reference_ID "
+				+ "WHERE rf.Name='" + REF_SEGMENT + "' AND l.Value=rl.XX_Segment LIMIT 1),''), "
+				+ "COALESCE(rl.XX_Department_ID,0), COALESCE(a.Name,''), rl.XX_DateRequired "
+				+ "FROM M_RequisitionLine rl JOIN M_Product p ON p.M_Product_ID=rl.M_Product_ID "
+				+ "LEFT JOIN C_UOM u ON u.C_UOM_ID=p.C_UOM_ID LEFT JOIN C_Activity a ON a.C_Activity_ID=rl.XX_Department_ID "
+				+ "WHERE rl.M_Requisition_ID=? AND rl.IsActive='Y' ORDER BY rl.Line, rl.M_RequisitionLine_ID";
+		try (PreparedStatement ps = DB.prepareStatement(sql, null)) {
+			ps.setInt(1, id);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					Line l = new Line();
+					l.lineId = rs.getInt(1);
+					l.productId = rs.getInt(2);
+					l.code = rs.getString(3);
+					l.name = rs.getString(4);
+					l.uom = rs.getString(5);
+					l.qty = rs.getBigDecimal(6);
+					l.rate = rs.getBigDecimal(7);
+					l.spec = rs.getString(8);
+					l.segVal = rs.getString(9);
+					l.segName = rs.getString(10);
+					l.deptId = rs.getInt(11);
+					l.deptName = rs.getString(12);
+					l.dateReq = rs.getTimestamp(13);
+					l.avail = availableQty(l.productId, warehouseId);
+					lines.add(l);
+				}
+			}
+		} catch (Exception e) {
+			log.log(Level.SEVERE, sql, e);
+			warn("Could not read the lines of this requisition:\n" + e.getMessage());
+		}
+	}
+
+	/** files already attached to the requisition: shown in the Attachment pop-up, never saved again */
+	private void loadExistingAttachments(int id) {
+		try {
+			MAttachment att = MAttachment.get(Env.getCtx(), MRequisition.Table_ID, id);
+			if (att == null)
+				return;
+			for (MAttachmentEntry en : att.getEntries()) {
+				byte[] data = en.getData();
+				if (data == null)
+					continue;
+				Media m = new org.zkoss.util.media.AMedia(en.getName(), null, null, data);
+				existingMedia.add(m);
+				attachments.add(m);
+			}
+			updateAttachLabel();
+		} catch (Exception e) {
+			log.log(Level.WARNING, "attachments of requisition " + id + ": " + e.getMessage(), e);
+		}
+	}
+
+	// =====================================================================
+	// All Requisition (pop-up list of my requisitions)
+	// =====================================================================
+
+	/** dd/MM/yyyy (a new formatter each time: SimpleDateFormat is not thread safe) */
+	private static String dmy(Timestamp t) {
+		return t == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format(t);
+	}
+
+	private void openAllRequisitions() {
+		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+		win.setTitle("All Requisition");
+		win.setWidth("1200px");
+		win.setHeight("640px");
+		win.setClosable(true);
+		win.setSizable(true);
+		win.setSclass("xx-reqwin");
+		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
+		org.mycompany.requisition.ui.XxTheme.apply(win);
+
+		Div body = new Div();
+		body.setStyle("padding:10px;");
+
+		final Textbox q = new Textbox();
+		q.setPlaceholder("Requisition no, description or product...");
+		q.setWidth("340px");
+		Button go = new Button("Search");
+		go.setSclass("btn btn-primary");
+		go.setStyle("margin-left:6px;");
+		Button reload = new Button("Refresh");
+		reload.setSclass("btn btn-outline-primary");
+		reload.setStyle("margin-left:6px;");
+		final Label hint = new Label("Click a requisition to open it.");
+		hint.setStyle("margin-left:14px;color:#6c757d;font-size:12px;");
+		Div bar = new Div();
+		bar.setStyle("margin-bottom:8px;display:flex;align-items:center;");
+		bar.appendChild(q);
+		bar.appendChild(go);
+		bar.appendChild(reload);
+		bar.appendChild(hint);
+
+		final Listbox lb = new Listbox();
+		lb.setHeight("490px");
+		Listhead lh = new Listhead();
+		String[][] cols = { { "Requisition No", "120px" }, { "Date", "90px" }, { "Type", "150px" },
+				{ "Priority", "80px" }, { "Location", "130px" }, { "Date Required", "100px" }, { "Lines", "55px" },
+				{ "Amount", "100px" }, { "Status", null } };
+		for (String[] c : cols) {
+			Listheader h = new Listheader(c[0]);
+			if (c[1] != null)
+				h.setWidth(c[1]);
+			else
+				h.setHflex("1");
+			lh.appendChild(h);
+		}
+		lb.appendChild(lh);
+		lb.setEmptyMessage("No requisition found.");
+
+		final Runnable[] load = new Runnable[1];
+		load[0] = () -> {
+			while (lb.getItemCount() > 0)
+				lb.removeItemAt(0);
+			String s = q.getValue() == null ? "" : q.getValue().trim().toUpperCase();
+			List<Object> params = new ArrayList<Object>();
+			params.add(Integer.valueOf(clientId));
+			params.add(Integer.valueOf(userId));
+			String find = "";
+			if (!s.isEmpty()) {
+				find = " AND (UPPER(r.DocumentNo) LIKE ? OR UPPER(COALESCE(r.Description,'')) LIKE ? OR EXISTS ("
+						+ "SELECT 1 FROM M_RequisitionLine fl JOIN M_Product fp ON fp.M_Product_ID=fl.M_Product_ID "
+						+ "WHERE fl.M_Requisition_ID=r.M_Requisition_ID AND (UPPER(fp.Name) LIKE ? OR UPPER(fp.Value) LIKE ?)))";
+				for (int i = 0; i < 4; i++)
+					params.add("%" + s + "%");
+			}
+			String hist = "FROM UT_ApprovalHistory h WHERE h.DocumentNo=r.DocumentNo AND h.C_DocType_ID=r.C_DocType_ID "
+					+ "AND h.AD_Client_ID=r.AD_Client_ID";
+			String sql = "SELECT r.M_Requisition_ID, r.DocumentNo, r.DateDoc, dt.Name, "
+					+ "COALESCE((SELECT pl.Name FROM AD_Ref_List pl WHERE pl.AD_Reference_ID=" + REF_PRIORITY
+					+ " AND pl.Value=r.PriorityRule LIMIT 1), r.PriorityRule), "
+					+ "COALESCE((SELECT l.Name FROM AD_Ref_List l JOIN AD_Reference rf ON rf.AD_Reference_ID=l.AD_Reference_ID "
+					+ "WHERE rf.Name='" + REF_LOCATION + "' AND l.Value=r.XX_Location LIMIT 1), COALESCE(r.XX_Location,'')), "
+					+ "r.DateRequired, "
+					+ "(SELECT COUNT(*) FROM M_RequisitionLine x WHERE x.M_Requisition_ID=r.M_Requisition_ID), "
+					+ "COALESCE((SELECT SUM(x.LineNetAmt) FROM M_RequisitionLine x WHERE x.M_Requisition_ID=r.M_Requisition_ID),0), "
+					+ "r.DocStatus, "
+					+ "COALESCE((SELECT sl.Name FROM AD_Ref_List sl WHERE sl.AD_Reference_ID=" + REF_DOCSTATUS
+					+ " AND sl.Value=r.DocStatus LIMIT 1), r.DocStatus), "
+					+ "(SELECT COUNT(*) " + hist + " AND h.Status='A'), "
+					+ "(SELECT COUNT(*) " + hist + " AND h.Status='R'), "
+					+ "(SELECT u.Name FROM UT_ApprovalHistory h JOIN AD_User u ON u.AD_User_ID="
+					+ "(CASE WHEN h.Checked ~ '^[0-9]+$' THEN h.Checked::int ELSE NULL END) "
+					+ "WHERE h.DocumentNo=r.DocumentNo AND h.C_DocType_ID=r.C_DocType_ID AND h.AD_Client_ID=r.AD_Client_ID "
+					+ "AND h.Status='P' ORDER BY h.Created DESC LIMIT 1) "
+					+ "FROM M_Requisition r JOIN C_DocType dt ON dt.C_DocType_ID=r.C_DocType_ID "
+					+ "WHERE r.AD_Client_ID=? AND r.CreatedBy=?" + find
+					+ " ORDER BY r.DateDoc DESC, r.M_Requisition_ID DESC LIMIT 200";
+			try (PreparedStatement ps = DB.prepareStatement(sql, null)) {
+				for (int i = 0; i < params.size(); i++) {
+					Object o = params.get(i);
+					if (o instanceof Integer)
+						ps.setInt(i + 1, ((Integer) o).intValue());
+					else
+						ps.setString(i + 1, String.valueOf(o));
+				}
+				try (ResultSet rs = ps.executeQuery()) {
+					while (rs.next()) {
+						final int rid = rs.getInt(1);
+						Listitem li = new Listitem();
+						li.setStyle("cursor:pointer;");
+						Listcell noCell = new Listcell();
+						Label no = new Label(rs.getString(2));
+						no.setSclass("xx-link");
+						noCell.appendChild(no);
+						li.appendChild(noCell);
+						Timestamp d = rs.getTimestamp(3);
+						li.appendChild(new Listcell(dmy(d)));
+						li.appendChild(new Listcell(rs.getString(4)));
+						li.appendChild(new Listcell(rs.getString(5) == null ? "" : rs.getString(5)));
+						li.appendChild(new Listcell(rs.getString(6) == null ? "" : rs.getString(6)));
+						Timestamp dr = rs.getTimestamp(7);
+						li.appendChild(new Listcell(dmy(dr)));
+						li.appendChild(new Listcell(String.valueOf(rs.getInt(8))));
+						li.appendChild(new Listcell(money(rs.getBigDecimal(9))));
+
+						String docStatus = rs.getString(10);
+						String statusName = rs.getString(11);
+						int approved = rs.getInt(12);
+						int rejected = rs.getInt(13);
+						String pending = rs.getString(14);
+						String text;
+						String kind;
+						if ("CO".equals(docStatus) || "CL".equals(docStatus)) {
+							text = statusName;
+							kind = "ok";
+						} else if ("VO".equals(docStatus) || "RE".equals(docStatus)) {
+							text = statusName;
+							kind = "bad";
+						} else if (approved > 0) {
+							text = "Approved by " + approved + " level" + (approved > 1 ? "s" : "")
+									+ (pending != null ? ", now with " + pending : ", in approval");
+							kind = "prog";
+						} else if (pending != null) {
+							text = "Waiting for " + pending;
+							kind = "wait";
+						} else if (rejected > 0) {
+							text = "Rejected";
+							kind = "bad";
+						} else {
+							text = statusName;
+							kind = "draft";
+						}
+						Listcell st = new Listcell();
+						Label badge = new Label(text);
+						badge.setSclass("xx-badge xx-badge-" + kind);
+						st.appendChild(badge);
+						li.appendChild(st);
+
+						li.addEventListener(Events.ON_CLICK, ev -> {
+							win.detach();
+							openRequisition(rid);
+						});
+						lb.appendChild(li);
+					}
+				}
+			} catch (Exception ex) {
+				log.log(Level.SEVERE, sql, ex);
+				warn("Could not read the requisitions:\n" + ex.getMessage());
+			}
+			hint.setValue(lb.getItemCount() + " requisition(s). Click one to open it.");
+		};
+		q.addEventListener(Events.ON_OK, ev -> load[0].run());
+		go.addEventListener(Events.ON_CLICK, ev -> load[0].run());
+		reload.addEventListener(Events.ON_CLICK, ev -> {
+			q.setValue("");
+			load[0].run();
+		});
+
+		Button close = new Button("Close");
+		close.setSclass("btn btn-danger");
+		close.addEventListener(Events.ON_CLICK, ev -> win.detach());
+		Div foot = new Div();
+		foot.setStyle("text-align:right;margin-top:8px;");
+		foot.appendChild(close);
+
+		body.appendChild(bar);
+		body.appendChild(lb);
+		body.appendChild(foot);
+		win.appendChild(body);
+		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
+		load[0].run();
+	}
+
+	// =====================================================================
+	// save (new requisition or changes to an open one)
 	// =====================================================================
 
 	private void save() {
+		if (readOnly) {
+			warn("This requisition is view only and can not be saved.");
+			return;
+		}
 		if (orgId <= 0) {
 			warn("Log in with a specific organization (not *) to create a requisition.");
 			return;
@@ -1151,11 +1694,28 @@ public class WRequisitionEntryForm extends ADForm {
 			warn("Add at least one product (+ Add Product).");
 			return;
 		}
+		for (Line l : lines) {
+			if (l.qty == null || l.qty.signum() <= 0) {
+				warn("Qty of " + l.code + " must be greater than 0.");
+				return;
+			}
+		}
 		if (!columnExists("M_Requisition", "XX_Location") || !columnExists("M_RequisitionLine", "XX_Segment")
 				|| !columnExists("M_RequisitionLine", "XX_Department_ID")
 				|| !columnExists("M_RequisitionLine", "XX_DateRequired")) {
 			warn("Run db/16_requisition_entry_form.sql first (extra requisition columns are missing).");
 			return;
+		}
+
+		final boolean editing = editId > 0;
+		if (editing) {
+			// somebody may have approved it since it was opened
+			String why = lockReason(editId);
+			if (why != null) {
+				warn("Requisition " + editDocNo + " can not be changed any more: " + why + ".");
+				loadRequisition(editId);
+				return;
+			}
 		}
 
 		int warehouseId = pWarehouse.id;
@@ -1173,32 +1733,40 @@ public class WRequisitionEntryForm extends ADForm {
 		String trxName = Trx.createTrxName("ReqEntry");
 		Trx trx = Trx.get(trxName, true);
 		try {
-			MRequisition req = new MRequisition(Env.getCtx(), 0, trxName);
-			req.setAD_Org_ID(orgId);
-			req.setAD_User_ID(userId);
-			req.setC_DocType_ID(Integer.parseInt(selValue(cbType)));
+			MRequisition req = new MRequisition(Env.getCtx(), editing ? editId : 0, trxName);
+			if (!editing) {
+				req.setAD_Org_ID(orgId);
+				req.setAD_User_ID(userId);
+				req.setC_DocType_ID(Integer.parseInt(selValue(cbType)));
+				req.setM_PriceList_ID(priceListId);
+			}
 			req.setDateDoc(docDate);
 			req.setDateRequired(reqDate);
 			req.setPriorityRule(selValue(cbPriority));
 			req.setM_Warehouse_ID(warehouseId);
-			req.setM_PriceList_ID(priceListId);
 			String desc = txtDescription.getValue() == null ? "" : txtDescription.getValue().trim();
-			if (desc.length() > 0)
-				req.setDescription(desc);
+			req.setDescription(desc.length() > 0 ? desc : null);
 			req.saveEx();
 			DB.executeUpdateEx("UPDATE M_Requisition SET XX_Location=? WHERE M_Requisition_ID=?",
 					new Object[] { selValue(cbLocation), Integer.valueOf(req.get_ID()) }, trxName);
 
+			// lines taken out while editing
+			for (Integer did : deletedLineIds) {
+				MRequisitionLine gone = new MRequisitionLine(Env.getCtx(), did.intValue(), trxName);
+				if (gone.get_ID() > 0)
+					gone.deleteEx(true);
+			}
+
 			int n = 0;
 			for (Line l : lines) {
 				n++;
-				MRequisitionLine rl = new MRequisitionLine(req);
+				MRequisitionLine rl = l.lineId > 0 ? new MRequisitionLine(Env.getCtx(), l.lineId, trxName)
+						: new MRequisitionLine(req);
 				rl.setLine(n * 10);
 				rl.setM_Product_ID(l.productId);
 				rl.setQty(l.qty);
 				rl.setPriceActual(l.rate);
-				if (l.spec.length() > 0)
-					rl.setDescription(l.spec.length() > 255 ? l.spec.substring(0, 255) : l.spec);
+				rl.setDescription(l.spec.length() == 0 ? null : (l.spec.length() > 255 ? l.spec.substring(0, 255) : l.spec));
 				rl.saveEx();
 				DB.executeUpdateEx("UPDATE M_RequisitionLine SET XX_Segment=?, XX_Department_ID=?, "
 						+ "XX_DateRequired=? WHERE M_RequisitionLine_ID=?",
@@ -1207,9 +1775,18 @@ public class WRequisitionEntryForm extends ADForm {
 						trxName);
 			}
 
-			if (!attachments.isEmpty()) {
-				MAttachment att = new MAttachment(Env.getCtx(), MRequisition.Table_ID, req.get_ID(), trxName);
-				for (Media m : attachments) {
+			// only files added now (the ones that were already attached stay as they are)
+			List<Media> fresh = new ArrayList<Media>();
+			for (Media m : attachments)
+				if (!existingMedia.contains(m))
+					fresh.add(m);
+			if (!fresh.isEmpty()) {
+				MAttachment att = editing ? MAttachment.get(Env.getCtx(), MRequisition.Table_ID, req.get_ID()) : null;
+				if (att == null)
+					att = new MAttachment(Env.getCtx(), MRequisition.Table_ID, req.get_ID(), trxName);
+				else
+					att.set_TrxName(trxName);
+				for (Media m : fresh) {
 					byte[] bytes = m.isBinary() ? m.getByteData() : m.getStringData().getBytes("UTF-8");
 					att.addEntry(m.getName(), bytes);
 				}
@@ -1220,7 +1797,8 @@ public class WRequisitionEntryForm extends ADForm {
 			final String docNo = req.getDocumentNo();
 			final int reqId = req.get_ID();
 			resetForm();
-			Messagebox.show("Requisition " + docNo + " has been saved.\n\nDo you want to view the Requisition PDF?",
+			Messagebox.show("Requisition " + docNo + (editing ? " has been updated." : " has been saved.")
+					+ "\n\nDo you want to view the Requisition PDF?",
 					"Requisition", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
 					(org.zkoss.zk.ui.event.Event ev) -> {
 						if (Messagebox.ON_YES.equals(ev.getName()))
@@ -1316,6 +1894,7 @@ public class WRequisitionEntryForm extends ADForm {
 		win.setHeight("92%");
 		win.setClosable(true);
 		win.setSizable(true);
+		win.setSclass("xx-reqwin");
 		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
 		org.mycompany.requisition.ui.XxTheme.apply(win);
 
@@ -1346,6 +1925,11 @@ public class WRequisitionEntryForm extends ADForm {
 	}
 
 	private void resetForm() {
+		editId = 0;
+		editDocNo = "";
+		readOnly = false;
+		deletedLineIds.clear();
+		existingMedia.clear();
 		lines.clear();
 		refreshLines();
 		attachments.clear();
@@ -1369,5 +1953,6 @@ public class WRequisitionEntryForm extends ADForm {
 		decQty.setValue((BigDecimal) null);
 		decRate.setValue((BigDecimal) null);
 		productChanged();
+		applyMode();
 	}
 }
