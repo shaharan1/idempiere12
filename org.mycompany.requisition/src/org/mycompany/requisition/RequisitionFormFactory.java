@@ -11,6 +11,8 @@ public class RequisitionFormFactory implements IFormFactory {
             return null;
         if ("org.mycompany.requisition.WEmpAdvanceForm".equals(className))
             return new WEmpAdvanceForm();
+        if ("org.mycompany.requisition.WRequisitionEntryForm".equals(className))
+            return new WRequisitionEntryForm();
         if ("org.mycompany.requisition.WCrudForm".equals(className))
             return new WCrudForm();
         if ("org.mycompany.requisition.WQuickProductForm".equals(className))
