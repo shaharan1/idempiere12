@@ -87,7 +87,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "2";
+	private static final String CSS_VERSION = "3";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -189,7 +189,8 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-req .xx-span2 { grid-column:span 2; }
 .xx-req .xx-span3 { grid-column:span 3; }
 .xx-req .xx-span4 { grid-column:span 4; }
-@media (max-width:1100px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(3,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 3; } }
+@media (max-width:1500px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media (max-width:1000px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 2; } }
 @media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
 .xx-req .xx-field { min-width:0; }
 .xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
@@ -226,7 +227,9 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-form.xx-req button.z-button.btn-outline-danger { background:#fff !important; border:1px solid #dc3545 !important; color:#dc3545 !important; box-shadow:none !important; }
 .xx-form.xx-req button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
 .xx-req .z-listbox { min-height:280px; }
-.xx-req .xx-footer { display:flex; justify-content:flex-end; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
+.xx-req .xx-main { background:#f1f4f9; }
+.xx-req .xx-card-header + .z-listbox, .xx-req .xx-card > .z-listbox { margin:0; }
+.xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:flex-end; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 """;
 
 	private void installCss() {
@@ -247,12 +250,14 @@ public class WRequisitionEntryForm extends ADForm {
 	// =====================================================================
 
 	private void buildUi() {
-		Borderlayout main = new Borderlayout();
+		// one scrolling column (no Borderlayout): when the browser is zoomed in or the window is
+		// small nothing is squeezed out of view, the page just scrolls and Save/Cancel stay at the bottom
+		Div main = new Div();
+		main.setSclass("xx-main");
+		main.setStyle("height:100%;overflow:auto;");
 		appendChild(main);
 		ZKUpdateUtil.setWidth(this, "99%");
 		ZKUpdateUtil.setHeight(this, "100%");
-		ZKUpdateUtil.setWidth(main, "100%");
-		ZKUpdateUtil.setHeight(main, "100%");
 
 		cbType = new Choice();
 		cbLocation = new Choice();
@@ -301,39 +306,34 @@ public class WRequisitionEntryForm extends ADForm {
 					return "";
 				});
 
-		North north = new North();
-		ZKUpdateUtil.setVflex(north, "min");
-		main.appendChild(north);
-		Div top = new Div();
-		top.appendChild(buildHeader());
-		top.appendChild(buildLineEntry());
-		north.appendChild(top);
+		main.appendChild(buildHeader());
+		main.appendChild(buildLineEntry());
 
-		Center center = new Center();
-		main.appendChild(center);
-		Groupbox gb = new Groupbox();
-		gb.setSclass("xx-card");
-		Caption cap = new Caption("Requisition Line");
-		cap.setStyle("font-weight:600;");
-		gb.appendChild(cap);
 		buildLineList();
-		gb.appendChild(lineList);
-		ZKUpdateUtil.setVflex(gb, "1");
-		ZKUpdateUtil.setHflex(gb, "1");
-		center.appendChild(gb);
+		main.appendChild(card("Requisition Line", lineList));
 
-		South south = new South();
-		ZKUpdateUtil.setVflex(south, "min");
-		main.appendChild(south);
 		Div foot = new Div();
 		foot.setSclass("xx-footer");
 		btnOk.setSclass("btn btn-success");
 		btnCancel.setSclass("btn btn-danger");
 		foot.appendChild(btnOk);
 		foot.appendChild(btnCancel);
-		south.appendChild(foot);
+		main.appendChild(foot);
 
 		wireEvents();
+		wireDateboxes();
+	}
+
+	/**
+	 * Date fields: a click in the box, or Enter while the box has the focus, opens the calendar
+	 * (no need to hit the small calendar icon). Browser side only.
+	 */
+	private void wireDateboxes() {
+		for (Datebox d : new Datebox[] { dtDoc, dtRequired, dtLine })
+			js("zk.afterMount(function(){var w=zk.Widget.$('#" + d.getUuid() + "');"
+					+ "if(!w||!w.$n('real'))return;var i=w.$n('real');if(i.__xxd)return;i.__xxd=1;"
+					+ "i.addEventListener('click',function(){if(w.open&&!w.isOpen())w.open();});"
+					+ "i.addEventListener('keydown',function(e){if(e.key==='Enter'&&w.open&&!w.isOpen()){e.preventDefault();e.stopPropagation();w.open();}},true);});");
 	}
 
 	/** header card: 4 fields per row, same order as the screen */
@@ -359,9 +359,9 @@ public class WRequisitionEntryForm extends ADForm {
 		ZKUpdateUtil.setWidth(txtDescription, "100%");
 		g.appendChild(field("Description", false, txtDescription, 3));
 
-		btnAttach.setUpload("true,multiple=true");
 		btnAttach.setSclass("btn btn-outline-primary btn-block");
 		lblAttach.setSclass("xx-attach-note");
+		updateAttachLabel();
 		Div att = new Div();
 		att.appendChild(btnAttach);
 		att.appendChild(lblAttach);
@@ -418,8 +418,8 @@ public class WRequisitionEntryForm extends ADForm {
 			head.appendChild(h);
 		}
 		lineList.appendChild(head);
-		ZKUpdateUtil.setHflex(lineList, "1");
-		ZKUpdateUtil.setVflex(lineList, "1");
+		ZKUpdateUtil.setWidth(lineList, "100%");
+		lineList.setHeight("340px");
 	}
 
 	// ---- small layout helpers
@@ -478,7 +478,21 @@ public class WRequisitionEntryForm extends ADForm {
 			cb.removeItemAt(0);
 	}
 
-	/** drop-down with a small fixed list (value + name); type to narrow it down */
+	/** runs a little script in the browser (open/close a list); cosmetic, never throws */
+	private static void js(String script) {
+		try {
+			if (Executions.getCurrent() != null)
+				Clients.evalJavaScript(script);
+		} catch (Exception e) {
+			// ignore
+		}
+	}
+
+	private static void closeList(Combobox cb) {
+		js("(function(){var w=zk.Widget.$('#" + cb.getUuid() + "');if(w&&w.close)w.close();})();");
+	}
+
+	/** drop-down with a small fixed list (value + name); type a letter and only names starting with it are listed */
 	private final class Choice {
 		final Combobox box = newCombo("Type or select...");
 		private final List<String[]> all = new ArrayList<String[]>();
@@ -505,27 +519,42 @@ public class WRequisitionEntryForm extends ADForm {
 				name = it.getLabel();
 				typed = "";
 			});
-			box.addEventListener(Events.ON_CHANGE, e -> {
-				String t = box.getValue() == null ? "" : box.getValue().trim();
-				typed = "";
-				if (t.isEmpty()) {
-					value = "";
-					name = "";
-				} else if (!t.equals(name)) {
-					String[] hit = null;
-					for (String[] a : all)
-						if (a[1].equalsIgnoreCase(t)) {
-							hit = a;
-							break;
-						}
-					if (hit != null) {
-						value = hit[0];
-						name = hit[1];
-						box.setValue(name);
-					} else
-						box.setValue(name); // not a valid entry: go back to the last good one
+			// leaving the field or pressing Enter: take what was typed (first name that starts with it)
+			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
+			box.addEventListener(Events.ON_OK, e -> resolve(box.getValue()));
+		}
+
+		private void resolve(String text) {
+			String t = text == null ? "" : text.trim();
+			typed = "";
+			if (t.isEmpty()) {
+				value = "";
+				name = "";
+				box.setValue("");
+				return;
+			}
+			if (!value.isEmpty() && t.equals(name))
+				return;
+			String[] hit = null;
+			for (String[] a : all)
+				if (a[1].equalsIgnoreCase(t)) {
+					hit = a;
+					break;
 				}
-			});
+			if (hit == null) {
+				String lt = t.toLowerCase();
+				for (String[] a : all)
+					if (a[1].toLowerCase().startsWith(lt)) {
+						hit = a;
+						break;
+					}
+			}
+			if (hit != null) {
+				value = hit[0];
+				name = hit[1];
+			}
+			box.setValue(name); // no match: back to the last good value
+			closeList(box);
 		}
 
 		void add(String v, String n) {
@@ -555,7 +584,7 @@ public class WRequisitionEntryForm extends ADForm {
 			String s = q == null ? "" : q.trim().toLowerCase();
 			int n = 0;
 			for (String[] a : all) {
-				if (!s.isEmpty() && !a[1].toLowerCase().contains(s))
+				if (!s.isEmpty() && !a[1].toLowerCase().startsWith(s))
 					continue;
 				Comboitem it = box.appendItem(a[1]);
 				it.setValue(a[0]);
@@ -570,7 +599,7 @@ public class WRequisitionEntryForm extends ADForm {
 		String where(List<Object> params);
 	}
 
-	/** drop-down backed by a query; each keystroke searches Value/Name (contains, max SEARCH_LIMIT rows) */
+	/** drop-down backed by a query; type a letter and only Value/Name starting with it are listed (max SEARCH_LIMIT) */
 	private final class Picker {
 		final Combobox box = newCombo("Type to search...");
 		private final String title;
@@ -612,17 +641,32 @@ public class WRequisitionEntryForm extends ADForm {
 						set(((Integer) v[0]).intValue(), (String) v[1], (String) v[2], true);
 				}
 			});
-			box.addEventListener(Events.ON_CHANGE, e -> {
-				String t = box.getValue() == null ? "" : box.getValue().trim();
-				typed = "";
-				if (t.isEmpty()) {
-					if (id > 0)
-						clear(true);
-				} else if (!t.equals(display())) {
-					// free text that was not picked from the list: go back to the last good value
-					box.setValue(display());
-				}
-			});
+			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
+			box.addEventListener(Events.ON_OK, e -> resolve(box.getValue()));
+		}
+
+		/** Enter / leaving the field: first row that starts with the typed text */
+		private void resolve(String text) {
+			String t = text == null ? "" : text.trim();
+			typed = "";
+			if (t.isEmpty()) {
+				if (id > 0)
+					clear(true);
+				box.setValue("");
+				return;
+			}
+			if (id > 0 && t.equals(display()))
+				return;
+			int dash = t.indexOf(" - ");
+			String q = dash > 0 ? t.substring(0, dash) : t;
+			List<Object[]> rows = query(q, 1);
+			if (!rows.isEmpty()) {
+				Object[] v = rows.get(0);
+				if (((Integer) v[0]).intValue() != id)
+					set(((Integer) v[0]).intValue(), (String) v[1], (String) v[2], true);
+			}
+			box.setValue(display()); // no match: back to the last good value
+			closeList(box);
 		}
 
 		private String display() {
@@ -643,15 +687,15 @@ public class WRequisitionEntryForm extends ADForm {
 			set(0, "", "", fire);
 		}
 
-		private void load(String q) {
-			clearItems(box);
+		private List<Object[]> query(String q, int limit) {
+			List<Object[]> out = new ArrayList<Object[]>();
 			List<Object> params = new ArrayList<Object>();
 			String extra = filter == null ? "" : filter.where(params);
-			String pat = "%" + (q == null ? "" : q.trim().toUpperCase()) + "%";
+			String pat = (q == null ? "" : q.trim().toUpperCase()) + "%";
 			params.add(pat);
 			params.add(pat);
 			String sql = select + extra + " AND (UPPER(Value) LIKE ? OR UPPER(Name) LIKE ?) ORDER BY " + order
-					+ " LIMIT " + SEARCH_LIMIT;
+					+ " LIMIT " + limit;
 			try (PreparedStatement ps = DB.prepareStatement(sql, null)) {
 				for (int i = 0; i < params.size(); i++) {
 					Object o = params.get(i);
@@ -661,15 +705,22 @@ public class WRequisitionEntryForm extends ADForm {
 						ps.setString(i + 1, String.valueOf(o));
 				}
 				try (ResultSet rs = ps.executeQuery()) {
-					while (rs.next()) {
-						String c = rs.getString(2);
-						String n = rs.getString(3);
-						Comboitem it = box.appendItem(showCode ? c + " - " + n : n);
-						it.setValue(new Object[] { Integer.valueOf(rs.getInt(1)), c, n });
-					}
+					while (rs.next())
+						out.add(new Object[] { Integer.valueOf(rs.getInt(1)), rs.getString(2), rs.getString(3) });
 				}
 			} catch (Exception ex) {
 				log.log(Level.SEVERE, sql, ex);
+			}
+			return out;
+		}
+
+		private void load(String q) {
+			clearItems(box);
+			for (Object[] v : query(q, SEARCH_LIMIT)) {
+				String c = (String) v[1];
+				String n = (String) v[2];
+				Comboitem it = box.appendItem(showCode ? c + " - " + n : n);
+				it.setValue(v);
 			}
 		}
 	}
@@ -746,22 +797,14 @@ public class WRequisitionEntryForm extends ADForm {
 		pProduct.onChange = () -> {
 			productChanged();
 			fillCategoryFromProduct();
+			fillPrice();
 		};
 		pWarehouse.onChange = this::productChanged;
 
 		btnAdd.addEventListener(Events.ON_CLICK, e -> addLine());
 		btnOk.addEventListener(Events.ON_CLICK, e -> save());
 		btnCancel.addEventListener(Events.ON_CLICK, e -> close());
-		btnAttach.addEventListener(Events.ON_UPLOAD, e -> {
-			if (e instanceof UploadEvent) {
-				Media[] ms = ((UploadEvent) e).getMedias();
-				if (ms != null)
-					for (Media m : ms)
-						if (m != null)
-							attachments.add(m);
-				lblAttach.setValue(attachments.isEmpty() ? "" : attachments.size() + " file(s) attached");
-			}
-		});
+		btnAttach.addEventListener(Events.ON_CLICK, e -> openAttachments());
 	}
 
 	/** UOM and Available Qty follow the product (and the warehouse) */
@@ -774,6 +817,154 @@ public class WRequisitionEntryForm extends ADForm {
 		lblUom.setValue(str("SELECT u.Name FROM M_Product p JOIN C_UOM u ON u.C_UOM_ID=p.C_UOM_ID "
 				+ "WHERE p.M_Product_ID=" + pProduct.id));
 		lblAvail.setValue(availableQty(pProduct.id, pWarehouse.id).stripTrailingZeros().toPlainString());
+	}
+
+	/**
+	 * Rate follows the product: last purchase order price of the product (M_Product_PO.PriceLastPO),
+	 * else the price of its last purchase order line, else M_Product_PO.PricePO, else the price list
+	 * (default purchase price list, newest valid version). Still editable.
+	 */
+	private void fillPrice() {
+		if (pProduct.id <= 0)
+			return;
+		BigDecimal p = firstPositive(
+				"SELECT PriceLastPO FROM M_Product_PO WHERE M_Product_ID=? AND IsActive='Y' AND COALESCE(PriceLastPO,0)>0 "
+						+ "ORDER BY IsCurrentVendor DESC, Updated DESC LIMIT 1",
+				"SELECT ol.PriceActual FROM C_OrderLine ol JOIN C_Order o ON o.C_Order_ID=ol.C_Order_ID "
+						+ "WHERE ol.M_Product_ID=? AND o.IsSOTrx='N' AND o.DocStatus IN ('CO','CL') AND ol.PriceActual>0 "
+						+ "ORDER BY o.DateOrdered DESC, ol.C_OrderLine_ID DESC LIMIT 1",
+				"SELECT PricePO FROM M_Product_PO WHERE M_Product_ID=? AND IsActive='Y' AND COALESCE(PricePO,0)>0 "
+						+ "ORDER BY IsCurrentVendor DESC, Updated DESC LIMIT 1",
+				"SELECT pp.PriceStd FROM M_ProductPrice pp JOIN M_PriceList_Version v "
+						+ "ON v.M_PriceList_Version_ID=pp.M_PriceList_Version_ID JOIN M_PriceList pl "
+						+ "ON pl.M_PriceList_ID=v.M_PriceList_ID WHERE pp.M_Product_ID=? AND pp.IsActive='Y' "
+						+ "AND v.IsActive='Y' AND pl.IsActive='Y' AND pl.IsSOPriceList='N' AND v.ValidFrom<=now() "
+						+ "AND pl.AD_Client_ID IN (0," + clientId + ") AND COALESCE(pp.PriceStd,0)>0 "
+						+ "ORDER BY pl.IsDefault DESC, v.ValidFrom DESC LIMIT 1");
+		decRate.setValue(p);
+	}
+
+	private BigDecimal firstPositive(String... sqls) {
+		for (String sql : sqls) {
+			try {
+				BigDecimal v = DB.getSQLValueBD(null, sql, pProduct.id);
+				if (v != null && v.signum() > 0)
+					return v;
+			} catch (Exception e) {
+				log.log(Level.WARNING, sql, e);
+			}
+		}
+		return null;
+	}
+
+	// =====================================================================
+	// attachments pop-up
+	// =====================================================================
+
+	private void updateAttachLabel() {
+		lblAttach.setValue(attachments.isEmpty() ? "No file attached" : attachments.size() + " file(s) attached");
+	}
+
+	private static String sizeOf(Media m) {
+		long n;
+		try {
+			n = m.isBinary() ? m.getByteData().length : m.getStringData().length();
+		} catch (Exception e) {
+			return "";
+		}
+		if (n < 1024)
+			return n + " B";
+		if (n < 1024 * 1024)
+			return (n + 512) / 1024 + " KB";
+		return String.format("%.1f MB", n / (1024.0 * 1024.0));
+	}
+
+	/** pop-up: add files and see (or remove) the ones already attached */
+	private void openAttachments() {
+		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+		win.setTitle("Attachment");
+		win.setWidth("560px");
+		win.setClosable(true);
+		win.setAttribute(org.zkoss.zul.Window.MODE_KEY, org.zkoss.zul.Window.MODE_HIGHLIGHTED);
+		org.mycompany.requisition.ui.XxTheme.apply(win);
+
+		Div body = new Div();
+		body.setStyle("padding:12px;");
+		final Listbox lb = new Listbox();
+		lb.setHeight("240px");
+		Listhead lh = new Listhead();
+		Listheader h0 = new Listheader("#");
+		h0.setWidth("40px");
+		lh.appendChild(h0);
+		Listheader h1 = new Listheader("File name");
+		h1.setHflex("1");
+		lh.appendChild(h1);
+		Listheader h2 = new Listheader("Size");
+		h2.setWidth("90px");
+		lh.appendChild(h2);
+		Listheader h3 = new Listheader("");
+		h3.setWidth("60px");
+		lh.appendChild(h3);
+		lb.appendChild(lh);
+
+		final Label count = new Label();
+		final Runnable[] refresh = new Runnable[1];
+		refresh[0] = () -> {
+			while (lb.getItemCount() > 0)
+				lb.removeItemAt(0);
+			int n = 0;
+			for (final Media m : attachments) {
+				n++;
+				Listitem li = new Listitem();
+				li.appendChild(new Listcell(String.valueOf(n)));
+				li.appendChild(new Listcell(m.getName()));
+				li.appendChild(new Listcell(sizeOf(m)));
+				Listcell rm = new Listcell();
+				Button x = new Button("✖");
+				x.setSclass("btn btn-sm btn-outline-danger");
+				x.addEventListener(Events.ON_CLICK, ev -> {
+					attachments.remove(m);
+					refresh[0].run();
+				});
+				rm.appendChild(x);
+				li.appendChild(rm);
+				lb.appendChild(li);
+			}
+			count.setValue(attachments.isEmpty() ? "No file attached" : attachments.size() + " file(s) attached");
+			updateAttachLabel();
+		};
+
+		Button add = new Button("+  Add File");
+		add.setSclass("btn btn-primary");
+		add.setUpload("true,multiple=true");
+		add.addEventListener(Events.ON_UPLOAD, ev -> {
+			if (ev instanceof UploadEvent) {
+				Media[] ms = ((UploadEvent) ev).getMedias();
+				if (ms != null)
+					for (Media m : ms)
+						if (m != null)
+							attachments.add(m);
+				refresh[0].run();
+			}
+		});
+		Button done = new Button("Close");
+		done.setSclass("btn btn-danger");
+		done.addEventListener(Events.ON_CLICK, ev -> win.detach());
+
+		Div bar = new Div();
+		bar.setStyle("display:flex;align-items:center;gap:10px;margin-bottom:8px;");
+		bar.appendChild(add);
+		bar.appendChild(count);
+		Div foot = new Div();
+		foot.setStyle("text-align:right;margin-top:10px;");
+		foot.appendChild(done);
+
+		body.appendChild(bar);
+		body.appendChild(lb);
+		body.appendChild(foot);
+		win.appendChild(body);
+		refresh[0].run();
+		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
 	}
 
 	/** a product picked first fills its categories */
@@ -1018,9 +1209,14 @@ public class WRequisitionEntryForm extends ADForm {
 
 			trx.commit(true);
 			final String docNo = req.getDocumentNo();
+			final int reqId = req.get_ID();
 			resetForm();
-			Messagebox.show("Requisition " + docNo + " has been saved.", "Requisition", Messagebox.OK,
-					Messagebox.INFORMATION);
+			Messagebox.show("Requisition " + docNo + " has been saved.\n\nDo you want to view the Requisition PDF?",
+					"Requisition", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
+					(org.zkoss.zk.ui.event.Event ev) -> {
+						if (Messagebox.ON_YES.equals(ev.getName()))
+							showPdf(reqId, docNo);
+					});
 		} catch (Exception ex) {
 			trx.rollback();
 			log.log(Level.SEVERE, ex.getMessage(), ex);
@@ -1031,11 +1227,102 @@ public class WRequisitionEntryForm extends ADForm {
 		}
 	}
 
+	// =====================================================================
+	// PDF
+	// =====================================================================
+
+	private static final String PDF_JRXML = "/org/mycompany/requisition/PurchaseRequisition.jrxml";
+
+	/** a logo from the bundle written to a temp file (the report takes a file path) */
+	private String logoPath(String resource) {
+		try (java.io.InputStream in = WRequisitionEntryForm.class.getResourceAsStream(resource)) {
+			if (in == null)
+				return "";
+			java.io.File f = java.io.File.createTempFile("xxlogo", ".png");
+			f.deleteOnExit();
+			java.nio.file.Files.copy(in, f.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+			return f.getAbsolutePath();
+		} catch (Exception e) {
+			return "";
+		}
+	}
+
+	private byte[] buildPdf(int requisitionId) throws Exception {
+		try (java.io.InputStream jr = WRequisitionEntryForm.class.getResourceAsStream(PDF_JRXML)) {
+			if (jr == null)
+				throw new AdempiereException(PDF_JRXML + " not found in the bundle");
+			net.sf.jasperreports.engine.JasperReport report = net.sf.jasperreports.engine.JasperCompileManager
+					.compileReport(jr);
+			java.util.Map<String, Object> params = new java.util.HashMap<String, Object>();
+			params.put("RECORD_ID", Integer.valueOf(requisitionId));
+			params.put("LOGO_LEFT", logoPath("/org/mycompany/requisition/rfqapproval/logo_left.png"));
+			params.put("LOGO_RIGHT", logoPath("/org/mycompany/requisition/rfqapproval/logo_right.png"));
+			java.sql.Connection conn = DB.getConnectionRO();
+			try {
+				net.sf.jasperreports.engine.JasperPrint print = net.sf.jasperreports.engine.JasperFillManager
+						.fillReport(report, params, conn);
+				return net.sf.jasperreports.engine.JasperExportManager.exportReportToPdf(print);
+			} finally {
+				try {
+					conn.close();
+				} catch (Exception ignore) {
+					// ignore
+				}
+			}
+		}
+	}
+
+	/** pop-up viewer with the requisition PDF and a Download button */
+	private void showPdf(int requisitionId, String docNo) {
+		try {
+			byte[] pdf = buildPdf(requisitionId);
+			final org.zkoss.util.media.AMedia media = new org.zkoss.util.media.AMedia(
+					"Requisition_" + docNo + ".pdf", "pdf", "application/pdf", pdf);
+
+			final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+			win.setTitle("Requisition " + docNo);
+			win.setWidth("900px");
+			win.setHeight("92%");
+			win.setClosable(true);
+			win.setSizable(true);
+			win.setAttribute(org.zkoss.zul.Window.MODE_KEY, org.zkoss.zul.Window.MODE_HIGHLIGHTED);
+			org.mycompany.requisition.ui.XxTheme.apply(win);
+
+			Div body = new Div();
+			body.setStyle("height:100%;display:flex;flex-direction:column;");
+			org.zkoss.zul.Iframe frame = new org.zkoss.zul.Iframe();
+			frame.setContent(media);
+			frame.setStyle("flex:1 1 auto;width:100%;min-height:500px;border:1px solid #dee2e6;");
+			ZKUpdateUtil.setHflex(frame, "1");
+			ZKUpdateUtil.setVflex(frame, "1");
+
+			Div bar = new Div();
+			bar.setStyle("text-align:right;padding:8px 0 0;");
+			Button dl = new Button("Download");
+			dl.setSclass("btn btn-primary");
+			dl.addEventListener(Events.ON_CLICK, ev -> org.zkoss.zul.Filedownload.save(media));
+			Button cl = new Button("Close");
+			cl.setSclass("btn btn-danger");
+			cl.setStyle("margin-left:6px;");
+			cl.addEventListener(Events.ON_CLICK, ev -> win.detach());
+			bar.appendChild(dl);
+			bar.appendChild(cl);
+
+			body.appendChild(frame);
+			body.appendChild(bar);
+			win.appendChild(body);
+			org.adempiere.webui.apps.AEnv.showCenterScreen(win);
+		} catch (Exception e) {
+			log.log(Level.SEVERE, e.getMessage(), e);
+			warn("Could not create the PDF:\n" + e.getMessage());
+		}
+	}
+
 	private void resetForm() {
 		lines.clear();
 		refreshLines();
 		attachments.clear();
-		lblAttach.setValue("");
+		updateAttachLabel();
 		cbType.reset();
 		if (cbType.count() == 1)
 			cbType.selectAt(0);
