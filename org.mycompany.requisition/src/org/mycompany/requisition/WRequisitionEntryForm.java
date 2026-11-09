@@ -694,7 +694,7 @@ public class WRequisitionEntryForm extends ADForm {
 				+ "WHEN '9' THEN 4 WHEN '1' THEN 5 ELSE 6 END");
 
 		Date today = new Date();
-		dtDoc.setValue(today);
+		dtDoc.setRawValue(today);
 		// a document type that is the only one is the obvious choice
 		if (cbType.count() == 1)
 			cbType.selectAt(0);
@@ -823,7 +823,8 @@ public class WRequisitionEntryForm extends ADForm {
 	}
 
 	private Timestamp ts(Datebox d) {
-		Date v = d.getValue();
+		Object raw = d.getRawValue();
+		Date v = raw instanceof Date ? (Date) raw : null;
 		return v == null ? null : new Timestamp(v.getTime());
 	}
 
@@ -1046,9 +1047,9 @@ public class WRequisitionEntryForm extends ADForm {
 		pParent.clear(false);
 		pSub.clear(false);
 		pProduct.clear(false);
-		dtDoc.setValue(new Date());
-		dtRequired.setValue((Date) null);
-		dtLine.setValue((Date) null);
+		dtDoc.setRawValue(new Date());
+		dtRequired.setRawValue(null);
+		dtLine.setRawValue(null);
 		txtDescription.setValue("");
 		txtSpec.setValue("");
 		decQty.setValue((BigDecimal) null);
