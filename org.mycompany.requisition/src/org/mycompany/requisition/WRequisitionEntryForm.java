@@ -87,7 +87,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "3";
+	private static final String CSS_VERSION = "4";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -232,6 +232,21 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:flex-end; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 """;
 
+	/**
+	 * Date fields of this form: a click in the box, or Enter while it has the focus, opens the
+	 * calendar (no need to hit the small icon). One document-level listener, installed once.
+	 */
+	private static final String DATE_JS = "(function(){if(window.__xxDateV==='2')return;window.__xxDateV='2';"
+			+ "function openIt(inp){var w=null;try{w=zk.Widget.$(inp);}catch(x){}if(!w)return;"
+			+ "if(w.isOpen&&w.isOpen())return;"
+			+ "if(typeof w.open==='function'){w.open();return;}"
+			+ "var b=w.$n&&w.$n('btn');if(b)b.click();}"
+			+ "function mine(t){return t&&t.classList&&t.classList.contains('z-datebox-input')&&t.closest&&t.closest('.xx-req');}"
+			+ "document.addEventListener('click',function(e){if(mine(e.target))openIt(e.target);},true);"
+			+ "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&mine(e.target)){"
+			+ "var w=null;try{w=zk.Widget.$(e.target);}catch(x){}"
+			+ "if(w&&!(w.isOpen&&w.isOpen())){e.preventDefault();e.stopPropagation();openIt(e.target);}}},true);})();";
+
 	private void installCss() {
 		if (Executions.getCurrent() == null)
 			return;
@@ -240,6 +255,7 @@ public class WRequisitionEntryForm extends ADForm {
 			Clients.evalJavaScript("(function(){var V='" + CSS_VERSION + "';var s=document.getElementById('xx-req-css');"
 					+ "if(!s){s=document.createElement('style');s.id='xx-req-css';document.head.appendChild(s);}"
 					+ "if(s.getAttribute('data-v')!==V){s.setAttribute('data-v',V);s.textContent='" + css + "';}})();");
+			Clients.evalJavaScript(DATE_JS);
 		} catch (Exception e) {
 			log.warning("requisition css not installed: " + e);
 		}
@@ -321,19 +337,6 @@ public class WRequisitionEntryForm extends ADForm {
 		main.appendChild(foot);
 
 		wireEvents();
-		wireDateboxes();
-	}
-
-	/**
-	 * Date fields: a click in the box, or Enter while the box has the focus, opens the calendar
-	 * (no need to hit the small calendar icon). Browser side only.
-	 */
-	private void wireDateboxes() {
-		for (Datebox d : new Datebox[] { dtDoc, dtRequired, dtLine })
-			js("zk.afterMount(function(){var w=zk.Widget.$('#" + d.getUuid() + "');"
-					+ "if(!w||!w.$n('real'))return;var i=w.$n('real');if(i.__xxd)return;i.__xxd=1;"
-					+ "i.addEventListener('click',function(){if(w.open&&!w.isOpen())w.open();});"
-					+ "i.addEventListener('keydown',function(e){if(e.key==='Enter'&&w.open&&!w.isOpen()){e.preventDefault();e.stopPropagation();w.open();}},true);});");
 	}
 
 	/** header card: 4 fields per row, same order as the screen */
