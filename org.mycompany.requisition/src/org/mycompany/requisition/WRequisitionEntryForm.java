@@ -920,7 +920,13 @@ public class WRequisitionEntryForm extends ADForm {
 				n++;
 				Listitem li = new Listitem();
 				li.appendChild(new Listcell(String.valueOf(n)));
-				li.appendChild(new Listcell(m.getName()));
+				Listcell nameCell = new Listcell();
+				org.zkoss.zul.A link = new org.zkoss.zul.A(m.getName());
+				link.setStyle("color:#0d6efd;text-decoration:underline;cursor:pointer;font-weight:600;");
+				link.setTooltiptext("Click to open");
+				link.addEventListener(Events.ON_CLICK, ev -> openMedia(m));
+				nameCell.appendChild(link);
+				li.appendChild(nameCell);
 				li.appendChild(new Listcell(sizeOf(m)));
 				Listcell rm = new Listcell();
 				Button x = new Button("✖");
@@ -1282,43 +1288,61 @@ public class WRequisitionEntryForm extends ADForm {
 			final org.zkoss.util.media.AMedia media = new org.zkoss.util.media.AMedia(
 					"Requisition_" + docNo + ".pdf", "pdf", "application/pdf", pdf);
 
-			final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
-			win.setTitle("Requisition " + docNo);
-			win.setWidth("900px");
-			win.setHeight("92%");
-			win.setClosable(true);
-			win.setSizable(true);
-			win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
-			org.mycompany.requisition.ui.XxTheme.apply(win);
-
-			Div body = new Div();
-			body.setStyle("height:100%;display:flex;flex-direction:column;");
-			org.zkoss.zul.Iframe frame = new org.zkoss.zul.Iframe();
-			frame.setContent(media);
-			frame.setStyle("flex:1 1 auto;width:100%;min-height:500px;border:1px solid #dee2e6;");
-			ZKUpdateUtil.setHflex(frame, "1");
-			ZKUpdateUtil.setVflex(frame, "1");
-
-			Div bar = new Div();
-			bar.setStyle("text-align:right;padding:8px 0 0;");
-			Button dl = new Button("Download");
-			dl.setSclass("btn btn-primary");
-			dl.addEventListener(Events.ON_CLICK, ev -> org.zkoss.zul.Filedownload.save(media));
-			Button cl = new Button("Close");
-			cl.setSclass("btn btn-danger");
-			cl.setStyle("margin-left:6px;");
-			cl.addEventListener(Events.ON_CLICK, ev -> win.detach());
-			bar.appendChild(dl);
-			bar.appendChild(cl);
-
-			body.appendChild(frame);
-			body.appendChild(bar);
-			win.appendChild(body);
-			org.adempiere.webui.apps.AEnv.showCenterScreen(win);
+			showViewer("Requisition " + docNo, media);
 		} catch (Exception e) {
 			log.log(Level.SEVERE, e.getMessage(), e);
 			warn("Could not create the PDF:\n" + e.getMessage());
 		}
+	}
+
+	/** an attached file: PDF, image and text open in a viewer pop-up, anything else is downloaded */
+	private void openMedia(Media m) {
+		String ct = m.getContentType() == null ? "" : m.getContentType().toLowerCase();
+		String nm = m.getName() == null ? "" : m.getName().toLowerCase();
+		boolean viewable = ct.contains("pdf") || ct.startsWith("image/") || ct.startsWith("text/")
+				|| nm.endsWith(".pdf") || nm.endsWith(".png") || nm.endsWith(".jpg") || nm.endsWith(".jpeg")
+				|| nm.endsWith(".gif") || nm.endsWith(".txt");
+		if (viewable)
+			showViewer(m.getName(), m);
+		else
+			org.zkoss.zul.Filedownload.save(m);
+	}
+
+	/** pop-up viewer (iframe) with a Download button */
+	private void showViewer(String title, final Media media) {
+		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+		win.setTitle(title);
+		win.setWidth("900px");
+		win.setHeight("92%");
+		win.setClosable(true);
+		win.setSizable(true);
+		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
+		org.mycompany.requisition.ui.XxTheme.apply(win);
+
+		Div body = new Div();
+		body.setStyle("height:100%;display:flex;flex-direction:column;");
+		org.zkoss.zul.Iframe frame = new org.zkoss.zul.Iframe();
+		frame.setContent(media);
+		frame.setStyle("flex:1 1 auto;width:100%;min-height:500px;border:1px solid #dee2e6;");
+		ZKUpdateUtil.setHflex(frame, "1");
+		ZKUpdateUtil.setVflex(frame, "1");
+
+		Div bar = new Div();
+		bar.setStyle("text-align:right;padding:8px 0 0;");
+		Button dl = new Button("Download");
+		dl.setSclass("btn btn-primary");
+		dl.addEventListener(Events.ON_CLICK, ev -> org.zkoss.zul.Filedownload.save(media));
+		Button cl = new Button("Close");
+		cl.setSclass("btn btn-danger");
+		cl.setStyle("margin-left:6px;");
+		cl.addEventListener(Events.ON_CLICK, ev -> win.detach());
+		bar.appendChild(dl);
+		bar.appendChild(cl);
+
+		body.appendChild(frame);
+		body.appendChild(bar);
+		win.appendChild(body);
+		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
 	}
 
 	private void resetForm() {
