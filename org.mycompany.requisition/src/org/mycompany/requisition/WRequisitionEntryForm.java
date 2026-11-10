@@ -96,7 +96,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "9";
+	private static final String CSS_VERSION = "10";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -108,8 +108,8 @@ public class WRequisitionEntryForm extends ADForm {
 	/** the Requisition (master data) card: can be hidden to give room to the lines */
 	private Div headerCard;
 	private final Div toggleBar = new Div();
-	private final Button btnHideInfo = new Button("\u25B2  Hide Requisition Info");
-	private final Button btnShowInfo = new Button("\u25BC  Show Requisition Info");
+	private final Button btnHideInfo = new Button("\u25B2  Hide Requisition Header");
+	private final Button btnShowInfo = new Button("\u25BC  Show Requisition Header");
 	private final Label lblHeadSummary = new Label();
 	private Choice cbType;
 	private Choice cbLocation;
@@ -135,7 +135,8 @@ public class WRequisitionEntryForm extends ADForm {
 	private final Label lblUom = new Label();
 	private final Label lblAvail = new Label("0");
 	private final Decimalbox decQty = new Decimalbox();
-	private final Decimalbox decRate = new Decimalbox();
+	/** rate of the product picked (last price); not a field: it is edited in the line table */
+	private BigDecimal entryRate;
 	private final Button btnAdd = new Button("+  Add Product");
 	/** totals row of the line table */
 	private final Label lblFootCount = new Label("0 products");
@@ -293,6 +294,8 @@ public class WRequisitionEntryForm extends ADForm {
 /* totals row at the end of the line table */
 .xx-req .z-listbox .z-listfooter { background:#e7f1ff !important; border-top:2px solid #0d6efd !important; border-right:1px solid #b6d4fe !important; font-weight:700; }
 .xx-req .z-listbox .z-listfooter .z-label { font-size:.82rem; font-weight:700; color:#0a2e6b; }
+/* the banner and the Hide / Show Requisition Header button stay in view while the page scrolls */
+.xx-req .xx-sticky { position:sticky; top:0; z-index:25; background:#f1f4f9; padding-bottom:4px; box-shadow:0 2px 4px rgba(16,24,40,.06); }
 /* hide / show the Requisition (master data) card */
 .xx-req .xx-toggle { display:flex; align-items:center; justify-content:flex-end; gap:.6rem; margin:6px 10px 0; }
 .xx-req .xx-sum { font-size:.78rem; font-weight:600; color:#084298; background:#e7f1ff; border:1px solid #b6d4fe; padding:.15rem .7rem; border-radius:999px; }
@@ -339,25 +342,20 @@ public class WRequisitionEntryForm extends ADForm {
 			+ "if(w&&!(w.isOpen&&w.isOpen())){e.preventDefault();e.stopPropagation();openIt(e.target);}}},true);})();";
 
 	/**
-	 * Drop-down / search fields of this form: a click inside the text box opens the list (the
-	 * list itself is filled by the server when the field gets the focus). Clicking the small
-	 * arrow keeps its normal open/close behaviour.
+	 * Drop-down / search fields of this form: a click in an EMPTY text box opens the list, and
+	 * Up / Down opens it when it is closed (then the arrow keys move through the items). Once a
+	 * value is chosen a click does not drop the other options again. The small arrow button keeps
+	 * its normal open / close behaviour.
 	 */
-	private static final String COMBO_JS = "(function(){if(window.__xxComboV==='1')return;window.__xxComboV='1';"
-			+ "document.addEventListener('click',function(e){var t=e.target;"
-			+ "if(!(t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req')))return;"
-			+ "if(t.disabled)return;var w=null;try{w=zk.Widget.$(t);}catch(x){}"
-			+ "if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
-
-	/**
-	 * A form button (Attachment, + Add Product, Save, All Requisition ...) that has the focus
-	 * (Tab) does its job on Enter, not only on a mouse click.
-	 */
-	private static final String ENTER_JS = "(function(){if(window.__xxEnterV==='1')return;window.__xxEnterV='1';"
-			+ "document.addEventListener('keydown',function(e){"
-			+ "if(e.key!=='Enter'||e.ctrlKey||e.altKey||e.shiftKey)return;var t=e.target;"
-			+ "if(!(t&&t.tagName==='BUTTON'&&t.closest&&t.closest('.xx-req')))return;"
-			+ "if(t.disabled)return;e.preventDefault();e.stopPropagation();t.click();},true);})();";
+	private static final String COMBO_JS = "(function(){if(window.__xxComboV==='2')return;window.__xxComboV='2';"
+			+ "function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}"
+			+ "function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}"
+			+ "document.addEventListener('click',function(e){var t=e.target;if(!mine(t)||t.disabled)return;"
+			+ "if(t.value&&t.value.length)return;"
+			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);"
+			+ "document.addEventListener('keydown',function(e){if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;"
+			+ "var t=e.target;if(!mine(t)||t.disabled)return;"
+			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
 
 	private void installCss() {
 		if (Executions.getCurrent() == null)
@@ -447,7 +445,10 @@ public class WRequisitionEntryForm extends ADForm {
 		banner.setSclass("xx-banner");
 		banner.setVisible(false);
 		banner.appendChild(lblBanner);
-		main.appendChild(banner);
+		// banner + Hide / Show button share one bar that sticks to the top while scrolling
+		Div sticky = new Div();
+		sticky.setSclass("xx-sticky");
+		sticky.appendChild(banner);
 
 		// arrow button: hide / show the Requisition card
 		toggleBar.setSclass("xx-toggle");
@@ -459,7 +460,8 @@ public class WRequisitionEntryForm extends ADForm {
 		toggleBar.appendChild(lblHeadSummary);
 		toggleBar.appendChild(btnHideInfo);
 		toggleBar.appendChild(btnShowInfo);
-		main.appendChild(toggleBar);
+		sticky.appendChild(toggleBar);
+		main.appendChild(sticky);
 
 		main.appendChild(buildHeader());
 		main.appendChild(buildLineEntry());
@@ -492,31 +494,34 @@ public class WRequisitionEntryForm extends ADForm {
 	/** header card: 4 fields per row, same order as the screen */
 	private Div buildHeader() {
 		Div g = new Div();
-		g.setSclass("xx-grid");
-		g.appendChild(field("Organization", true, pOrg.box, 1));
-		g.appendChild(field("Type", true, cbType.box, 1));
-		g.appendChild(field("Location", true, cbLocation.box, 1));
-		g.appendChild(field("Warehouse", false, pWarehouse.box, 1));
-		g.appendChild(field("User", false, readonly(lblUser), 1));
-		g.appendChild(field("Priority", true, cbPriority.box, 1));
+		g.setSclass("xx-grid xx-grid24");
+		// row 1
+		g.appendChild(field24("Organization", true, pOrg.box, 6));
+		g.appendChild(field24("Segment", true, cbSegment.box, 6));
+		g.appendChild(field24("Location", true, cbLocation.box, 6));
+		g.appendChild(field24("Department", true, pDept.box, 6));
+		// row 2
+		g.appendChild(field24("User", false, readonly(lblUser), 6));
+		g.appendChild(field24("Warehouse", false, pWarehouse.box, 6));
 		ZKUpdateUtil.setWidth(dtDoc, "100%");
-		g.appendChild(field("Document Date", true, dtDoc, 1));
+		g.appendChild(field24("Document Date", true, dtDoc, 6));
 		ZKUpdateUtil.setWidth(dtRequired, "100%");
-		g.appendChild(field("Date Required", true, dtRequired, 1));
-
+		g.appendChild(field24("Date Required", true, dtRequired, 6));
+		// row 3: same size fields
+		g.appendChild(field24("Requisition Type", true, cbType.box, 6));
+		g.appendChild(field24("Priority", true, cbPriority.box, 6));
 		txtDescription.setMultiline(true);
 		txtDescription.setRows(1);
 		txtDescription.setSclass("form-control xx-desc"); // one line like the others; drag the corner to enlarge
 		ZKUpdateUtil.setWidth(txtDescription, "100%");
-		g.appendChild(field("Description", false, txtDescription, 3));
-
+		g.appendChild(field24("Description", false, txtDescription, 6));
 		btnAttach.setSclass("btn btn-outline-primary btn-block");
 		lblAttach.setSclass("xx-attach-note");
 		updateAttachLabel();
 		Div att = new Div();
 		att.appendChild(btnAttach);
 		att.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, att, 1));
+		g.appendChild(field24("Attachment", false, att, 6));
 
 		headerCard = card("Requisition", g);
 		return headerCard;
@@ -526,12 +531,15 @@ public class WRequisitionEntryForm extends ADForm {
 	private Div buildLineEntry() {
 		Div g = new Div();
 		g.setSclass("xx-grid xx-grid24");
-		// row 1: four equal fields
-		g.appendChild(field24("Segment", true, cbSegment.box, 6));
-		g.appendChild(field24("Department", true, pDept.box, 6));
-		ZKUpdateUtil.setWidth(dtLine, "100%");
-		g.appendChild(field24("Date Required (Line)", false, dtLine, 6));
-		// Product Specification: plain text, 2 lines, same size as the others (opens up while typing)
+		// row 1: Parent Category | Sub-Category | Product (wide), Qty | UOM (small)
+		g.appendChild(field24("Parent Category", true, pParent.box, 6));
+		g.appendChild(field24("Sub-Category", false, pSub.box, 6));
+		g.appendChild(field24("Product", true, pProduct.box, 6));
+		ZKUpdateUtil.setWidth(decQty, "100%");
+		decQty.setSclass("form-control");
+		g.appendChild(field24("Qty", true, decQty, 3));
+		g.appendChild(field24("UOM", false, readonly(lblUom), 3));
+		// row 2: Product Specification (2 lines, same size), Date Required (Line), Available Qty, Add Product
 		txtSpec.setMultiline(true);
 		txtSpec.setRows(2);
 		txtSpec.setSclass("form-control xx-spec");
@@ -540,18 +548,8 @@ public class WRequisitionEntryForm extends ADForm {
 		specWrap.setSclass("xx-specwrap");
 		specWrap.appendChild(txtSpec);
 		g.appendChild(field24("Product Specification", false, specWrap, 6));
-		// row 2: Parent Category | Sub-Category | Product (wide), UOM | Qty (small)
-		g.appendChild(field24("Parent Category", true, pParent.box, 6));
-		g.appendChild(field24("Sub-Category", false, pSub.box, 6));
-		g.appendChild(field24("Product", true, pProduct.box, 6));
-		g.appendChild(field24("UOM", false, readonly(lblUom), 3));
-		ZKUpdateUtil.setWidth(decQty, "100%");
-		decQty.setSclass("form-control");
-		g.appendChild(field24("Qty", true, decQty, 3));
-		// row 3
-		ZKUpdateUtil.setWidth(decRate, "100%");
-		decRate.setSclass("form-control");
-		g.appendChild(field24("Rate", false, decRate, 6));
+		ZKUpdateUtil.setWidth(dtLine, "100%");
+		g.appendChild(field24("Date Required (Line)", false, dtLine, 6));
 		g.appendChild(field24("Available Qty", false, readonly(lblAvail), 6));
 		btnAdd.setSclass("btn btn-primary btn-block");
 		g.appendChild(field24("\u00A0", false, btnAdd, 6));
@@ -561,10 +559,10 @@ public class WRequisitionEntryForm extends ADForm {
 
 	private void buildLineList() {
 		Listhead head = new Listhead();
-		String[][] cols = { { "Line", "55px" }, { "Segment", "130px" }, { "Department", "140px" },
-				{ "Product Code", "120px" }, { "Product Name", null }, { "UOM", "60px" },
-				{ "Specification", "170px" }, { "Date Required", "100px" }, { "Available", "80px" },
-				{ "Qty", "100px" }, { "Rate", "80px" }, { "Amount", "95px" }, { "", "50px" } };
+		String[][] cols = { { "Line", "55px" }, { "Product Code", "130px" }, { "Product Name", null },
+				{ "UOM", "65px" }, { "Specification", "220px" }, { "Date Required", "105px" },
+				{ "Available", "85px" }, { "Qty", "105px" }, { "Rate", "105px" }, { "Amount", "100px" },
+				{ "", "55px" } };
 		for (String[] c : cols) {
 			Listheader h = new Listheader(c[0]);
 			if (c[1] != null)
@@ -580,11 +578,11 @@ public class WRequisitionEntryForm extends ADForm {
 			Listfooter f = new Listfooter();
 			if (i == 0)
 				f.appendChild(new Label("Total"));
-			else if (i == 4)
+			else if (i == 2)
 				f.appendChild(lblFootCount);
-			else if (i == 9)
+			else if (i == 7)
 				f.appendChild(lblFootQty);
-			else if (i == 11)
+			else if (i == 9)
 				f.appendChild(lblFootAmt);
 			foot.appendChild(f);
 		}
@@ -688,6 +686,7 @@ public class WRequisitionEntryForm extends ADForm {
 		String value = "";
 		String name = "";
 		private String typed = "";
+		Runnable onChange;
 
 		Choice() {
 			box.addEventListener(Events.ON_CHANGING, e -> {
@@ -698,11 +697,14 @@ public class WRequisitionEntryForm extends ADForm {
 				if (((OpenEvent) e).isOpen())
 					show(typed);
 			});
-			// click or Tab into the field: the whole list
+			// click or Tab into an EMPTY field: the whole list. With a value chosen the other options
+			// are not dropped down again (Up / Down, the arrow button or typing opens the list)
 			box.addEventListener(Events.ON_FOCUS, e -> {
 				typed = "";
-				show("");
-				openList(box);
+				if (value.isEmpty()) {
+					show("");
+					openList(box);
+				}
 				box.select();
 			});
 			box.addEventListener(Events.ON_SELECT, e -> {
@@ -710,21 +712,26 @@ public class WRequisitionEntryForm extends ADForm {
 				if (it == null)
 					return;
 				Object v = it.getValue();
+				String oldValue = value;
 				value = v == null ? "" : String.valueOf(v);
 				name = it.getLabel();
 				typed = "";
-				show(""); // next click shows the whole list again
+				show(""); // the arrow keys / the arrow button show the whole list again
 				box.setValue(name);
+				if (!oldValue.equals(value) && onChange != null)
+					onChange.run();
 			});
 			// leaving the field: take what was typed (first name that starts with it)
 			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
-			// Enter: nothing typed (or the value is already chosen) -> drop the whole list down
+			// Enter on an empty field: the whole list; on a chosen value: nothing more to do
 			box.addEventListener(Events.ON_OK, e -> {
 				String t = box.getValue() == null ? "" : box.getValue().trim();
-				if (t.isEmpty() || t.equals(name)) {
+				if (t.isEmpty()) {
 					typed = "";
 					show("");
 					openList(box);
+				} else if (t.equals(name)) {
+					closeList(box);
 				} else {
 					resolve(t);
 				}
@@ -734,10 +741,13 @@ public class WRequisitionEntryForm extends ADForm {
 		private void resolve(String text) {
 			String t = text == null ? "" : text.trim();
 			typed = "";
+			String oldValue = value;
 			if (t.isEmpty()) {
 				value = "";
 				name = "";
 				box.setValue("");
+				if (!oldValue.isEmpty() && onChange != null)
+					onChange.run();
 				return;
 			}
 			if (!value.isEmpty() && t.equals(name))
@@ -762,6 +772,8 @@ public class WRequisitionEntryForm extends ADForm {
 			}
 			box.setValue(name); // no match: back to the last good value
 			closeList(box);
+			if (!oldValue.equals(value) && onChange != null)
+				onChange.run();
 		}
 
 		void add(String v, String n) {
@@ -848,11 +860,14 @@ public class WRequisitionEntryForm extends ADForm {
 				if (((OpenEvent) e).isOpen())
 					load(typed);
 			});
-			// click or Tab into the field: the list of this field
+			// click or Tab into an EMPTY field: the list of this field. With a value chosen the other
+			// options are not dropped down again (Up / Down, the arrow button or typing opens the list)
 			box.addEventListener(Events.ON_FOCUS, e -> {
 				typed = "";
-				load("");
-				openList(box);
+				if (id <= 0) {
+					load("");
+					openList(box);
+				}
 				box.select();
 			});
 			box.addEventListener(Events.ON_SELECT, e -> {
@@ -871,13 +886,15 @@ public class WRequisitionEntryForm extends ADForm {
 				}
 			});
 			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
-			// Enter: nothing typed (or the value is already chosen) -> drop the list down
+			// Enter on an empty field: the list; on a chosen value: nothing more to do
 			box.addEventListener(Events.ON_OK, e -> {
 				String t = box.getValue() == null ? "" : box.getValue().trim();
-				if (t.isEmpty() || t.equals(display())) {
+				if (t.isEmpty()) {
 					typed = "";
 					load("");
 					openList(box);
+				} else if (t.equals(display())) {
+					closeList(box);
 				} else {
 					resolve(t);
 				}
@@ -1041,8 +1058,12 @@ public class WRequisitionEntryForm extends ADForm {
 		pWarehouse.onChange = this::productChanged;
 
 		btnAdd.addEventListener(Events.ON_CLICK, e -> addLine());
-		decQty.addEventListener(Events.ON_OK, e -> decRate.focus());
-		decRate.addEventListener(Events.ON_OK, e -> addLine());
+		decQty.addEventListener(Events.ON_OK, e -> addLine());
+		// Segment / Department belong to the header and go to every line
+		cbSegment.onChange = this::headerSegDeptChanged;
+		pDept.onChange = this::headerSegDeptChanged;
+		// the header Date Required is the default Date Required (Line); the user may change it
+		dtRequired.addEventListener(Events.ON_CHANGE, e -> syncLineDate());
 		btnOk.addEventListener(Events.ON_CLICK, e -> save());
 		btnCancel.addEventListener(Events.ON_CLICK, e -> close());
 		btnAttach.addEventListener(Events.ON_CLICK, e -> openAttachments());
@@ -1050,6 +1071,23 @@ public class WRequisitionEntryForm extends ADForm {
 		btnNew.addEventListener(Events.ON_CLICK, e -> newRequisition());
 		btnHideInfo.addEventListener(Events.ON_CLICK, e -> setHeaderVisible(false));
 		btnShowInfo.addEventListener(Events.ON_CLICK, e -> setHeaderVisible(true));
+	}
+
+	/** the header Date Required is loaded into Date Required (Line) */
+	private void syncLineDate() {
+		dtLine.setValue(dtRequired.getValue());
+	}
+
+	/** header Segment / Department changed: every line follows */
+	private void headerSegDeptChanged() {
+		if (readOnly)
+			return;
+		for (Line l : lines) {
+			l.segVal = selValue(cbSegment);
+			l.segName = selName(cbSegment);
+			l.deptId = pDept.id;
+			l.deptName = pDept.name;
+		}
 	}
 
 	/** hide / show the Requisition card; hidden, a one line summary of it stays next to the button */
@@ -1062,6 +1100,10 @@ public class WRequisitionEntryForm extends ADForm {
 			List<String> parts = new ArrayList<String>();
 			if (pOrg.id > 0)
 				parts.add(pOrg.name);
+			if (!cbSegment.name.isEmpty())
+				parts.add(cbSegment.name);
+			if (pDept.id > 0)
+				parts.add(pDept.name);
 			if (!cbType.name.isEmpty())
 				parts.add(cbType.name);
 			if (!cbLocation.name.isEmpty())
@@ -1097,6 +1139,7 @@ public class WRequisitionEntryForm extends ADForm {
 		if (pProduct.id <= 0) {
 			lblUom.setValue("");
 			lblAvail.setValue("0");
+			entryRate = null;
 			return;
 		}
 		lblUom.setValue(str("SELECT u.Name FROM M_Product p JOIN C_UOM u ON u.C_UOM_ID=p.C_UOM_ID "
@@ -1126,7 +1169,7 @@ public class WRequisitionEntryForm extends ADForm {
 						+ "AND v.IsActive='Y' AND pl.IsActive='Y' AND pl.IsSOPriceList='N' AND v.ValidFrom<=now() "
 						+ "AND pl.AD_Client_ID IN (0," + clientId + ") AND COALESCE(pp.PriceStd,0)>0 "
 						+ "ORDER BY pl.IsDefault DESC, v.ValidFrom DESC LIMIT 1");
-		decRate.setValue(p);
+		entryRate = p;
 	}
 
 	private BigDecimal firstPositive(String... sqls) {
@@ -1276,8 +1319,8 @@ public class WRequisitionEntryForm extends ADForm {
 				refresh[0].run();
 			}
 		});
-		Button done = new Button("Close");
-		done.setSclass("btn btn-danger");
+		Button done = new Button("\u2714  OK");
+		done.setSclass("btn btn-success");
 		done.addEventListener(Events.ON_CLICK, ev -> win.detach());
 
 		Div bar = new Div();
@@ -1323,11 +1366,11 @@ public class WRequisitionEntryForm extends ADForm {
 		if (readOnly)
 			return;
 		if (selValue(cbSegment).length() == 0) {
-			warn("Segment is required.");
+			headWarn("Segment is required (Requisition header).");
 			return;
 		}
 		if (pDept.id <= 0) {
-			warn("Department is required.");
+			headWarn("Department is required (Requisition header).");
 			return;
 		}
 		if (pParent.id <= 0) {
@@ -1371,16 +1414,16 @@ public class WRequisitionEntryForm extends ADForm {
 			l.avail = BigDecimal.ZERO;
 		}
 		l.qty = qty;
-		BigDecimal r = decRate.getValue();
-		l.rate = r == null ? BigDecimal.ZERO : r;
+		l.rate = entryRate == null ? BigDecimal.ZERO : entryRate;
 		lines.add(l);
 		refreshLines();
 
-		// next product: keep Segment, Department and categories, clear the rest
+		// next product: keep the categories, clear the rest (Date Required (Line) goes back to the header date)
 		pProduct.clear(false);
 		txtSpec.setValue("");
 		decQty.setValue((BigDecimal) null);
-		decRate.setValue((BigDecimal) null);
+		entryRate = null;
+		syncLineDate();
 		productChanged();
 		pProduct.box.focus(); // ready for the next product
 	}
@@ -1397,8 +1440,6 @@ public class WRequisitionEntryForm extends ADForm {
 			n++;
 			Listitem li = new Listitem();
 			li.appendChild(new Listcell(String.valueOf(n * 10)));
-			li.appendChild(new Listcell(l.segName));
-			li.appendChild(new Listcell(l.deptName));
 			li.appendChild(new Listcell(l.code));
 			li.appendChild(new Listcell(l.name));
 			li.appendChild(new Listcell(l.uom));
@@ -1408,17 +1449,19 @@ public class WRequisitionEntryForm extends ADForm {
 			li.appendChild(new Listcell(l.dateReq == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format(l.dateReq)));
 			li.appendChild(new Listcell(l.avail.stripTrailingZeros().toPlainString()));
 
-			// Qty: edit it right here (more or less); Amount follows
+			// Qty and Rate: edit them right here; Amount follows
 			final Label amount = new Label(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
 			Listcell qtyCell = new Listcell();
+			Listcell rateCell = new Listcell();
 			if (readOnly) {
 				qtyCell.appendChild(new Label(l.qty.stripTrailingZeros().toPlainString()));
+				rateCell.appendChild(new Label(l.rate.signum() == 0 ? "" : l.rate.stripTrailingZeros().toPlainString()));
 			} else {
 				final Decimalbox qb = new Decimalbox();
 				qb.setSclass("form-control");
 				ZKUpdateUtil.setWidth(qb, "100%");
 				qb.setValue(l.qty.stripTrailingZeros());
-				org.zkoss.zk.ui.event.EventListener<org.zkoss.zk.ui.event.Event> apply = ev -> {
+				org.zkoss.zk.ui.event.EventListener<org.zkoss.zk.ui.event.Event> applyQty = ev -> {
 					BigDecimal v = qb.getValue();
 					if (v == null || v.signum() <= 0) {
 						warn("Qty must be greater than 0. To remove the line use the \u2716 button.");
@@ -1429,12 +1472,33 @@ public class WRequisitionEntryForm extends ADForm {
 					amount.setValue(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
 					updateTotals();
 				};
-				qb.addEventListener(Events.ON_CHANGE, apply);
-				qb.addEventListener(Events.ON_OK, apply);
+				qb.addEventListener(Events.ON_CHANGE, applyQty);
+				qb.addEventListener(Events.ON_OK, applyQty);
 				qtyCell.appendChild(qb);
+
+				final Decimalbox rb = new Decimalbox();
+				rb.setSclass("form-control");
+				ZKUpdateUtil.setWidth(rb, "100%");
+				rb.setValue(l.rate.signum() == 0 ? (BigDecimal) null : l.rate.stripTrailingZeros());
+				org.zkoss.zk.ui.event.EventListener<org.zkoss.zk.ui.event.Event> applyRate = ev -> {
+					BigDecimal v = rb.getValue();
+					if (v == null)
+						v = BigDecimal.ZERO;
+					if (v.signum() < 0) {
+						warn("Rate can not be negative.");
+						rb.setValue(l.rate.signum() == 0 ? (BigDecimal) null : l.rate.stripTrailingZeros());
+						return;
+					}
+					l.rate = v;
+					amount.setValue(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
+					updateTotals();
+				};
+				rb.addEventListener(Events.ON_CHANGE, applyRate);
+				rb.addEventListener(Events.ON_OK, applyRate);
+				rateCell.appendChild(rb);
 			}
 			li.appendChild(qtyCell);
-			li.appendChild(new Listcell(l.rate.signum() == 0 ? "" : l.rate.toPlainString()));
+			li.appendChild(rateCell);
 			Listcell amtCell = new Listcell();
 			amtCell.appendChild(amount);
 			li.appendChild(amtCell);
@@ -1514,7 +1578,6 @@ public class WRequisitionEntryForm extends ADForm {
 		txtSpec.setDisabled(ro);
 		dtLine.setDisabled(ro);
 		decQty.setDisabled(ro);
-		decRate.setDisabled(ro);
 		btnAdd.setDisabled(ro);
 		btnOk.setVisible(!ro);
 		btnNew.setVisible(existing);
@@ -1565,6 +1628,13 @@ public class WRequisitionEntryForm extends ADForm {
 		txtDescription.setValue(req.getDescription() == null ? "" : req.getDescription());
 
 		loadLines(id, req.getM_Warehouse_ID());
+		if (!lines.isEmpty()) {
+			Line f0 = lines.get(0);
+			cbSegment.selectValue(f0.segVal);
+			if (f0.deptId > 0)
+				pDept.set(f0.deptId, str("SELECT Value FROM C_Activity WHERE C_Activity_ID=" + f0.deptId), f0.deptName, false);
+		}
+		dtLine.setValue(req.getDateRequired());
 		loadExistingAttachments(id);
 
 		refreshLines();
@@ -2101,8 +2171,16 @@ public class WRequisitionEntryForm extends ADForm {
 			headWarn("Type is required.");
 			return;
 		}
+		if (selValue(cbSegment).length() == 0) {
+			headWarn("Segment is required.");
+			return;
+		}
 		if (selValue(cbLocation).length() == 0) {
 			headWarn("Location is required.");
+			return;
+		}
+		if (pDept.id <= 0) {
+			headWarn("Department is required.");
 			return;
 		}
 		if (selValue(cbPriority).length() == 0) {
@@ -2381,7 +2459,7 @@ public class WRequisitionEntryForm extends ADForm {
 		txtDescription.setValue("");
 		txtSpec.setValue("");
 		decQty.setValue((BigDecimal) null);
-		decRate.setValue((BigDecimal) null);
+		entryRate = null;
 		productChanged();
 		applyMode();
 	}
