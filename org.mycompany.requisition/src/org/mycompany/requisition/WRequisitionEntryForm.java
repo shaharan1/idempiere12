@@ -2087,6 +2087,18 @@ public class WRequisitionEntryForm extends ADForm {
 							openHistory(rid);
 						});
 						st.appendChild(badge);
+						// next to the status: the print format (PDF) of this requisition
+						final String rowDocNo = rs.getString(2);
+						Button pdfBtn = new Button("PDF");
+						pdfBtn.setSclass("btn btn-sm btn-outline-primary");
+						pdfBtn.setStyle("margin-left:6px;");
+						pdfBtn.setTooltiptext("Show the print format (PDF) of this requisition");
+						pdfBtn.addEventListener(Events.ON_CLICK, ev -> {
+							suppressRowUntil = System.currentTimeMillis() + 1500; // the row click is not meant
+							ev.stopPropagation();
+							showPdf(rid, rowDocNo);
+						});
+						st.appendChild(pdfBtn);
 						li.appendChild(st);
 
 						li.addEventListener(Events.ON_CLICK, ev -> {
