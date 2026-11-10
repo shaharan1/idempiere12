@@ -54,6 +54,9 @@ import org.zkoss.zul.Messagebox;
  * Location, Priority, Segment from memory; Warehouse, Department, Categories, Product from the
  * database, max 50 rows per search).
  * <p>
+ * Organization is a search field too: it lists the organizations the login role may use (all of them
+ * for an administrator). The Requisition card (master data) can be hidden with the arrow button above it.
+ * <p>
  * "All Requisition" lists every requisition the user created (status, who it is with). Click one
  * to load it back into this form: while no approver has approved it (and it is still Drafted) it
  * can be changed and saved again; after the first approval, or once completed, it opens read-only.
@@ -88,18 +91,24 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int REF_DOCSTATUS = 131;
 
 	/** max rows a type-ahead search brings back */
-	private static final int SEARCH_LIMIT = 100;
+	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "5";
+	private static final String CSS_VERSION = "6";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
 	private final int userId = Env.getAD_User_ID(Env.getCtx());
 
 	// ---- header
-	private final Label lblOrg = new Label();
+	private Picker pOrg;
 	private final Label lblUser = new Label();
+	/** the Requisition (master data) card: can be hidden to give room to the lines */
+	private Div headerCard;
+	private final Div toggleBar = new Div();
+	private final Button btnHideInfo = new Button("\u25B2  Hide Requisition Info");
+	private final Button btnShowInfo = new Button("\u25BC  Show Requisition Info");
+	private final Label lblHeadSummary = new Label();
 	private Choice cbType;
 	private Choice cbLocation;
 	private Choice cbPriority;
@@ -261,6 +270,10 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-req .z-listbox .z-listcell .z-decimalbox { min-height:24px; text-align:right; }
 .xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 .xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
+/* hide / show the Requisition (master data) card */
+.xx-req .xx-toggle { display:flex; align-items:center; justify-content:flex-end; gap:.6rem; margin:6px 10px 0; }
+.xx-req .xx-sum { font-size:.78rem; font-weight:600; color:#084298; background:#e7f1ff; border:1px solid #b6d4fe; padding:.15rem .7rem; border-radius:999px; }
+.xx-req .xx-sum .z-label { font-size:.78rem; font-weight:600; color:#084298; }
 /* view / edit banner */
 .xx-req .xx-banner { margin:6px 10px 0; padding:.4rem .9rem; border-radius:.5rem; border:1px solid #b6d4fe; background:#cfe2ff; color:#084298; }
 .xx-req .xx-banner .z-label { font-size:.82rem; font-weight:600; color:inherit; }
@@ -335,6 +348,13 @@ public class WRequisitionEntryForm extends ADForm {
 		cbPriority = new Choice();
 		cbSegment = new Choice();
 
+		pOrg = new Picker("Organization",
+				"SELECT AD_Org_ID, Value, Name FROM AD_Org WHERE IsActive='Y' AND IsSummary='N' AND AD_Org_ID>0 "
+						+ "AND AD_Client_ID=" + clientId
+						+ " AND (EXISTS (SELECT 1 FROM AD_Role ro WHERE ro.AD_Role_ID=" + Env.getAD_Role_ID(Env.getCtx())
+						+ " AND ro.IsAccessAllOrgs='Y') OR AD_Org_ID IN (SELECT oa.AD_Org_ID FROM AD_Role_OrgAccess oa "
+						+ "WHERE oa.AD_Role_ID=" + Env.getAD_Role_ID(Env.getCtx()) + " AND oa.IsActive='Y'))",
+				"Name", false, null);
 		pWarehouse = new Picker("Warehouse",
 				"SELECT M_Warehouse_ID, Value, Name FROM M_Warehouse WHERE IsActive='Y' AND AD_Client_ID=" + clientId,
 				"Name", false, null);
@@ -383,6 +403,18 @@ public class WRequisitionEntryForm extends ADForm {
 		banner.appendChild(lblBanner);
 		main.appendChild(banner);
 
+		// arrow button: hide / show the Requisition card
+		toggleBar.setSclass("xx-toggle");
+		lblHeadSummary.setSclass("xx-sum");
+		lblHeadSummary.setVisible(false);
+		btnHideInfo.setSclass("btn btn-sm btn-outline-primary");
+		btnShowInfo.setSclass("btn btn-sm btn-primary");
+		btnShowInfo.setVisible(false);
+		toggleBar.appendChild(lblHeadSummary);
+		toggleBar.appendChild(btnHideInfo);
+		toggleBar.appendChild(btnShowInfo);
+		main.appendChild(toggleBar);
+
 		main.appendChild(buildHeader());
 		main.appendChild(buildLineEntry());
 
@@ -415,8 +447,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private Div buildHeader() {
 		Div g = new Div();
 		g.setSclass("xx-grid");
-		lblOrg.setValue("");
-		g.appendChild(field("Organization", false, readonly(lblOrg), 1));
+		g.appendChild(field("Organization", true, pOrg.box, 1));
 		g.appendChild(field("Type", true, cbType.box, 1));
 		g.appendChild(field("Location", true, cbLocation.box, 1));
 		g.appendChild(field("Warehouse", false, pWarehouse.box, 1));
@@ -442,7 +473,8 @@ public class WRequisitionEntryForm extends ADForm {
 		att.appendChild(lblAttach);
 		g.appendChild(field("Attachment", false, att, 1));
 
-		return card("Requisition", g);
+		headerCard = card("Requisition", g);
+		return headerCard;
 	}
 
 	/** line entry card (Segment ... Add Product) */
@@ -862,7 +894,7 @@ public class WRequisitionEntryForm extends ADForm {
 	// =====================================================================
 
 	private void loadData() {
-		lblOrg.setValue(orgId > 0 ? str("SELECT Name FROM AD_Org WHERE AD_Org_ID=" + orgId) : "*");
+		setDefaultOrg();
 		lblUser.setValue(str("SELECT Name FROM AD_User WHERE AD_User_ID=" + userId));
 
 		fill(cbType, "SELECT C_DocType_ID, Name FROM C_DocType WHERE DocBaseType='POR' AND IsActive='Y' "
@@ -939,6 +971,48 @@ public class WRequisitionEntryForm extends ADForm {
 		btnAttach.addEventListener(Events.ON_CLICK, e -> openAttachments());
 		btnAll.addEventListener(Events.ON_CLICK, e -> openAllRequisitions());
 		btnNew.addEventListener(Events.ON_CLICK, e -> newRequisition());
+		btnHideInfo.addEventListener(Events.ON_CLICK, e -> setHeaderVisible(false));
+		btnShowInfo.addEventListener(Events.ON_CLICK, e -> setHeaderVisible(true));
+	}
+
+	/** hide / show the Requisition card; hidden, a one line summary of it stays next to the button */
+	private void setHeaderVisible(boolean show) {
+		headerCard.setVisible(show);
+		btnHideInfo.setVisible(show);
+		btnShowInfo.setVisible(!show);
+		lblHeadSummary.setVisible(!show);
+		if (!show) {
+			List<String> parts = new ArrayList<String>();
+			if (pOrg.id > 0)
+				parts.add(pOrg.name);
+			if (!cbType.name.isEmpty())
+				parts.add(cbType.name);
+			if (!cbLocation.name.isEmpty())
+				parts.add(cbLocation.name);
+			if (pWarehouse.id > 0)
+				parts.add(pWarehouse.name);
+			if (!cbPriority.name.isEmpty())
+				parts.add(cbPriority.name);
+			Timestamp rd = ts(dtRequired);
+			if (rd != null)
+				parts.add("Required " + dmy(rd));
+			lblHeadSummary.setValue(parts.isEmpty() ? "Requisition info is empty" : String.join("  |  ", parts));
+		}
+	}
+
+	/** a missing master data field: open the card so the user sees it, then tell */
+	private void headWarn(String msg) {
+		setHeaderVisible(true);
+		warn(msg);
+	}
+
+	/** the login organization is the default (an administrator logged in on * picks one) */
+	private void setDefaultOrg() {
+		if (orgId > 0)
+			pOrg.set(orgId, str("SELECT Value FROM AD_Org WHERE AD_Org_ID=" + orgId),
+					str("SELECT Name FROM AD_Org WHERE AD_Org_ID=" + orgId), false);
+		else
+			pOrg.clear(false);
 	}
 
 	/** UOM and Available Qty follow the product (and the warehouse) */
@@ -1328,7 +1402,8 @@ public class WRequisitionEntryForm extends ADForm {
 	private void applyMode() {
 		boolean ro = readOnly;
 		boolean existing = editId > 0;
-		cbType.box.setDisabled(ro || existing); // the type decides the approval path: fixed once saved
+		pOrg.box.setDisabled(ro || existing); // organization and type decide the approval path: fixed once saved
+		cbType.box.setDisabled(ro || existing);
 		cbLocation.box.setDisabled(ro);
 		cbPriority.box.setDisabled(ro);
 		pWarehouse.box.setDisabled(ro);
@@ -1380,6 +1455,8 @@ public class WRequisitionEntryForm extends ADForm {
 		String why = lockReason(id);
 		readOnly = why != null;
 
+		pOrg.set(req.getAD_Org_ID(), str("SELECT Value FROM AD_Org WHERE AD_Org_ID=" + req.getAD_Org_ID()),
+				str("SELECT Name FROM AD_Org WHERE AD_Org_ID=" + req.getAD_Org_ID()), false);
 		cbType.selectValue(String.valueOf(req.getC_DocType_ID()));
 		cbLocation.selectValue(str("SELECT XX_Location FROM M_Requisition WHERE M_Requisition_ID=" + id));
 		cbPriority.selectValue(req.getPriorityRule());
@@ -1664,30 +1741,30 @@ public class WRequisitionEntryForm extends ADForm {
 			warn("This requisition is view only and can not be saved.");
 			return;
 		}
-		if (orgId <= 0) {
-			warn("Log in with a specific organization (not *) to create a requisition.");
+		if (pOrg.id <= 0) {
+			headWarn("Organization is required.");
 			return;
 		}
 		if (selValue(cbType).length() == 0) {
-			warn("Type is required.");
+			headWarn("Type is required.");
 			return;
 		}
 		if (selValue(cbLocation).length() == 0) {
-			warn("Location is required.");
+			headWarn("Location is required.");
 			return;
 		}
 		if (selValue(cbPriority).length() == 0) {
-			warn("Priority is required.");
+			headWarn("Priority is required.");
 			return;
 		}
 		Timestamp docDate = ts(dtDoc);
 		Timestamp reqDate = ts(dtRequired);
 		if (docDate == null) {
-			warn("Document Date is required.");
+			headWarn("Document Date is required.");
 			return;
 		}
 		if (reqDate == null) {
-			warn("Date Required is required.");
+			headWarn("Date Required is required.");
 			return;
 		}
 		if (lines.isEmpty()) {
@@ -1721,7 +1798,7 @@ public class WRequisitionEntryForm extends ADForm {
 		int warehouseId = pWarehouse.id;
 		if (warehouseId <= 0)
 			warehouseId = DB.getSQLValue(null, "SELECT M_Warehouse_ID FROM M_Warehouse WHERE IsActive='Y' "
-					+ "AND AD_Client_ID=? ORDER BY (AD_Org_ID=?) DESC, M_Warehouse_ID LIMIT 1", clientId, orgId);
+					+ "AND AD_Client_ID=? ORDER BY (AD_Org_ID=?) DESC, M_Warehouse_ID LIMIT 1", clientId, pOrg.id);
 		int priceListId = DB.getSQLValue(null, "SELECT M_PriceList_ID FROM M_PriceList WHERE IsActive='Y' "
 				+ "AND AD_Client_ID=? AND IsSOPriceList='N' ORDER BY IsDefault DESC, M_PriceList_ID LIMIT 1",
 				clientId);
@@ -1735,7 +1812,7 @@ public class WRequisitionEntryForm extends ADForm {
 		try {
 			MRequisition req = new MRequisition(Env.getCtx(), editing ? editId : 0, trxName);
 			if (!editing) {
-				req.setAD_Org_ID(orgId);
+				req.setAD_Org_ID(pOrg.id);
 				req.setAD_User_ID(userId);
 				req.setC_DocType_ID(Integer.parseInt(selValue(cbType)));
 				req.setM_PriceList_ID(priceListId);
@@ -1934,6 +2011,7 @@ public class WRequisitionEntryForm extends ADForm {
 		refreshLines();
 		attachments.clear();
 		updateAttachLabel();
+		setDefaultOrg();
 		cbType.reset();
 		if (cbType.count() == 1)
 			cbType.selectAt(0);
