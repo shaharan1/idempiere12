@@ -141,7 +141,6 @@ public class WRequisitionEntryForm extends ADForm {
 	/** totals row of the line table */
 	private final Label lblFootCount = new Label("0 products");
 	private final Label lblFootQty = new Label("0");
-	private final Label lblFootAmt = new Label("0.00");
 
 	// ---- lines
 	private final Listbox lineList = new Listbox();
@@ -569,10 +568,9 @@ public class WRequisitionEntryForm extends ADForm {
 
 	private void buildLineList() {
 		Listhead head = new Listhead();
-		String[][] cols = { { "Line", "55px" }, { "Product Code", "130px" }, { "Product Name", null },
-				{ "UOM", "65px" }, { "Specification", "220px" }, { "Date Required", "105px" },
-				{ "Available", "85px" }, { "Qty", "105px" }, { "Rate", "105px" }, { "Amount", "100px" },
-				{ "", "55px" } };
+		String[][] cols = { { "S/N", "60px" }, { "Product Code", "130px" }, { "Product Name", null },
+				{ "UOM", "65px" }, { "Specification", "250px" }, { "Date Required", "110px" },
+				{ "Available", "90px" }, { "Qty", "115px" }, { "", "55px" } };
 		for (String[] c : cols) {
 			Listheader h = new Listheader(c[0]);
 			if (c[1] != null)
@@ -592,8 +590,6 @@ public class WRequisitionEntryForm extends ADForm {
 				f.appendChild(lblFootCount);
 			else if (i == 7)
 				f.appendChild(lblFootQty);
-			else if (i == 9)
-				f.appendChild(lblFootAmt);
 			foot.appendChild(f);
 		}
 		lineList.appendChild(foot);
@@ -1397,7 +1393,7 @@ public class WRequisitionEntryForm extends ADForm {
 			at++;
 			if (x.productId == pProduct.id) {
 				warn("This product (" + pProduct.code + " - " + pProduct.name + ") is already in this requisition "
-						+ "(line " + (at * 10) + ").\n\nThe same product cannot be added twice. "
+						+ "(S/N " + at + ").\n\nThe same product cannot be added twice. "
 						+ "To change the quantity, edit the Qty of that line in the Requisition Line table below.");
 				return;
 			}
@@ -1449,7 +1445,7 @@ public class WRequisitionEntryForm extends ADForm {
 		for (final Line l : lines) {
 			n++;
 			Listitem li = new Listitem();
-			li.appendChild(new Listcell(String.valueOf(n * 10)));
+			li.appendChild(new Listcell(String.valueOf(n))); // serial number
 			li.appendChild(new Listcell(l.code));
 			li.appendChild(new Listcell(l.name));
 			li.appendChild(new Listcell(l.uom));
@@ -1459,13 +1455,10 @@ public class WRequisitionEntryForm extends ADForm {
 			li.appendChild(new Listcell(l.dateReq == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format(l.dateReq)));
 			li.appendChild(new Listcell(l.avail.stripTrailingZeros().toPlainString()));
 
-			// Qty and Rate: edit them right here; Amount follows
-			final Label amount = new Label(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
+			// Qty: edit it right here (more or less)
 			Listcell qtyCell = new Listcell();
-			Listcell rateCell = new Listcell();
 			if (readOnly) {
 				qtyCell.appendChild(new Label(l.qty.stripTrailingZeros().toPlainString()));
-				rateCell.appendChild(new Label(l.rate.signum() == 0 ? "" : l.rate.stripTrailingZeros().toPlainString()));
 			} else {
 				final Decimalbox qb = new Decimalbox();
 				qb.setSclass("form-control");
@@ -1479,39 +1472,13 @@ public class WRequisitionEntryForm extends ADForm {
 						return;
 					}
 					l.qty = v;
-					amount.setValue(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
 					updateTotals();
 				};
 				qb.addEventListener(Events.ON_CHANGE, applyQty);
 				qb.addEventListener(Events.ON_OK, applyQty);
 				qtyCell.appendChild(qb);
-
-				final Decimalbox rb = new Decimalbox();
-				rb.setSclass("form-control");
-				ZKUpdateUtil.setWidth(rb, "100%");
-				rb.setValue(l.rate.signum() == 0 ? (BigDecimal) null : l.rate.stripTrailingZeros());
-				org.zkoss.zk.ui.event.EventListener<org.zkoss.zk.ui.event.Event> applyRate = ev -> {
-					BigDecimal v = rb.getValue();
-					if (v == null)
-						v = BigDecimal.ZERO;
-					if (v.signum() < 0) {
-						warn("Rate can not be negative.");
-						rb.setValue(l.rate.signum() == 0 ? (BigDecimal) null : l.rate.stripTrailingZeros());
-						return;
-					}
-					l.rate = v;
-					amount.setValue(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
-					updateTotals();
-				};
-				rb.addEventListener(Events.ON_CHANGE, applyRate);
-				rb.addEventListener(Events.ON_OK, applyRate);
-				rateCell.appendChild(rb);
 			}
 			li.appendChild(qtyCell);
-			li.appendChild(rateCell);
-			Listcell amtCell = new Listcell();
-			amtCell.appendChild(amount);
-			li.appendChild(amtCell);
 
 			Listcell rm = new Listcell();
 			if (!readOnly) {
@@ -1531,18 +1498,13 @@ public class WRequisitionEntryForm extends ADForm {
 		updateTotals();
 	}
 
-	/** totals row: number of products, total Qty and total Amount of all lines */
+	/** totals row: number of products and total Qty of all lines */
 	private void updateTotals() {
 		BigDecimal q = BigDecimal.ZERO;
-		BigDecimal a = BigDecimal.ZERO;
-		for (Line l : lines) {
+		for (Line l : lines)
 			q = q.add(l.qty);
-			if (l.rate.signum() != 0)
-				a = a.add(l.rate.multiply(l.qty));
-		}
 		lblFootCount.setValue(lines.size() + (lines.size() == 1 ? " product" : " products"));
 		lblFootQty.setValue(q.signum() == 0 ? "0" : q.stripTrailingZeros().toPlainString());
-		lblFootAmt.setValue(money(a));
 	}
 
 	// =====================================================================
