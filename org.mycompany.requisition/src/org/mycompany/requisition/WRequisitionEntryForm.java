@@ -357,6 +357,16 @@ public class WRequisitionEntryForm extends ADForm {
 			+ "var t=e.target;if(!mine(t)||t.disabled)return;"
 			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
 
+	/**
+	 * A form button (Attachment, + Add Product, Save, All Requisition ...) that has the focus
+	 * (Tab) does its job on Enter, not only on a mouse click.
+	 */
+	private static final String ENTER_JS = "(function(){if(window.__xxEnterV==='1')return;window.__xxEnterV='1';"
+			+ "document.addEventListener('keydown',function(e){"
+			+ "if(e.key!=='Enter'||e.ctrlKey||e.altKey||e.shiftKey)return;var t=e.target;"
+			+ "if(!(t&&t.tagName==='BUTTON'&&t.closest&&t.closest('.xx-req')))return;"
+			+ "if(t.disabled)return;e.preventDefault();e.stopPropagation();t.click();},true);})();";
+
 	private void installCss() {
 		if (Executions.getCurrent() == null)
 			return;
