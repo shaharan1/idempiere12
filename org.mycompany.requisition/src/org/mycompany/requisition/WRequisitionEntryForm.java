@@ -39,6 +39,8 @@ import org.zkoss.zul.Decimalbox;
 import org.zkoss.zul.Div;
 import org.zkoss.zul.Listbox;
 import org.zkoss.zul.Listcell;
+import org.zkoss.zul.Listfoot;
+import org.zkoss.zul.Listfooter;
 import org.zkoss.zul.Listhead;
 import org.zkoss.zul.Listheader;
 import org.zkoss.zul.Listitem;
@@ -91,10 +93,10 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int REF_DOCSTATUS = 131;
 
 	/** max rows a type-ahead search brings back */
-	private static final int SEARCH_LIMIT = 100;
+	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "6";
+	private static final String CSS_VERSION = "7";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -135,6 +137,10 @@ public class WRequisitionEntryForm extends ADForm {
 	private final Decimalbox decQty = new Decimalbox();
 	private final Decimalbox decRate = new Decimalbox();
 	private final Button btnAdd = new Button("+  Add Product");
+	/** totals row of the line table */
+	private final Label lblFootCount = new Label("0 products");
+	private final Label lblFootQty = new Label("0");
+	private final Label lblFootAmt = new Label("0.00");
 
 	// ---- lines
 	private final Listbox lineList = new Listbox();
@@ -225,7 +231,7 @@ public class WRequisitionEntryForm extends ADForm {
 @media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
 .xx-req .xx-field { min-width:0; }
 .xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
-.xx-req .form-label.xx-req-mark::after { content:" *"; color:#dc3545; }
+.xx-req .form-label.xx-req-mark { color:#dc3545; }
 .xx-req .form-control, .xx-req .z-textbox, .xx-req .z-decimalbox, .xx-req .z-datebox-input, .xx-req .z-combobox-input {
   display:block; width:100%; min-height:26px; padding:.15rem .5rem; font-size:.8rem; line-height:1.4; color:#212529;
   background:#fff; border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:none; }
@@ -270,6 +276,17 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-req .z-listbox .z-listcell .z-decimalbox { min-height:24px; text-align:right; }
 .xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 .xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
+/* Add Product card: 24 column grid (4 x 6 on the first row, 6+6+6+3+3 on the second) */
+.xx-req .xx-grid.xx-grid24 { grid-template-columns:repeat(24,minmax(0,1fr)); }
+.xx-req .xx-c3 { grid-column:span 3; }
+.xx-req .xx-c6 { grid-column:span 6; }
+@media (max-width:1000px) { .xx-req .xx-grid.xx-grid24 { grid-template-columns:repeat(12,minmax(0,1fr)); } .xx-req .xx-c3 { grid-column:span 3; } .xx-req .xx-c6 { grid-column:span 6; } }
+@media (max-width:600px)  { .xx-req .xx-grid.xx-grid24 { grid-template-columns:minmax(0,1fr); } .xx-req .xx-c3, .xx-req .xx-c6 { grid-column:span 1; } }
+/* Description: drag the corner to make it smaller / bigger */
+.xx-req textarea.z-textbox { resize:vertical; min-height:64px; max-height:320px; overflow:auto; line-height:1.45; }
+/* totals row at the end of the line table */
+.xx-req .z-listbox .z-listfooter { background:#e7f1ff !important; border-top:2px solid #0d6efd !important; border-right:1px solid #b6d4fe !important; font-weight:700; }
+.xx-req .z-listbox .z-listfooter .z-label { font-size:.82rem; font-weight:700; color:#0a2e6b; }
 /* hide / show the Requisition (master data) card */
 .xx-req .xx-toggle { display:flex; align-items:center; justify-content:flex-end; gap:.6rem; margin:6px 10px 0; }
 .xx-req .xx-sum { font-size:.78rem; font-weight:600; color:#084298; background:#e7f1ff; border:1px solid #b6d4fe; padding:.15rem .7rem; border-radius:999px; }
@@ -459,9 +476,9 @@ public class WRequisitionEntryForm extends ADForm {
 		g.appendChild(field("Date Required", true, dtRequired, 1));
 
 		txtDescription.setMultiline(true);
-		txtDescription.setRows(1);
+		txtDescription.setRows(2);
 		txtDescription.setSclass("form-control");
-		txtDescription.setStyle("resize:none;");
+		txtDescription.setStyle("resize:vertical;"); // drag the corner: smaller / bigger
 		ZKUpdateUtil.setWidth(txtDescription, "100%");
 		g.appendChild(field("Description", false, txtDescription, 3));
 
@@ -477,35 +494,34 @@ public class WRequisitionEntryForm extends ADForm {
 		return headerCard;
 	}
 
-	/** line entry card (Segment ... Add Product) */
+	/** line entry card: Segment | Department | Date Required (Line) | Product Specification, then categories + product + UOM + Qty, then Rate, Available Qty, Add Product */
 	private Div buildLineEntry() {
 		Div g = new Div();
-		g.setSclass("xx-grid xx-grid7");
-		// row 0 (7 columns)
-		g.appendChild(field("Segment", true, cbSegment.box, 1));
-		g.appendChild(field("Department", true, pDept.box, 1));
-		g.appendChild(field("Parent Category", true, pParent.box, 1));
-		g.appendChild(field("Sub-Category", false, pSub.box, 1));
-		g.appendChild(field("Product", true, pProduct.box, 1));
-		g.appendChild(field("UOM", false, readonly(lblUom), 1));
-		g.appendChild(field("Available Qty", false, readonly(lblAvail), 1));
-		// row 1 (2 + 1 + 1 + 1 + 2 = 7)
-		txtSpec.setMultiline(true);
-		txtSpec.setRows(1);
-		txtSpec.setSclass("form-control");
-		txtSpec.setStyle("resize:none;");
-		ZKUpdateUtil.setWidth(txtSpec, "100%");
-		g.appendChild(field("Specification", false, txtSpec, 2));
+		g.setSclass("xx-grid xx-grid24");
+		// row 1: four equal fields
+		g.appendChild(field24("Segment", true, cbSegment.box, 6));
+		g.appendChild(field24("Department", true, pDept.box, 6));
 		ZKUpdateUtil.setWidth(dtLine, "100%");
-		g.appendChild(field("Date Required (Line)", false, dtLine, 1));
+		g.appendChild(field24("Date Required (Line)", false, dtLine, 6));
+		// Product Specification: one line of plain text, same size as the others
+		txtSpec.setSclass("form-control");
+		ZKUpdateUtil.setWidth(txtSpec, "100%");
+		g.appendChild(field24("Product Specification", false, txtSpec, 6));
+		// row 2: Parent Category | Sub-Category | Product (wide), UOM | Qty (small)
+		g.appendChild(field24("Parent Category", true, pParent.box, 6));
+		g.appendChild(field24("Sub-Category", false, pSub.box, 6));
+		g.appendChild(field24("Product", true, pProduct.box, 6));
+		g.appendChild(field24("UOM", false, readonly(lblUom), 3));
 		ZKUpdateUtil.setWidth(decQty, "100%");
 		decQty.setSclass("form-control");
-		g.appendChild(field("Qty", true, decQty, 1));
+		g.appendChild(field24("Qty", true, decQty, 3));
+		// row 3
 		ZKUpdateUtil.setWidth(decRate, "100%");
 		decRate.setSclass("form-control");
-		g.appendChild(field("Rate", false, decRate, 1));
+		g.appendChild(field24("Rate", false, decRate, 6));
+		g.appendChild(field24("Available Qty", false, readonly(lblAvail), 6));
 		btnAdd.setSclass("btn btn-primary btn-block");
-		g.appendChild(field("\u00A0", false, btnAdd, 2));
+		g.appendChild(field24("\u00A0", false, btnAdd, 6));
 
 		return card("Add Product", g);
 	}
@@ -525,6 +541,21 @@ public class WRequisitionEntryForm extends ADForm {
 			head.appendChild(h);
 		}
 		lineList.appendChild(head);
+		// last row: how many products, total quantity, total amount
+		Listfoot foot = new Listfoot();
+		for (int i = 0; i < cols.length; i++) {
+			Listfooter f = new Listfooter();
+			if (i == 0)
+				f.appendChild(new Label("Total"));
+			else if (i == 4)
+				f.appendChild(lblFootCount);
+			else if (i == 9)
+				f.appendChild(lblFootQty);
+			else if (i == 11)
+				f.appendChild(lblFootAmt);
+			foot.appendChild(f);
+		}
+		lineList.appendChild(foot);
 		lineList.setEmptyMessage("No product added yet. Fill the fields above and click + Add Product.");
 		ZKUpdateUtil.setWidth(lineList, "100%");
 		lineList.setHeight("340px");
@@ -551,6 +582,17 @@ public class WRequisitionEntryForm extends ADForm {
 	private Div field(String text, boolean required, Component c, int span) {
 		Div d = new Div();
 		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : ""));
+		Label l = new Label(text);
+		l.setSclass("form-label" + (required ? " xx-req-mark" : ""));
+		d.appendChild(l);
+		d.appendChild(c);
+		return d;
+	}
+
+	/** like field(), for the 24 column grid: the control takes cols of the 24 columns */
+	private Div field24(String text, boolean required, Component c, int cols) {
+		Div d = new Div();
+		d.setSclass("xx-field xx-c" + cols);
 		Label l = new Label(text);
 		l.setSclass("form-label" + (required ? " xx-req-mark" : ""));
 		d.appendChild(l);
@@ -1347,6 +1389,7 @@ public class WRequisitionEntryForm extends ADForm {
 					}
 					l.qty = v;
 					amount.setValue(l.rate.signum() == 0 ? "" : money(l.rate.multiply(l.qty)));
+					updateTotals();
 				};
 				qb.addEventListener(Events.ON_CHANGE, apply);
 				qb.addEventListener(Events.ON_OK, apply);
@@ -1373,6 +1416,21 @@ public class WRequisitionEntryForm extends ADForm {
 			li.appendChild(rm);
 			lineList.appendChild(li);
 		}
+		updateTotals();
+	}
+
+	/** totals row: number of products, total Qty and total Amount of all lines */
+	private void updateTotals() {
+		BigDecimal q = BigDecimal.ZERO;
+		BigDecimal a = BigDecimal.ZERO;
+		for (Line l : lines) {
+			q = q.add(l.qty);
+			if (l.rate.signum() != 0)
+				a = a.add(l.rate.multiply(l.qty));
+		}
+		lblFootCount.setValue(lines.size() + (lines.size() == 1 ? " product" : " products"));
+		lblFootQty.setValue(q.signum() == 0 ? "0" : q.stripTrailingZeros().toPlainString());
+		lblFootAmt.setValue(money(a));
 	}
 
 	// =====================================================================
