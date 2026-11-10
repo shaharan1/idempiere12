@@ -96,7 +96,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "8";
+	private static final String CSS_VERSION = "9";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -159,6 +159,8 @@ public class WRequisitionEntryForm extends ADForm {
 	/** M_Requisition_ID being edited / viewed, 0 = a new requisition */
 	private int editId = 0;
 	private String editDocNo = "";
+	/** a click on the status button of a list row also reaches the row: ignore the row click until then */
+	private long suppressRowUntil = 0;
 	/** true when the loaded requisition may not be changed any more */
 	private boolean readOnly = false;
 
@@ -306,6 +308,18 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-reqwin .xx-badge-prog { background:#0d6efd; }
 .xx-reqwin .xx-badge-ok { background:#198754; }
 .xx-reqwin .xx-badge-bad { background:#dc3545; }
+/* status button of the All Requisition list + the approval history pop-up */
+.xx-reqwin button.z-button.xx-st { border-radius:999px !important; font-weight:600 !important; color:#fff !important; padding:.1rem .85rem !important; min-height:24px !important; cursor:pointer; }
+.xx-reqwin button.z-button.xx-st-draft { background:#6c757d !important; border:1px solid #6c757d !important; }
+.xx-reqwin button.z-button.xx-st-wait { background:#fd7e14 !important; border:1px solid #fd7e14 !important; }
+.xx-reqwin button.z-button.xx-st-prog { background:#0d6efd !important; border:1px solid #0d6efd !important; }
+.xx-reqwin button.z-button.xx-st-ok { background:#198754 !important; border:1px solid #198754 !important; }
+.xx-reqwin button.z-button.xx-st-bad { background:#dc3545 !important; border:1px solid #dc3545 !important; }
+.xx-reqwin button.z-button.xx-st:hover { filter:brightness(.9); }
+.xx-reqwin .xx-hist-head { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem 1.2rem; padding:.55rem .85rem; margin-bottom:8px; background:#f1f4f9; border:1px solid #dee2e6; border-radius:.5rem; }
+.xx-reqwin .xx-hist-title { font-size:1rem; font-weight:700; color:#0a2e6b; }
+.xx-reqwin .xx-hist-meta { font-size:.8rem; color:#495057; }
+.xx-reqwin .xx-hist-note { margin:6px 2px; font-size:.82rem; color:#664d03; }
 .xx-reqwin .xx-link { color:#0d6efd; font-weight:700; text-decoration:underline; cursor:pointer; }
 """;
 
@@ -1631,6 +1645,274 @@ public class WRequisitionEntryForm extends ADForm {
 		return t == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format(t);
 	}
 
+	/** text and colour of a status: {text, kind}, kind = draft | wait | prog | ok | bad */
+	private static String[] stage(String docStatus, String statusName, int approved, int rejected, String pending) {
+		if ("CO".equals(docStatus) || "CL".equals(docStatus))
+			return new String[] { statusName, "ok" };
+		if ("VO".equals(docStatus) || "RE".equals(docStatus))
+			return new String[] { statusName, "bad" };
+		if (approved > 0)
+			return new String[] { "Approved by " + approved + " level" + (approved > 1 ? "s" : "")
+					+ (pending != null ? ", now with " + pending : ", in approval"), "prog" };
+		if (pending != null)
+			return new String[] { "Waiting for " + pending, "wait" };
+		if (rejected > 0)
+			return new String[] { "Rejected", "bad" };
+		return new String[] { statusName, "draft" };
+	}
+
+	/** one row of UT_ApprovalHistory */
+	private static final class Hist {
+		String status = "";
+		int approverId;
+		String approver = "";
+		String actor = "";
+		Timestamp created;
+		Timestamp updated;
+	}
+
+	/** "Mon, 09/11/2026 03:45 PM": day, date and time */
+	private static String stamp(Timestamp t) {
+		return t == null ? "" : new java.text.SimpleDateFormat("EEE, dd/MM/yyyy hh:mm a", java.util.Locale.ENGLISH).format(t);
+	}
+
+	private Label badgeLabel(String text, String kind) {
+		Label b = new Label(text);
+		b.setSclass("xx-badge xx-badge-" + kind);
+		return b;
+	}
+
+	/**
+	 * Approval history of a requisition (pop-up): when it was created, every approval layer in
+	 * order (who, when it reached him, approved / pending / rejected, when and by whom), the layers
+	 * still to come (from the approval matrix) and the completion.
+	 */
+	private void openHistory(int requisitionId) {
+		String docNo = "";
+		String typeName = "";
+		String creator = "";
+		Timestamp created = null;
+		Timestamp updated = null;
+		String docStatus = "";
+		String statusName = "";
+		int docTypeId = 0;
+		int reqClient = clientId;
+		String headSql = "SELECT r.DocumentNo, dt.Name, COALESCE(cu.Name,''), r.Created, r.DocStatus, r.Updated, "
+				+ "r.C_DocType_ID, r.AD_Client_ID, COALESCE((SELECT sl.Name FROM AD_Ref_List sl WHERE sl.AD_Reference_ID="
+				+ REF_DOCSTATUS + " AND sl.Value=r.DocStatus LIMIT 1), r.DocStatus) "
+				+ "FROM M_Requisition r JOIN C_DocType dt ON dt.C_DocType_ID=r.C_DocType_ID "
+				+ "LEFT JOIN AD_User cu ON cu.AD_User_ID=r.CreatedBy WHERE r.M_Requisition_ID=?";
+		List<Hist> rows = new ArrayList<Hist>();
+		try (PreparedStatement ps = DB.prepareStatement(headSql, null)) {
+			ps.setInt(1, requisitionId);
+			try (ResultSet rs = ps.executeQuery()) {
+				if (!rs.next()) {
+					warn("Requisition not found.");
+					return;
+				}
+				docNo = rs.getString(1);
+				typeName = rs.getString(2);
+				creator = rs.getString(3);
+				created = rs.getTimestamp(4);
+				docStatus = rs.getString(5);
+				updated = rs.getTimestamp(6);
+				docTypeId = rs.getInt(7);
+				reqClient = rs.getInt(8);
+				statusName = rs.getString(9);
+			}
+		} catch (Exception e) {
+			log.log(Level.SEVERE, headSql, e);
+			warn("Could not read the requisition:\n" + e.getMessage());
+			return;
+		}
+		String hSql = "SELECT h.Status, COALESCE(CASE WHEN h.Checked ~ '^[0-9]+$' THEN h.Checked::int END, 0), "
+				+ "COALESCE((SELECT u.Name FROM AD_User u WHERE u.AD_User_ID="
+				+ "(CASE WHEN h.Checked ~ '^[0-9]+$' THEN h.Checked::int END)), COALESCE(h.Checked,'')), "
+				+ "COALESCE((SELECT a.Name FROM AD_User a WHERE a.AD_User_ID=h.UpdatedBy),''), h.Created, h.Updated "
+				+ "FROM UT_ApprovalHistory h WHERE h.DocumentNo=? AND h.C_DocType_ID=? AND h.AD_Client_ID=? "
+				+ "ORDER BY h.Created, h.Updated";
+		try (PreparedStatement ps = DB.prepareStatement(hSql, null)) {
+			ps.setString(1, docNo);
+			ps.setInt(2, docTypeId);
+			ps.setInt(3, reqClient);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					Hist h = new Hist();
+					h.status = rs.getString(1);
+					h.approverId = rs.getInt(2);
+					h.approver = rs.getString(3);
+					h.actor = rs.getString(4);
+					h.created = rs.getTimestamp(5);
+					h.updated = rs.getTimestamp(6);
+					rows.add(h);
+				}
+			}
+		} catch (Exception e) {
+			log.log(Level.SEVERE, hSql, e);
+			warn("Could not read the approval history:\n" + e.getMessage());
+			return;
+		}
+
+		int approved = 0;
+		int rejected = 0;
+		String pending = null;
+		int pendingId = 0;
+		for (Hist h : rows) {
+			if ("A".equals(h.status))
+				approved++;
+			else if ("R".equals(h.status))
+				rejected++;
+			else if ("P".equals(h.status)) {
+				pending = h.approver;
+				pendingId = h.approverId;
+			}
+		}
+		String[] stg = stage(docStatus, statusName, approved, rejected, pending);
+		boolean done = "CO".equals(docStatus) || "CL".equals(docStatus) || "VO".equals(docStatus)
+				|| "RE".equals(docStatus);
+
+		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+		win.setTitle("Approval History - Requisition " + docNo);
+		win.setWidth("1060px");
+		win.setHeight("600px");
+		win.setClosable(true);
+		win.setSizable(true);
+		win.setSclass("xx-reqwin");
+		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
+		org.mycompany.requisition.ui.XxTheme.apply(win);
+
+		Div body = new Div();
+		body.setStyle("padding:10px;");
+
+		Div head = new Div();
+		head.setSclass("xx-hist-head");
+		Label title = new Label("Requisition " + docNo);
+		title.setSclass("xx-hist-title");
+		head.appendChild(title);
+		head.appendChild(badgeLabel(stg[0], stg[1]));
+		Label meta = new Label(typeName + "   |   Created by " + creator + " on " + stamp(created));
+		meta.setSclass("xx-hist-meta");
+		head.appendChild(meta);
+		body.appendChild(head);
+
+		if (rows.isEmpty() && !done) {
+			Label note = new Label("This requisition has not been sent to any approver yet: no approval row exists for it "
+					+ "(check the approval matrix of this document type).");
+			note.setSclass("xx-hist-note");
+			body.appendChild(note);
+		}
+
+		Listbox lb = new Listbox();
+		lb.setHeight("400px");
+		Listhead lh = new Listhead();
+		String[][] cols = { { "#", "45px" }, { "Layer", "110px" }, { "Approver", "170px" }, { "Status", "130px" },
+				{ "Reached the approver", "200px" }, { "Approved / rejected on", "210px" }, { "Done by", null } };
+		for (String[] c : cols) {
+			Listheader hd = new Listheader(c[0]);
+			if (c[1] != null)
+				hd.setWidth(c[1]);
+			else
+				hd.setHflex("1");
+			lh.appendChild(hd);
+		}
+		lb.appendChild(lh);
+
+		int n = 0;
+		// 1. created
+		n++;
+		Listitem first = new Listitem();
+		first.appendChild(new Listcell(String.valueOf(n)));
+		first.appendChild(new Listcell("Created"));
+		first.appendChild(new Listcell(creator));
+		Listcell c1 = new Listcell();
+		c1.appendChild(badgeLabel("Created", "draft"));
+		first.appendChild(c1);
+		first.appendChild(new Listcell(""));
+		first.appendChild(new Listcell(stamp(created)));
+		first.appendChild(new Listcell(creator));
+		lb.appendChild(first);
+
+		// 2. every approval layer, in the order it was reached
+		int level = 0;
+		for (Hist h : rows) {
+			n++;
+			level++;
+			Listitem li = new Listitem();
+			li.appendChild(new Listcell(String.valueOf(n)));
+			li.appendChild(new Listcell("Level " + level));
+			li.appendChild(new Listcell(h.approver));
+			Listcell sc = new Listcell();
+			boolean acted = "A".equals(h.status) || "R".equals(h.status);
+			if ("A".equals(h.status))
+				sc.appendChild(badgeLabel("Approved", "ok"));
+			else if ("R".equals(h.status))
+				sc.appendChild(badgeLabel("Rejected", "bad"));
+			else
+				sc.appendChild(badgeLabel("Pending", "wait"));
+			li.appendChild(sc);
+			li.appendChild(new Listcell(stamp(h.created)));
+			li.appendChild(new Listcell(acted ? stamp(h.updated) : "waiting for approval"));
+			li.appendChild(new Listcell(acted ? h.actor : ""));
+			lb.appendChild(li);
+		}
+
+		// 3. layers still to come (the approval matrix, from the approver it is with now)
+		if (!done && pendingId > 0) {
+			java.util.Set<Integer> seen = new java.util.HashSet<Integer>();
+			seen.add(Integer.valueOf(pendingId));
+			int cur = pendingId;
+			for (int i = 0; i < 10; i++) {
+				int sup = DB.getSQLValue(null, "SELECT supervisor_id FROM UT_ApprovalMatrix WHERE c_doctype_id=? "
+						+ "AND ad_user_id=? AND supervisor_id>0 AND supervisor_id<>ad_user_id ORDER BY 1 LIMIT 1",
+						docTypeId, cur);
+				if (sup <= 0 || !seen.add(Integer.valueOf(sup)))
+					break;
+				n++;
+				level++;
+				Listitem li = new Listitem();
+				li.appendChild(new Listcell(String.valueOf(n)));
+				li.appendChild(new Listcell("Level " + level));
+				li.appendChild(new Listcell(str("SELECT Name FROM AD_User WHERE AD_User_ID=" + sup)));
+				Listcell sc = new Listcell();
+				sc.appendChild(badgeLabel("Not reached yet", "draft"));
+				li.appendChild(sc);
+				li.appendChild(new Listcell(""));
+				li.appendChild(new Listcell(""));
+				li.appendChild(new Listcell(""));
+				lb.appendChild(li);
+				cur = sup;
+			}
+		}
+
+		// 4. completed
+		if ("CO".equals(docStatus) || "CL".equals(docStatus)) {
+			n++;
+			Listitem li = new Listitem();
+			li.appendChild(new Listcell(String.valueOf(n)));
+			li.appendChild(new Listcell("Completed"));
+			li.appendChild(new Listcell(""));
+			Listcell sc = new Listcell();
+			sc.appendChild(badgeLabel(statusName, "ok"));
+			li.appendChild(sc);
+			li.appendChild(new Listcell(""));
+			li.appendChild(new Listcell(stamp(updated)));
+			li.appendChild(new Listcell(""));
+			lb.appendChild(li);
+		}
+		body.appendChild(lb);
+
+		Button close = new Button("Close");
+		close.setSclass("btn btn-danger");
+		close.addEventListener(Events.ON_CLICK, ev -> win.detach());
+		Div foot = new Div();
+		foot.setStyle("text-align:right;margin-top:8px;");
+		foot.appendChild(close);
+		body.appendChild(foot);
+
+		win.appendChild(body);
+		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
+	}
+
 	private void openAllRequisitions() {
 		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
 		win.setTitle("All Requisition");
@@ -1751,35 +2033,23 @@ public class WRequisitionEntryForm extends ADForm {
 						int approved = rs.getInt(12);
 						int rejected = rs.getInt(13);
 						String pending = rs.getString(14);
-						String text;
-						String kind;
-						if ("CO".equals(docStatus) || "CL".equals(docStatus)) {
-							text = statusName;
-							kind = "ok";
-						} else if ("VO".equals(docStatus) || "RE".equals(docStatus)) {
-							text = statusName;
-							kind = "bad";
-						} else if (approved > 0) {
-							text = "Approved by " + approved + " level" + (approved > 1 ? "s" : "")
-									+ (pending != null ? ", now with " + pending : ", in approval");
-							kind = "prog";
-						} else if (pending != null) {
-							text = "Waiting for " + pending;
-							kind = "wait";
-						} else if (rejected > 0) {
-							text = "Rejected";
-							kind = "bad";
-						} else {
-							text = statusName;
-							kind = "draft";
-						}
+						String[] stg = stage(docStatus, statusName, approved, rejected, pending);
 						Listcell st = new Listcell();
-						Label badge = new Label(text);
-						badge.setSclass("xx-badge xx-badge-" + kind);
+						// the status is a button: it opens the approval history of this requisition
+						Button badge = new Button(stg[0]);
+						badge.setSclass("btn btn-sm xx-st xx-st-" + stg[1]);
+						badge.setTooltiptext("Click to see the approval history");
+						badge.addEventListener(Events.ON_CLICK, ev -> {
+							suppressRowUntil = System.currentTimeMillis() + 1500; // the row click is not meant
+							ev.stopPropagation();
+							openHistory(rid);
+						});
 						st.appendChild(badge);
 						li.appendChild(st);
 
 						li.addEventListener(Events.ON_CLICK, ev -> {
+							if (System.currentTimeMillis() < suppressRowUntil)
+								return;
 							win.detach();
 							openRequisition(rid);
 						});
