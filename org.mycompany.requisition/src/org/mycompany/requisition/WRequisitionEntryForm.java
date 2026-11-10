@@ -96,7 +96,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int SEARCH_LIMIT = 50;
 
 	/** bump when the CSS below changes so open browsers take the new look */
-	private static final String CSS_VERSION = "7";
+	private static final String CSS_VERSION = "8";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -282,8 +282,12 @@ public class WRequisitionEntryForm extends ADForm {
 .xx-req .xx-c6 { grid-column:span 6; }
 @media (max-width:1000px) { .xx-req .xx-grid.xx-grid24 { grid-template-columns:repeat(12,minmax(0,1fr)); } .xx-req .xx-c3 { grid-column:span 3; } .xx-req .xx-c6 { grid-column:span 6; } }
 @media (max-width:600px)  { .xx-req .xx-grid.xx-grid24 { grid-template-columns:minmax(0,1fr); } .xx-req .xx-c3, .xx-req .xx-c6 { grid-column:span 1; } }
-/* Description: drag the corner to make it smaller / bigger */
-.xx-req textarea.z-textbox { resize:vertical; min-height:64px; max-height:320px; overflow:auto; line-height:1.45; }
+/* Description: same size as the other fields; drag the corner to make it bigger (and smaller again) */
+.xx-req textarea.xx-desc { height:26px; min-height:26px; max-height:320px; resize:vertical; overflow:auto; line-height:1.4; }
+/* Product Specification: same size as its neighbours, room for 2 lines; while typing it opens up to a bigger box over the fields below */
+.xx-req .xx-specwrap { position:relative; height:26px; }
+.xx-req .xx-specwrap textarea.xx-spec { position:absolute; left:0; top:0; width:100%; height:26px; min-height:26px; max-height:none; box-sizing:border-box; resize:none; overflow:hidden; font-size:.7rem; line-height:1.05; padding:1px .5rem; }
+.xx-req .xx-specwrap textarea.xx-spec:focus { height:56px; z-index:30; overflow:auto; font-size:.8rem; line-height:1.35; padding:.25rem .5rem; box-shadow:0 .5rem 1rem rgba(0,0,0,.18), 0 0 0 .25rem rgba(13,110,253,.25) !important; }
 /* totals row at the end of the line table */
 .xx-req .z-listbox .z-listfooter { background:#e7f1ff !important; border-top:2px solid #0d6efd !important; border-right:1px solid #b6d4fe !important; font-weight:700; }
 .xx-req .z-listbox .z-listfooter .z-label { font-size:.82rem; font-weight:700; color:#0a2e6b; }
@@ -331,6 +335,16 @@ public class WRequisitionEntryForm extends ADForm {
 			+ "if(t.disabled)return;var w=null;try{w=zk.Widget.$(t);}catch(x){}"
 			+ "if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
 
+	/**
+	 * A form button (Attachment, + Add Product, Save, All Requisition ...) that has the focus
+	 * (Tab) does its job on Enter, not only on a mouse click.
+	 */
+	private static final String ENTER_JS = "(function(){if(window.__xxEnterV==='1')return;window.__xxEnterV='1';"
+			+ "document.addEventListener('keydown',function(e){"
+			+ "if(e.key!=='Enter'||e.ctrlKey||e.altKey||e.shiftKey)return;var t=e.target;"
+			+ "if(!(t&&t.tagName==='BUTTON'&&t.closest&&t.closest('.xx-req')))return;"
+			+ "if(t.disabled)return;e.preventDefault();e.stopPropagation();t.click();},true);})();";
+
 	private void installCss() {
 		if (Executions.getCurrent() == null)
 			return;
@@ -341,6 +355,7 @@ public class WRequisitionEntryForm extends ADForm {
 					+ "if(s.getAttribute('data-v')!==V){s.setAttribute('data-v',V);s.textContent='" + css + "';}})();");
 			Clients.evalJavaScript(DATE_JS);
 			Clients.evalJavaScript(COMBO_JS);
+			Clients.evalJavaScript(ENTER_JS);
 		} catch (Exception e) {
 			log.warning("requisition css not installed: " + e);
 		}
@@ -476,9 +491,8 @@ public class WRequisitionEntryForm extends ADForm {
 		g.appendChild(field("Date Required", true, dtRequired, 1));
 
 		txtDescription.setMultiline(true);
-		txtDescription.setRows(2);
-		txtDescription.setSclass("form-control");
-		txtDescription.setStyle("resize:vertical;"); // drag the corner: smaller / bigger
+		txtDescription.setRows(1);
+		txtDescription.setSclass("form-control xx-desc"); // one line like the others; drag the corner to enlarge
 		ZKUpdateUtil.setWidth(txtDescription, "100%");
 		g.appendChild(field("Description", false, txtDescription, 3));
 
@@ -503,10 +517,15 @@ public class WRequisitionEntryForm extends ADForm {
 		g.appendChild(field24("Department", true, pDept.box, 6));
 		ZKUpdateUtil.setWidth(dtLine, "100%");
 		g.appendChild(field24("Date Required (Line)", false, dtLine, 6));
-		// Product Specification: one line of plain text, same size as the others
-		txtSpec.setSclass("form-control");
+		// Product Specification: plain text, 2 lines, same size as the others (opens up while typing)
+		txtSpec.setMultiline(true);
+		txtSpec.setRows(2);
+		txtSpec.setSclass("form-control xx-spec");
 		ZKUpdateUtil.setWidth(txtSpec, "100%");
-		g.appendChild(field24("Product Specification", false, txtSpec, 6));
+		Div specWrap = new Div();
+		specWrap.setSclass("xx-specwrap");
+		specWrap.appendChild(txtSpec);
+		g.appendChild(field24("Product Specification", false, specWrap, 6));
 		// row 2: Parent Category | Sub-Category | Product (wide), UOM | Qty (small)
 		g.appendChild(field24("Parent Category", true, pParent.box, 6));
 		g.appendChild(field24("Sub-Category", false, pSub.box, 6));
@@ -1008,6 +1027,8 @@ public class WRequisitionEntryForm extends ADForm {
 		pWarehouse.onChange = this::productChanged;
 
 		btnAdd.addEventListener(Events.ON_CLICK, e -> addLine());
+		decQty.addEventListener(Events.ON_OK, e -> decRate.focus());
+		decRate.addEventListener(Events.ON_OK, e -> addLine());
 		btnOk.addEventListener(Events.ON_CLICK, e -> save());
 		btnCancel.addEventListener(Events.ON_CLICK, e -> close());
 		btnAttach.addEventListener(Events.ON_CLICK, e -> openAttachments());
@@ -1347,6 +1368,7 @@ public class WRequisitionEntryForm extends ADForm {
 		decQty.setValue((BigDecimal) null);
 		decRate.setValue((BigDecimal) null);
 		productChanged();
+		pProduct.box.focus(); // ready for the next product
 	}
 
 	private static String money(BigDecimal v) {
@@ -1366,7 +1388,9 @@ public class WRequisitionEntryForm extends ADForm {
 			li.appendChild(new Listcell(l.code));
 			li.appendChild(new Listcell(l.name));
 			li.appendChild(new Listcell(l.uom));
-			li.appendChild(new Listcell(l.spec));
+			Listcell specCell = new Listcell(l.spec.replace("\r", "").replace("\n", " / "));
+			specCell.setTooltiptext(l.spec);
+			li.appendChild(specCell);
 			li.appendChild(new Listcell(l.dateReq == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format(l.dateReq)));
 			li.appendChild(new Listcell(l.avail.stripTrailingZeros().toPlainString()));
 
