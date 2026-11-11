@@ -38,8 +38,8 @@
    WHERE s.m_product_id=l.m_product_id AND (r.m_warehouse_id IS NULL OR lo.m_warehouse_id=r.m_warehouse_id)),0) AS in_stock,
  COALESCE(l.xx_daterequired, r.daterequired) AS line_date,
  l.description AS remarks,
- chk.nm AS checked_by, chk.dt AS checked_date, rec.nm AS recommended_by, rec.dt AS recommended_date,
- aut.nm AS authorized_by, aut.dt AS authorized_date, app.nm AS approved_by, app.dt AS approved_date
+ chk.nm AS checked_by, chk.dt AS checked_date, NULL::varchar AS recommended_by, NULL::timestamp AS recommended_date,
+ NULL::varchar AS authorized_by, NULL::timestamp AS authorized_date, app.nm AS approved_by, app.dt AS approved_date
 FROM m_requisition r
 JOIN m_requisitionline l ON l.m_requisition_id=r.m_requisition_id AND l.isactive='Y'
 LEFT JOIN ad_org o ON o.ad_org_id=r.ad_org_id
@@ -48,30 +48,16 @@ LEFT JOIN c_doctype dt ON dt.c_doctype_id=r.c_doctype_id
 LEFT JOIN ad_user u ON u.ad_user_id=COALESCE(r.ad_user_id, r.createdby)
 LEFT JOIN m_product p ON p.m_product_id=l.m_product_id
 LEFT JOIN c_uom uom ON uom.c_uom_id=p.c_uom_id
-LEFT JOIN LATERAL (SELECT au.name AS nm, a.updated AS dt FROM ad_wf_activity a
-   JOIN ad_wf_node n ON n.ad_wf_node_id=a.ad_wf_node_id
-   JOIN ad_table t ON t.ad_table_id=a.ad_table_id AND t.tablename='M_Requisition'
-   LEFT JOIN ad_user au ON au.ad_user_id=a.updatedby
-   WHERE a.record_id=r.m_requisition_id AND a.wfstate='CC' AND n.name ILIKE '%check%'
-   ORDER BY a.updated DESC LIMIT 1) chk ON true
-LEFT JOIN LATERAL (SELECT au.name AS nm, a.updated AS dt FROM ad_wf_activity a
-   JOIN ad_wf_node n ON n.ad_wf_node_id=a.ad_wf_node_id
-   JOIN ad_table t ON t.ad_table_id=a.ad_table_id AND t.tablename='M_Requisition'
-   LEFT JOIN ad_user au ON au.ad_user_id=a.updatedby
-   WHERE a.record_id=r.m_requisition_id AND a.wfstate='CC' AND n.name ILIKE '%recommend%'
-   ORDER BY a.updated DESC LIMIT 1) rec ON true
-LEFT JOIN LATERAL (SELECT au.name AS nm, a.updated AS dt FROM ad_wf_activity a
-   JOIN ad_wf_node n ON n.ad_wf_node_id=a.ad_wf_node_id
-   JOIN ad_table t ON t.ad_table_id=a.ad_table_id AND t.tablename='M_Requisition'
-   LEFT JOIN ad_user au ON au.ad_user_id=a.updatedby
-   WHERE a.record_id=r.m_requisition_id AND a.wfstate='CC' AND n.name ILIKE '%author%'
-   ORDER BY a.updated DESC LIMIT 1) aut ON true
-LEFT JOIN LATERAL (SELECT au.name AS nm, a.updated AS dt FROM ad_wf_activity a
-   JOIN ad_wf_node n ON n.ad_wf_node_id=a.ad_wf_node_id
-   JOIN ad_table t ON t.ad_table_id=a.ad_table_id AND t.tablename='M_Requisition'
-   LEFT JOIN ad_user au ON au.ad_user_id=a.updatedby
-   WHERE a.record_id=r.m_requisition_id AND a.wfstate='CC' AND n.name ILIKE '%approv%'
-   ORDER BY a.updated DESC LIMIT 1) app ON true
+LEFT JOIN LATERAL (SELECT x.nm, x.dt FROM (SELECT au.name AS nm, h.updated AS dt,
+     row_number() OVER (ORDER BY h.updated, h.created) AS rn
+   FROM ut_approvalhistory h LEFT JOIN ad_user au ON au.ad_user_id=h.updatedby
+   WHERE h.documentno=r.documentno AND h.ad_client_id=r.ad_client_id
+     AND h.status='A' AND h.isactive='Y') x WHERE x.rn=1) chk ON true
+LEFT JOIN LATERAL (SELECT x.nm, x.dt FROM (SELECT au.name AS nm, h.updated AS dt,
+     row_number() OVER (ORDER BY h.updated, h.created) AS rn
+   FROM ut_approvalhistory h LEFT JOIN ad_user au ON au.ad_user_id=h.updatedby
+   WHERE h.documentno=r.documentno AND h.ad_client_id=r.ad_client_id
+     AND h.status='A' AND h.isactive='Y') x WHERE x.rn=2) app ON true
 WHERE r.m_requisition_id=$P{RECORD_ID}
 ORDER BY l.line, l.m_requisitionline_id]]></queryString>
 <field name="documentno" class="java.lang.String"/>
