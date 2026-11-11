@@ -158,6 +158,8 @@ public class WRequisitionEntryForm extends ADForm {
 	private final Label lblBanner = new Label();
 	/** M_Requisition_ID being edited / viewed, 0 = a new requisition */
 	private int editId = 0;
+	/** the lines as they were loaded: M_RequisitionLine_ID -> {code, name, qty}; used to write the edit history */
+	private final java.util.Map<Integer, Object[]> origLines = new java.util.HashMap<Integer, Object[]>();
 	private String editDocNo = "";
 	/** a click on the status button of a list row also reaches the row: ignore the row click until then */
 	private long suppressRowUntil = 0;
@@ -1028,6 +1030,50 @@ public class WRequisitionEntryForm extends ADForm {
 		return s == null ? "" : s;
 	}
 
+	private boolean tableExists(String table) {
+		return DB.getSQLValue(null, "SELECT COUNT(*) FROM information_schema.tables WHERE LOWER(table_name)=LOWER(?)",
+				table) > 0;
+	}
+
+	private static String qtyText(BigDecimal q) {
+		return q == null || q.signum() == 0 ? "0" : q.stripTrailingZeros().toPlainString();
+	}
+
+	private void addLog(int requisitionId, String action, String detail, String trxName) {
+		DB.executeUpdateEx("INSERT INTO XX_Requisition_Log (M_Requisition_ID, AD_Client_ID, Action, Detail, CreatedBy, Created) "
+				+ "VALUES (?,?,?,?,?,now())", new Object[] { Integer.valueOf(requisitionId), Integer.valueOf(clientId),
+						action, detail.length() > 480 ? detail.substring(0, 480) : detail, Integer.valueOf(userId) },
+				trxName);
+	}
+
+	/**
+	 * Edit history: what this save changed (line added / removed / Qty changed). Written in the same
+	 * transaction as the save, so the Approval History shows it at once. Needs db/18_requisition_edit_log.sql.
+	 */
+	private void logChanges(int requisitionId, String trxName) {
+		if (!tableExists("XX_Requisition_Log")) {
+			log.warning("XX_Requisition_Log is missing: run db/18_requisition_edit_log.sql to keep the edit history");
+			return;
+		}
+		for (Line l : lines) {
+			if (l.lineId <= 0)
+				addLog(requisitionId, "Line added", l.code + " - " + l.name + "  x " + qtyText(l.qty) + " " + l.uom,
+						trxName);
+			else {
+				Object[] o = origLines.get(Integer.valueOf(l.lineId));
+				if (o != null && ((BigDecimal) o[2]).compareTo(l.qty) != 0)
+					addLog(requisitionId, "Qty changed", l.code + " - " + l.name + "  : " + qtyText((BigDecimal) o[2])
+							+ " \u2192 " + qtyText(l.qty), trxName);
+			}
+		}
+		for (Integer did : deletedLineIds) {
+			Object[] o = origLines.get(did);
+			if (o != null)
+				addLog(requisitionId, "Line removed", o[0] + " - " + o[1] + "  x " + qtyText((BigDecimal) o[2]),
+						trxName);
+		}
+	}
+
 	private boolean columnExists(String table, String column) {
 		return DB.getSQLValue(null, "SELECT COUNT(*) FROM information_schema.columns "
 				+ "WHERE LOWER(table_name)=LOWER(?) AND LOWER(column_name)=LOWER(?)", table, column) > 0;
@@ -1534,17 +1580,21 @@ public class WRequisitionEntryForm extends ADForm {
 	private void applyMode() {
 		boolean ro = readOnly;
 		boolean existing = editId > 0;
-		pOrg.box.setDisabled(ro || existing); // organization and type decide the approval path: fixed once saved
-		cbType.box.setDisabled(ro || existing);
-		cbLocation.box.setDisabled(ro);
-		cbPriority.box.setDisabled(ro);
-		pWarehouse.box.setDisabled(ro);
-		dtDoc.setDisabled(ro);
-		dtRequired.setDisabled(ro);
-		txtDescription.setDisabled(ro);
-		cbSegment.box.setDisabled(ro);
-		pDept.box.setDisabled(ro);
-		pParent.box.setDisabled(ro);
+		// an open requisition keeps its master data: only the product part of the Add Product card
+		// (Sub-Category, Product, Qty, Product Specification, Date Required (Line)) can be used,
+		// to add new lines. Everything else is locked.
+		boolean lock = ro || existing;
+		pOrg.box.setDisabled(lock);
+		cbType.box.setDisabled(lock);
+		cbLocation.box.setDisabled(lock);
+		cbPriority.box.setDisabled(lock);
+		pWarehouse.box.setDisabled(lock);
+		dtDoc.setDisabled(lock);
+		dtRequired.setDisabled(lock);
+		txtDescription.setDisabled(lock);
+		cbSegment.box.setDisabled(lock);
+		pDept.box.setDisabled(lock);
+		pParent.box.setDisabled(lock);
 		pSub.box.setDisabled(ro);
 		pProduct.box.setDisabled(ro);
 		txtSpec.setDisabled(ro);
@@ -1617,7 +1667,8 @@ public class WRequisitionEntryForm extends ADForm {
 		} else {
 			banner.setSclass("xx-banner");
 			lblBanner.setValue("\u270E  Editing Requisition " + editDocNo
-					+ ". No approver has approved it yet, so you can still change it. Click Save to keep the changes.");
+					+ ". No approver has approved it yet, so you can add new products (Sub-Category, Product, Qty, "
+					+ "Specification, Date Required) and change a Qty in the table. Click Save to keep the changes.");
 		}
 	}
 
@@ -1650,6 +1701,7 @@ public class WRequisitionEntryForm extends ADForm {
 					l.dateReq = rs.getTimestamp(13);
 					l.avail = availableQty(l.productId, warehouseId);
 					lines.add(l);
+					origLines.put(Integer.valueOf(l.lineId), new Object[] { l.code, l.name, l.qty });
 				}
 			}
 		} catch (Exception e) {
@@ -1874,9 +1926,57 @@ public class WRequisitionEntryForm extends ADForm {
 		first.appendChild(new Listcell(creator));
 		lb.appendChild(first);
 
-		// 2. every approval layer, in the order it was reached
+		// edits of the requisition (lines added / removed / Qty changed), oldest first
+		List<Object[]> edits = new ArrayList<Object[]>();
+		if (tableExists("XX_Requisition_Log")) {
+			String eSql = "SELECT l.Created, l.Action, l.Detail, COALESCE(u.Name,'') FROM XX_Requisition_Log l "
+					+ "LEFT JOIN AD_User u ON u.AD_User_ID=l.CreatedBy WHERE l.M_Requisition_ID=? "
+					+ "ORDER BY l.Created, l.XX_Requisition_Log_ID";
+			try (PreparedStatement ps = DB.prepareStatement(eSql, null)) {
+				ps.setInt(1, requisitionId);
+				try (ResultSet rs = ps.executeQuery()) {
+					while (rs.next())
+						edits.add(new Object[] { rs.getTimestamp(1), rs.getString(2), rs.getString(3), rs.getString(4) });
+				}
+			} catch (Exception e) {
+				log.log(Level.WARNING, eSql, e);
+			}
+		}
+		// layers and edits in one list, by time
+		List<Object[]> events = new ArrayList<Object[]>();
+		for (Hist h : rows)
+			events.add(new Object[] { h.created, Integer.valueOf(0), h });
+		for (Object[] ed : edits)
+			events.add(new Object[] { ed[0], Integer.valueOf(1), ed });
+		events.sort((a, b) -> {
+			Timestamp ta = (Timestamp) a[0];
+			Timestamp tb = (Timestamp) b[0];
+			if (ta == null || tb == null)
+				return ta == tb ? 0 : (ta == null ? 1 : -1);
+			return ta.compareTo(tb);
+		});
+
+		// 2. every approval layer and every edit, in the order it happened
 		int level = 0;
-		for (Hist h : rows) {
+		for (Object[] ev : events) {
+			if (((Integer) ev[1]).intValue() == 1) {
+				Object[] ed = (Object[]) ev[2];
+				n++;
+				Listitem le = new Listitem();
+				le.appendChild(new Listcell(String.valueOf(n)));
+				le.appendChild(new Listcell("Edit"));
+				le.appendChild(new Listcell((String) ed[2]));
+				Listcell sce = new Listcell();
+				String act = (String) ed[1];
+				sce.appendChild(badgeLabel(act, "Line removed".equals(act) ? "bad" : "prog"));
+				le.appendChild(sce);
+				le.appendChild(new Listcell(""));
+				le.appendChild(new Listcell(stamp((Timestamp) ed[0])));
+				le.appendChild(new Listcell((String) ed[3]));
+				lb.appendChild(le);
+				continue;
+			}
+			Hist h = (Hist) ev[2];
 			n++;
 			level++;
 			Listitem li = new Listitem();
@@ -2284,6 +2384,9 @@ public class WRequisitionEntryForm extends ADForm {
 				att.saveEx();
 			}
 
+			if (editing)
+				logChanges(req.get_ID(), trxName);
+
 			trx.commit(true);
 			final String docNo = req.getDocumentNo();
 			final int reqId = req.get_ID();
@@ -2417,6 +2520,7 @@ public class WRequisitionEntryForm extends ADForm {
 
 	private void resetForm() {
 		editId = 0;
+		origLines.clear();
 		editDocNo = "";
 		readOnly = false;
 		deletedLineIds.clear();
