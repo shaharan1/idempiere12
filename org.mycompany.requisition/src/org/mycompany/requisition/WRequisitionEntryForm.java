@@ -93,7 +93,7 @@ public class WRequisitionEntryForm extends ADForm {
 	private static final int REF_DOCSTATUS = 131;
 
 	/** max rows a type-ahead search brings back */
-	private static final int SEARCH_LIMIT = 50;
+	private static final int SEARCH_LIMIT = 100;
 
 	/** bump when the CSS below changes so open browsers take the new look */
 	private static final String CSS_VERSION = "10";
