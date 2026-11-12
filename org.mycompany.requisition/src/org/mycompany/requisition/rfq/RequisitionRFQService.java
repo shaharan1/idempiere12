@@ -39,7 +39,7 @@ public class RequisitionRFQService {
 		sql.append("FROM M_RequisitionLine rl ");
 		sql.append("INNER JOIN M_Requisition r ON r.M_Requisition_ID = rl.M_Requisition_ID ");
 		sql.append("LEFT JOIN M_Product p ON p.M_Product_ID = rl.M_Product_ID ");
-		sql.append("WHERE rl.IsActive = 'Y' ");
+		sql.append("WHERE rl.IsActive = 'Y' AND r.DocStatus = 'CO' ");
 		sql.append("AND rl.M_Product_ID IS NOT NULL AND rl.M_Product_ID > 0 ");
 		sql.append("AND (rl.XX_RfQ_ID IS NULL OR rl.XX_RfQ_ID = 0) ");
 		sql.append("AND rl.C_OrderLine_ID IS NULL ");
