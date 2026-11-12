@@ -157,18 +157,100 @@ public class RfqPoService {
 
 	// ------------------------------------------------------------ Terms and Conditions
 
-	/** Terms and Conditions Types (XX_RFQ_Term), same list as the RFQ Term dropdown. */
-	public List<KeyNamePair> termTypes() {
-		if (!hasColumn("xx_rfq_term", "xx_rfq_term_id"))
-			return new ArrayList<KeyNamePair>();
-		return pairs("SELECT XX_RFQ_Term_ID, Name FROM XX_RFQ_Term WHERE IsActive='Y' AND AD_Client_ID IN (0,?) ORDER BY Name");
+	// The Terms and Conditions Type list is the one behind the term column of the RFQ window (C_RfQ), found
+	// from the dictionary like the Create RFQ popup does; XX_RFQ_Term is only the fallback.
+	private static String termTable, termIdCol, termTextCol;
+
+	private static final String[] TERM_TEXT_CANDIDATES = { "TermsText", "DocumentNote", "TermsAndConditions",
+			"TermsConditions", "TermsCondition", "Terms", "Description", "Help", "Comments", "Text" };
+
+	private static synchronized void resolveTermSource() {
+		if (termTable != null)
+			return;
+		String colName = null;
+		int refId = 0, refValueId = 0;
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement("SELECT ColumnName, AD_Reference_ID, AD_Reference_Value_ID FROM AD_Column "
+					+ "WHERE AD_Table_ID=(SELECT AD_Table_ID FROM AD_Table WHERE TableName='C_RfQ') "
+					+ "AND IsActive='Y' AND LOWER(ColumnName) LIKE '%term%' AND LOWER(ColumnName) LIKE '%_id' "
+					+ "ORDER BY AD_Column_ID", null);
+			rs = ps.executeQuery();
+			if (rs.next()) {
+				colName = rs.getString(1);
+				refId = rs.getInt(2);
+				refValueId = rs.getInt(3);
+			}
+		} catch (Exception e) {
+			log.warning("term column lookup: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+		String t = null, k = null;
+		if (colName != null) {
+			if (refId == org.compiere.util.DisplayType.Table && refValueId > 0) {
+				t = DB.getSQLValueString(null, "SELECT t.TableName FROM AD_Ref_Table rt JOIN AD_Table t ON t.AD_Table_ID=rt.AD_Table_ID "
+						+ "WHERE rt.AD_Reference_ID=?", refValueId);
+				k = DB.getSQLValueString(null, "SELECT c.ColumnName FROM AD_Ref_Table rt JOIN AD_Column c ON c.AD_Column_ID=rt.AD_Key "
+						+ "WHERE rt.AD_Reference_ID=?", refValueId);
+			} else if (colName.toLowerCase().endsWith("_id")) {
+				t = colName.substring(0, colName.length() - 3);
+				k = colName;
+			}
+		}
+		if (t == null || k == null || !hasColumn(t.toLowerCase(), k.toLowerCase())) {
+			t = "XX_RFQ_Term";
+			k = "XX_RFQ_Term_ID";
+		}
+		String txt = null;
+		for (String cand : TERM_TEXT_CANDIDATES)
+			if (hasColumn(t.toLowerCase(), cand.toLowerCase())) {
+				txt = cand;
+				break;
+			}
+		if (txt == null)
+			txt = DB.getSQLValueString(null, "SELECT column_name FROM information_schema.columns "
+					+ "WHERE LOWER(table_name)=LOWER(?) AND (data_type='text' OR character_maximum_length>=255) "
+					+ "ORDER BY ordinal_position LIMIT 1", t);
+		log.info("PO Terms source: table=" + t + ", key=" + k + ", text=" + txt);
+		termIdCol = k;
+		termTextCol = txt;
+		termTable = t;
 	}
 
-	/** The Terms and Conditions text of a type. */
+	/** Terms and Conditions Types: the same list as the Terms type of the RFQ window. */
+	public List<KeyNamePair> termTypes() {
+		resolveTermSource();
+		if (!hasColumn(termTable.toLowerCase(), termIdCol.toLowerCase()))
+			return new ArrayList<KeyNamePair>();
+		boolean client = hasColumn(termTable.toLowerCase(), "ad_client_id");
+		String sql = "SELECT " + termIdCol + ", Name FROM " + termTable + " WHERE IsActive='Y' "
+				+ (client ? "AND AD_Client_ID IN (0,?) " : "") + "ORDER BY Name";
+		List<KeyNamePair> list = new ArrayList<KeyNamePair>();
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement(sql, null);
+			if (client)
+				ps.setInt(1, Env.getAD_Client_ID(Env.getCtx()));
+			rs = ps.executeQuery();
+			while (rs.next())
+				list.add(new KeyNamePair(rs.getInt(1), rs.getString(2)));
+		} catch (Exception e) {
+			log.warning("termTypes: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+		return list;
+	}
+
+	/** The Terms and Conditions text of a type, exactly as stored. */
 	public String termText(int termId) {
-		if (termId <= 0 || !hasColumn("xx_rfq_term", "termstext"))
+		resolveTermSource();
+		if (termId <= 0 || termTextCol == null)
 			return "";
-		String t = DB.getSQLValueString(null, "SELECT TermsText FROM XX_RFQ_Term WHERE XX_RFQ_Term_ID=?", termId);
+		String t = DB.getSQLValueString(null, "SELECT " + termTextCol + " FROM " + termTable + " WHERE " + termIdCol + "=?", termId);
 		return t == null ? "" : t;
 	}
 
