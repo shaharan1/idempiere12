@@ -22,10 +22,6 @@ import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
 import org.zkoss.zk.ui.event.UploadEvent;
 import org.zkoss.util.media.Media;
-import org.zkoss.zul.Borderlayout;
-import org.zkoss.zul.Center;
-import org.zkoss.zul.North;
-import org.zkoss.zul.South;
 import org.zkoss.zul.Button;
 import org.zkoss.zul.Checkbox;
 import org.zkoss.zul.Column;
@@ -83,30 +79,19 @@ public class CreatePODialog {
 			win.setHeight("92%");
 			win.setPosition("center");
 			win.setContentStyle("overflow:hidden;padding:0;");
-			// North = header + costs, Center = the lines grid (takes ALL the remaining height), South = Total + buttons
-			Borderlayout bl = new Borderlayout();
-			bl.setVflex("1");
-			bl.setHflex("1");
-			win.appendChild(bl);
-			North north = new North();
-			north.setBorder("none");
-			north.setFlex(true);
-			bl.appendChild(north);
+			// top = header + costs, middle = the lines grid (vflex: takes ALL the remaining height), bottom = Total + buttons
+			Vlayout root = new Vlayout();
+			root.setVflex("1");
+			root.setHflex("1");
+			root.setSpacing("0");
+			win.appendChild(root);
 			Vlayout box = new Vlayout();
 			box.setWidth("100%");
 			box.setStyle("padding:6px;");
-			north.appendChild(box);
-			Center center = new Center();
-			center.setBorder("none");
-			bl.appendChild(center);
-			South south = new South();
-			south.setBorder("none");
-			south.setFlex(true);
-			bl.appendChild(south);
+			root.appendChild(box);
 			Vlayout foot = new Vlayout();
 			foot.setWidth("100%");
 			foot.setStyle("padding:6px;");
-			south.appendChild(foot);
 
 			// ------------------------------------------------ header
 			final Listbox warehouse = selectOf(service.warehouses(), d.warehouseId, true);
@@ -175,13 +160,13 @@ public class CreatePODialog {
 
 			// Terms and Conditions Type -> Terms and Conditions (text of the type, editable) + Attachment
 			Grid terms = new Grid();
-			Columns tc = new Columns();
+			Columns termCols = new Columns();
 			for (int i = 0; i < 4; i++) {
 				Column c = new Column();
 				c.setWidth(i == 0 ? "130px" : i == 1 ? "260px" : i == 2 ? "130px" : null);
-				tc.appendChild(c);
+				termCols.appendChild(c);
 			}
-			terms.appendChild(tc);
+			terms.appendChild(termCols);
 			org.zkoss.zul.Rows tr = new org.zkoss.zul.Rows();
 			terms.appendChild(tr);
 			Hlayout attBox = new Hlayout();
@@ -210,7 +195,8 @@ public class CreatePODialog {
 				lh.appendChild(h);
 			}
 			grid.appendChild(lh);
-			center.appendChild(grid);
+			root.appendChild(grid);
+			root.appendChild(foot);
 
 			final Label totalLabel = new Label();
 			totalLabel.setStyle("font-weight:700;font-size:14px;color:#166534;");
