@@ -61,7 +61,9 @@ import org.zkoss.zul.Messagebox;
  * <p>
  * "All Requisition" lists every requisition the user created (status, who it is with). Click one
  * to load it back into this form: while no approver has approved it (and it is still Drafted) it
- * can be changed and saved again; after the first approval, or once completed, it opens read-only.
+ * can be changed and 
+
+d again; after the first approval, or once completed, it opens read-only.
  * The same product cannot be added twice to one requisition, and the Qty of a line can be
  * changed straight in the line table.
  * <p>
@@ -148,7 +150,7 @@ public class WRequisitionEntryForm extends ADForm {
 	/** M_RequisitionLine_ID of lines removed while editing (deleted at Save) */
 	private final List<Integer> deletedLineIds = new ArrayList<Integer>();
 
-	private final Button btnOk = new Button("\u2714  Save");
+	private final Button btnOk = new Button("\u2714 Save ");
 	private final Button btnCancel = new Button("\u2716  Cancel");
 	private final Button btnAll = new Button("All Requisition");
 	private final Button btnNew = new Button("+  New Requisition");
