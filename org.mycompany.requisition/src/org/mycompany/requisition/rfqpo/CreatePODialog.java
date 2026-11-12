@@ -20,6 +20,12 @@ import org.zkoss.util.media.AMedia;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
 import org.zkoss.zk.ui.event.Events;
+import org.zkoss.zk.ui.event.UploadEvent;
+import org.zkoss.util.media.Media;
+import org.zkoss.zul.Borderlayout;
+import org.zkoss.zul.Center;
+import org.zkoss.zul.North;
+import org.zkoss.zul.South;
 import org.zkoss.zul.Button;
 import org.zkoss.zul.Checkbox;
 import org.zkoss.zul.Column;
@@ -48,7 +54,7 @@ import org.zkoss.zul.Window;
 public class CreatePODialog {
 
 	private static final CLogger log = CLogger.getCLogger(CreatePODialog.class);
-	static final DecimalFormat MONEY = new DecimalFormat("#,##0.00");
+	private static final DecimalFormat MONEY = new DecimalFormat("#,##0.00");
 
 	private static class LineRow {
 		Line line;
@@ -76,11 +82,31 @@ public class CreatePODialog {
 			win.setWidth("97%");
 			win.setHeight("92%");
 			win.setPosition("center");
-			win.setContentStyle("overflow:auto;");
+			win.setContentStyle("overflow:hidden;padding:0;");
+			// North = header + costs, Center = the lines grid (takes ALL the remaining height), South = Total + buttons
+			Borderlayout bl = new Borderlayout();
+			bl.setVflex("1");
+			bl.setHflex("1");
+			win.appendChild(bl);
+			North north = new North();
+			north.setBorder("none");
+			north.setFlex(true);
+			bl.appendChild(north);
 			Vlayout box = new Vlayout();
 			box.setWidth("100%");
 			box.setStyle("padding:6px;");
-			win.appendChild(box);
+			north.appendChild(box);
+			Center center = new Center();
+			center.setBorder("none");
+			bl.appendChild(center);
+			South south = new South();
+			south.setBorder("none");
+			south.setFlex(true);
+			bl.appendChild(south);
+			Vlayout foot = new Vlayout();
+			foot.setWidth("100%");
+			foot.setStyle("padding:6px;");
+			south.appendChild(foot);
 
 			// ------------------------------------------------ header
 			final Listbox warehouse = selectOf(service.warehouses(), d.warehouseId, true);
@@ -91,8 +117,19 @@ public class CreatePODialog {
 			dateOrdered.setFormat("dd/MM/yyyy");
 			final Datebox datePromised = new Datebox(d.dateRequired == null ? null : new java.util.Date(d.dateRequired.getTime()));
 			datePromised.setFormat("dd/MM/yyyy");
-			final Textbox description = new Textbox("Created from CS " + row.docNo);
+			final Textbox description = new Textbox();
 			description.setWidth("95%");
+			final Listbox termType = selectOf(service.termTypes(), 0, true);
+			final Textbox termsText = new Textbox();
+			termsText.setMultiline(true);
+			termsText.setRows(4);
+			termsText.setWidth("98%");
+			termType.addEventListener(Events.ON_SELECT, e -> termsText.setValue(service.termText(idOf(termType))));
+			final List<Media> attachments = new ArrayList<Media>();
+			final Button attach = new Button("Attachment");
+			final Label attachLabel = new Label("No file attached");
+			attachLabel.setStyle("color:#6c757d;font-size:12px;margin-left:8px;");
+			attach.addEventListener(Events.ON_CLICK, e -> openAttachments(owner, attachments, attachLabel));
 			final Textbox payNote = new Textbox();
 			payNote.setMultiline(true);
 			payNote.setRows(2);
@@ -136,10 +173,28 @@ public class CreatePODialog {
 					greenLabel("Gross Discount"), grossDisc));
 			box.appendChild(costs);
 
+			// Terms and Conditions Type -> Terms and Conditions (text of the type, editable) + Attachment
+			Grid terms = new Grid();
+			Columns tc = new Columns();
+			for (int i = 0; i < 4; i++) {
+				Column c = new Column();
+				c.setWidth(i == 0 ? "130px" : i == 1 ? "260px" : i == 2 ? "130px" : null);
+				tc.appendChild(c);
+			}
+			terms.appendChild(tc);
+			org.zkoss.zul.Rows tr = new org.zkoss.zul.Rows();
+			terms.appendChild(tr);
+			Hlayout attBox = new Hlayout();
+			attBox.appendChild(attach);
+			attBox.appendChild(attachLabel);
+			tr.appendChild(rowOf(label("Terms and Conditions Type"), termType, label("Terms and Conditions"), termsText));
+			tr.appendChild(rowOf(label("Attachment"), attBox, new Label(""), new Label("")));
+			box.appendChild(terms);
+
 			// ------------------------------------------------ lines
 			final Listbox grid = new Listbox();
-			grid.setWidth("100%");
-			grid.setHeight("300px");
+			grid.setHflex("1");
+			grid.setVflex("1");
 			final Checkbox all = new Checkbox("ALL");
 			Listhead lh = new Listhead();
 			Listheader h0 = new Listheader();
@@ -155,14 +210,11 @@ public class CreatePODialog {
 				lh.appendChild(h);
 			}
 			grid.appendChild(lh);
-			box.appendChild(grid);
+			center.appendChild(grid);
 
 			final Label totalLabel = new Label();
-			totalLabel.setStyle("font-weight:700;font-size:14px;");
-			box.appendChild(totalLabel);
-			final Label payableLabel = new Label();
-			payableLabel.setStyle("font-weight:700;font-size:14px;color:#166534;");
-			box.appendChild(payableLabel);
+			totalLabel.setStyle("font-weight:700;font-size:14px;color:#166534;");
+			foot.appendChild(totalLabel);
 
 			final List<LineRow> rows = new ArrayList<LineRow>();
 			final Runnable recalc = () -> {
@@ -181,14 +233,13 @@ public class CreatePODialog {
 						sv = sv.add(r.vatAmt);
 					}
 				}
-				totalLabel.setValue("Total (selected):   Amount " + MONEY.format(sa) + "   +   VAT " + MONEY.format(sv)
-						+ "   =   " + MONEY.format(sa.add(sv)));
 				BigDecimal tc = transport.getValue() == null ? BigDecimal.ZERO : transport.getValue();
 				BigDecimal oc = others.getValue() == null ? BigDecimal.ZERO : others.getValue();
 				BigDecimal disc = RfqPoService.discountAmount(sa.add(sv), grossPct.isChecked(), grossDisc.getValue());
-				payableLabel.setValue("Payable (sent for approval):   " + MONEY.format(sa.add(sv)) + "   -   Gross Discount "
-						+ MONEY.format(disc) + "   +   Transport " + MONEY.format(tc) + "   +   Others " + MONEY.format(oc)
-						+ "   =   " + MONEY.format(sa.add(sv).subtract(disc).add(tc).add(oc)));
+				totalLabel.setValue("Total:   Amount " + MONEY.format(sa) + "   -   Gross Discount " + MONEY.format(disc)
+						+ "   +   Transport " + MONEY.format(tc) + "   +   Others " + MONEY.format(oc)
+						+ "   +   VAT " + MONEY.format(sv)
+						+ "   =   " + MONEY.format(sa.subtract(disc).add(tc).add(oc).add(sv)));
 			};
 
 			for (Line l : lines) {
@@ -262,7 +313,7 @@ public class CreatePODialog {
 			Button cancel = new Button("Cancel");
 			btns.appendChild(ok);
 			btns.appendChild(cancel);
-			box.appendChild(btns);
+			foot.appendChild(btns);
 			cancel.addEventListener(Events.ON_CLICK, e -> win.detach());
 
 			ok.addEventListener(Events.ON_CLICK, e -> {
@@ -289,9 +340,12 @@ public class CreatePODialog {
 					req.othersCost = others.getValue() == null ? BigDecimal.ZERO : others.getValue();
 					req.grossDiscountPct = grossPct.isChecked();
 					req.grossDiscount = grossDisc.getValue() == null ? BigDecimal.ZERO : grossDisc.getValue();
+					req.termId = idOf(termType);
+					req.termsText = termsText.getValue();
+					req.attachments.addAll(attachments);
 					String note = payNote.getValue() == null ? "" : payNote.getValue().trim();
-					req.description = (description.getValue() == null ? "" : description.getValue())
-							+ (note.length() > 0 ? "\nPayment Term: " + note : "");
+					String desc = description.getValue() == null ? "" : description.getValue().trim();
+					req.description = desc + (note.length() > 0 ? (desc.length() > 0 ? "\n" : "") + "Payment Term: " + note : "");
 
 					for (LineRow r : rows) {
 						if (!r.sel.isChecked())
@@ -336,8 +390,88 @@ public class CreatePODialog {
 		}
 	}
 
+	/** Attachment pop-up (same as the Purchase Requisition): add / remove files before the PO is created. */
+	private static void openAttachments(Component owner, final List<Media> files, final Label summary) {
+		final Window w = new Window("Attachment", "normal", true);
+		w.setWidth("560px");
+		w.setPosition("center");
+		Vlayout body = new Vlayout();
+		body.setStyle("padding:10px;");
+		final Listbox lb = new Listbox();
+		lb.setWidth("100%");
+		lb.setHeight("240px");
+		Listhead lh = new Listhead();
+		String[] hn = { "#", "File name", "Size", "" };
+		String[] hw = { "40px", null, "90px", "60px" };
+		for (int i = 0; i < hn.length; i++) {
+			Listheader h = new Listheader(hn[i]);
+			if (hw[i] != null)
+				h.setWidth(hw[i]);
+			lh.appendChild(h);
+		}
+		lb.appendChild(lh);
+		final Label count = new Label();
+		final Runnable[] refresh = new Runnable[1];
+		refresh[0] = () -> {
+			while (lb.getItemCount() > 0)
+				lb.removeItemAt(0);
+			int n = 0;
+			for (final Media m : new ArrayList<Media>(files)) {
+				n++;
+				Listitem li = new Listitem();
+				li.appendChild(new Listcell(String.valueOf(n)));
+				li.appendChild(new Listcell(m.getName()));
+				long len;
+				try {
+					len = m.isBinary() ? m.getByteData().length : m.getStringData().length();
+				} catch (Exception ex) {
+					len = 0;
+				}
+				li.appendChild(right(len < 1024 ? len + " B" : len < 1048576 ? (len + 512) / 1024 + " KB"
+						: String.format("%.1f MB", len / 1048576.0)));
+				Listcell rm = new Listcell();
+				Button x = new Button("\u2716");
+				x.addEventListener(Events.ON_CLICK, ev -> {
+					files.remove(m);
+					refresh[0].run();
+				});
+				rm.appendChild(x);
+				li.appendChild(rm);
+				lb.appendChild(li);
+			}
+			String t = files.isEmpty() ? "No file attached" : files.size() + " file(s) attached";
+			count.setValue(t);
+			summary.setValue(t);
+		};
+		Button add = new Button("+  Add File");
+		add.setUpload("true,multiple=true");
+		add.addEventListener(Events.ON_UPLOAD, ev -> {
+			if (ev instanceof UploadEvent) {
+				Media[] ms = ((UploadEvent) ev).getMedias();
+				if (ms != null)
+					for (Media m : ms)
+						if (m != null)
+							files.add(m);
+				refresh[0].run();
+			}
+		});
+		Button done = new Button("OK");
+		done.addEventListener(Events.ON_CLICK, ev -> w.detach());
+		Hlayout bar = new Hlayout();
+		bar.appendChild(add);
+		bar.appendChild(count);
+		body.appendChild(bar);
+		body.appendChild(lb);
+		body.appendChild(done);
+		w.appendChild(body);
+		refresh[0].run();
+		w.setPage(owner.getPage());
+		org.mycompany.requisition.ui.XxTheme.apply(w);
+		w.doModal();
+	}
+
 	/** PO PDF inside the app (browser viewer gives print / download). */
-	static void showPdf(Component owner, int orderId, String docNo) {
+	private static void showPdf(Component owner, int orderId, String docNo) {
 		try {
 			byte[] pdf = RfqPoService.orderPdf(orderId);
 			AMedia media = new AMedia("PO_" + docNo + ".pdf", "pdf", "application/pdf", pdf);
@@ -365,7 +499,7 @@ public class CreatePODialog {
 
 	// ------------------------------------------------------------ small UI helpers
 
-	static Listbox selectOf(List<KeyNamePair> items, int selectedId, boolean blankFirst) {
+	private static Listbox selectOf(List<KeyNamePair> items, int selectedId, boolean blankFirst) {
 		Listbox lb = new Listbox();
 		lb.setMold("select");
 		lb.setWidth("95%");
@@ -385,30 +519,30 @@ public class CreatePODialog {
 	}
 
 	/** Listbox.appendItem only takes a String value; the ids here are Integers. */
-	static Listitem addItem(Listbox lb, String label, Object value) {
+	private static Listitem addItem(Listbox lb, String label, Object value) {
 		Listitem li = new Listitem(label, value);
 		lb.appendChild(li);
 		return li;
 	}
 
-	static int idOf(Listbox lb) {
+	private static int idOf(Listbox lb) {
 		Listitem li = lb.getSelectedItem();
 		return li == null || li.getValue() == null ? 0 : ((Integer) li.getValue()).intValue();
 	}
 
-	static Label label(String text) {
+	private static Label label(String text) {
 		Label l = new Label(text);
 		l.setStyle("font-weight:600;");
 		return l;
 	}
 
-	static Label greenLabel(String text) {
+	private static Label greenLabel(String text) {
 		Label l = new Label(text);
 		l.setStyle("font-weight:600;color:#15803d;");
 		return l;
 	}
 
-	static Decimalbox moneyBox(BigDecimal v) {
+	private static Decimalbox moneyBox(BigDecimal v) {
 		Decimalbox b = new Decimalbox(v == null ? BigDecimal.ZERO : v);
 		b.setFormat("#,##0.00");
 		b.setConstraint("no negative");
@@ -417,26 +551,26 @@ public class CreatePODialog {
 		return b;
 	}
 
-	static org.zkoss.zul.Row rowOf(Component... cs) {
+	private static org.zkoss.zul.Row rowOf(Component... cs) {
 		org.zkoss.zul.Row r = new org.zkoss.zul.Row();
 		for (Component c : cs)
 			r.appendChild(c);
 		return r;
 	}
 
-	static Listcell cell(Component c) {
+	private static Listcell cell(Component c) {
 		Listcell lc = new Listcell();
 		lc.appendChild(c);
 		return lc;
 	}
 
-	static Listcell right(String text) {
+	private static Listcell right(String text) {
 		Listcell c = new Listcell(text);
 		c.setStyle("text-align:right;");
 		return c;
 	}
 
-	static String qtyText(BigDecimal v) {
+	private static String qtyText(BigDecimal v) {
 		return v.stripTrailingZeros().toPlainString();
 	}
 }
