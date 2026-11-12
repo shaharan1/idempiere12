@@ -40,6 +40,7 @@ import org.zkoss.zul.Messagebox;
 import org.zkoss.zul.North;
 
 import org.mycompany.requisition.rfq.WCreateRFQDialog.LineRow;
+import org.mycompany.requisition.rfqpo.CreatePOFromPRDialog;
 
 /**
  * "Create RFQ From PR" form  -  step 1: the requisition list.
@@ -90,6 +91,8 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 	private Label selectedLbl = new Label("Selected lines: 0");
 	private Label countLbl = new Label("");
 	private Button createBtn = new Button("Create RFQ");
+	/** PO straight from the ticked lines, without RFQ / Comparative Statement */
+	private Button createPoBtn = new Button("Create PO");
 	/** the ticked lines: requisition line id -> line (can hold lines of several requisitions) */
 	private Map<Integer, LineRow> cart = new LinkedHashMap<Integer, LineRow>();
 
@@ -128,6 +131,7 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		searchBtn.addEventListener(Events.ON_CLICK, this);
 		refreshBtn.addEventListener(Events.ON_CLICK, this);
 		createBtn.addEventListener(Events.ON_CLICK, this);
+		createPoBtn.addEventListener(Events.ON_CLICK, this);
 		selectAll.addEventListener(Events.ON_CHECK, this);
 
 		reqList = new Listbox();
@@ -183,6 +187,7 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		bar.appendChild(selectedLbl);
 		bar.appendChild(countLbl);
 		bar.appendChild(createBtn);
+		bar.appendChild(createPoBtn);
 		north.appendChild(bar);
 
 		// ---- Center: the big requisition table ----
@@ -406,6 +411,8 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 				updateSelectedCount();
 			} else if (c == createBtn) {
 				openCreateDialog();
+			} else if (c == createPoBtn) {
+				openCreatePoDialog();
 			} else if (c instanceof Checkbox) {
 				syncSelection((Checkbox) c);   // a line tick box
 				updateSelectedCount();
@@ -448,6 +455,24 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		appendChild(dlg);
 		org.mycompany.requisition.ui.XxTheme.apply(dlg);
 		dlg.doModal();
+	}
+
+	/**
+	 * Opens the "Create PO" window with every ticked line: a PO straight from the requisition, no RFQ and no CS.
+	 * The lines get linked to the PO, so they leave this list just like lines used in an RFQ.
+	 */
+	private void openCreatePoDialog() {
+		if (cart.isEmpty()) {
+			warn("No line selected. Tick one or more lines in the table, then click Create PO.");
+			return;
+		}
+		CreatePOFromPRDialog.open(this, new ArrayList<Integer>(cart.keySet()), new Runnable() {
+			@Override
+			public void run() {
+				cart.clear();
+				loadList();   // used lines disappear from the list
+			}
+		});
 	}
 
 	// ---------------------------------------------------------------- helpers
