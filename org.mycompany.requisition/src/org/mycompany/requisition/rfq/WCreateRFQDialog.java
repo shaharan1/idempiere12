@@ -467,6 +467,16 @@ public class WCreateRFQDialog extends Window implements EventListener<Event> {
 			r.qty = q;
 			lines.add(r);
 		}
+		// only Completed requisitions may go into an RFQ (checked again here: the list could be old)
+		java.util.Set<Integer> checked = new java.util.HashSet<Integer>();
+		for (LineRow r : lines) {
+			if (!checked.add(Integer.valueOf(r.reqId)))
+				continue;
+			if (!"CO".equals(DB.getSQLValueString(null,
+					"SELECT DocStatus FROM M_Requisition WHERE M_Requisition_ID=?", r.reqId)))
+				throw new AdempiereException("Requisition " + r.reqNo
+						+ " is not Completed. An RFQ can be created only from a Completed requisition.");
+		}
 		int reqId = lines.get(0).reqId; // requisition of the first line
 
 		String trxName = Trx.createTrxName("CreateRFQ");
