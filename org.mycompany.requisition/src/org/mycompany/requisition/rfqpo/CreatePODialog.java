@@ -48,7 +48,7 @@ import org.zkoss.zul.Window;
 public class CreatePODialog {
 
 	private static final CLogger log = CLogger.getCLogger(CreatePODialog.class);
-	private static final DecimalFormat MONEY = new DecimalFormat("#,##0.00");
+	static final DecimalFormat MONEY = new DecimalFormat("#,##0.00");
 
 	private static class LineRow {
 		Line line;
@@ -337,7 +337,7 @@ public class CreatePODialog {
 	}
 
 	/** PO PDF inside the app (browser viewer gives print / download). */
-	private static void showPdf(Component owner, int orderId, String docNo) {
+	static void showPdf(Component owner, int orderId, String docNo) {
 		try {
 			byte[] pdf = RfqPoService.orderPdf(orderId);
 			AMedia media = new AMedia("PO_" + docNo + ".pdf", "pdf", "application/pdf", pdf);
@@ -365,7 +365,7 @@ public class CreatePODialog {
 
 	// ------------------------------------------------------------ small UI helpers
 
-	private static Listbox selectOf(List<KeyNamePair> items, int selectedId, boolean blankFirst) {
+	static Listbox selectOf(List<KeyNamePair> items, int selectedId, boolean blankFirst) {
 		Listbox lb = new Listbox();
 		lb.setMold("select");
 		lb.setWidth("95%");
@@ -385,30 +385,30 @@ public class CreatePODialog {
 	}
 
 	/** Listbox.appendItem only takes a String value; the ids here are Integers. */
-	private static Listitem addItem(Listbox lb, String label, Object value) {
+	static Listitem addItem(Listbox lb, String label, Object value) {
 		Listitem li = new Listitem(label, value);
 		lb.appendChild(li);
 		return li;
 	}
 
-	private static int idOf(Listbox lb) {
+	static int idOf(Listbox lb) {
 		Listitem li = lb.getSelectedItem();
 		return li == null || li.getValue() == null ? 0 : ((Integer) li.getValue()).intValue();
 	}
 
-	private static Label label(String text) {
+	static Label label(String text) {
 		Label l = new Label(text);
 		l.setStyle("font-weight:600;");
 		return l;
 	}
 
-	private static Label greenLabel(String text) {
+	static Label greenLabel(String text) {
 		Label l = new Label(text);
 		l.setStyle("font-weight:600;color:#15803d;");
 		return l;
 	}
 
-	private static Decimalbox moneyBox(BigDecimal v) {
+	static Decimalbox moneyBox(BigDecimal v) {
 		Decimalbox b = new Decimalbox(v == null ? BigDecimal.ZERO : v);
 		b.setFormat("#,##0.00");
 		b.setConstraint("no negative");
@@ -417,26 +417,26 @@ public class CreatePODialog {
 		return b;
 	}
 
-	private static org.zkoss.zul.Row rowOf(Component... cs) {
+	static org.zkoss.zul.Row rowOf(Component... cs) {
 		org.zkoss.zul.Row r = new org.zkoss.zul.Row();
 		for (Component c : cs)
 			r.appendChild(c);
 		return r;
 	}
 
-	private static Listcell cell(Component c) {
+	static Listcell cell(Component c) {
 		Listcell lc = new Listcell();
 		lc.appendChild(c);
 		return lc;
 	}
 
-	private static Listcell right(String text) {
+	static Listcell right(String text) {
 		Listcell c = new Listcell(text);
 		c.setStyle("text-align:right;");
 		return c;
 	}
 
-	private static String qtyText(BigDecimal v) {
+	static String qtyText(BigDecimal v) {
 		return v.stripTrailingZeros().toPlainString();
 	}
 }
