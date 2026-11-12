@@ -7,6 +7,7 @@ import static org.mycompany.requisition.rfqpo.CreatePODialog.greenLabel;
 import static org.mycompany.requisition.rfqpo.CreatePODialog.idOf;
 import static org.mycompany.requisition.rfqpo.CreatePODialog.label;
 import static org.mycompany.requisition.rfqpo.CreatePODialog.moneyBox;
+import static org.mycompany.requisition.rfqpo.CreatePODialog.openAttachments;
 import static org.mycompany.requisition.rfqpo.CreatePODialog.qtyText;
 import static org.mycompany.requisition.rfqpo.CreatePODialog.right;
 import static org.mycompany.requisition.rfqpo.CreatePODialog.rowOf;
@@ -25,6 +26,7 @@ import org.mycompany.requisition.rfqpo.RfqPoService.PrLine;
 import org.mycompany.requisition.rfqpo.RfqPoService.PrLineReq;
 import org.mycompany.requisition.rfqpo.RfqPoService.PrRequest;
 import org.mycompany.requisition.rfqpo.RfqPoService.Result;
+import org.zkoss.util.media.Media;
 import org.zkoss.zk.ui.Component;
 import org.zkoss.zk.ui.event.Event;
 import org.zkoss.zk.ui.event.EventListener;
@@ -97,11 +99,20 @@ public class CreatePOFromPRDialog {
 			win.setWidth("95%");
 			win.setHeight("90%");
 			win.setPosition("center");
-			win.setContentStyle("overflow:auto;");
+			win.setContentStyle("overflow:hidden;padding:0;");
+			// top = header + costs, middle = the lines grid (vflex: takes ALL the remaining height), bottom = Total + buttons
+			Vlayout root = new Vlayout();
+			root.setVflex("1");
+			root.setHflex("1");
+			root.setSpacing("0");
+			win.appendChild(root);
 			Vlayout box = new Vlayout();
 			box.setWidth("100%");
 			box.setStyle("padding:6px;");
-			win.appendChild(box);
+			root.appendChild(box);
+			Vlayout foot = new Vlayout();
+			foot.setWidth("100%");
+			foot.setStyle("padding:6px;");
 
 			// ------------------------------------------------ header
 			final Combobox supplier = new Combobox();
@@ -125,8 +136,19 @@ public class CreatePOFromPRDialog {
 			dateOrdered.setFormat("dd/MM/yyyy");
 			final Datebox datePromised = new Datebox(d.dateRequired == null ? null : new java.util.Date(d.dateRequired.getTime()));
 			datePromised.setFormat("dd/MM/yyyy");
-			final Textbox description = new Textbox("Created directly from Requisition " + prNos);
+			final Textbox description = new Textbox();
 			description.setWidth("95%");
+			final Listbox termType = selectOf(service.termTypes(), 0, true);
+			final Textbox termsText = new Textbox();
+			termsText.setMultiline(true);
+			termsText.setRows(4);
+			termsText.setWidth("98%");
+			termType.addEventListener(Events.ON_SELECT, e -> termsText.setValue(service.termText(idOf(termType))));
+			final List<Media> attachments = new ArrayList<Media>();
+			final Button attach = new Button("Attachment");
+			final Label attachLabel = new Label("No file attached");
+			attachLabel.setStyle("color:#6c757d;font-size:12px;margin-left:8px;");
+			attach.addEventListener(Events.ON_CLICK, e -> openAttachments(owner, attachments, attachLabel));
 			final Decimalbox transport = moneyBox(BigDecimal.ZERO);
 			final Decimalbox others = moneyBox(BigDecimal.ZERO);
 			final Decimalbox grossDisc = moneyBox(BigDecimal.ZERO);
@@ -180,10 +202,28 @@ public class CreatePOFromPRDialog {
 					greenLabel("Gross Discount"), grossDisc));
 			box.appendChild(costs);
 
+			// Terms and Conditions Type -> Terms and Conditions (text of the type, editable) + Attachment
+			Grid terms = new Grid();
+			Columns termCols = new Columns();
+			for (int i = 0; i < 4; i++) {
+				Column c = new Column();
+				c.setWidth(i == 0 ? "130px" : i == 1 ? "260px" : i == 2 ? "130px" : null);
+				termCols.appendChild(c);
+			}
+			terms.appendChild(termCols);
+			org.zkoss.zul.Rows tr = new org.zkoss.zul.Rows();
+			terms.appendChild(tr);
+			Hlayout attBox = new Hlayout();
+			attBox.appendChild(attach);
+			attBox.appendChild(attachLabel);
+			tr.appendChild(rowOf(label("Terms and Conditions Type"), termType, label("Terms and Conditions"), termsText));
+			tr.appendChild(rowOf(label("Attachment"), attBox, new Label(""), new Label("")));
+			box.appendChild(terms);
+
 			// ------------------------------------------------ lines
 			final Listbox grid = new Listbox();
-			grid.setWidth("100%");
-			grid.setHeight("280px");
+			grid.setHflex("1");
+			grid.setVflex("1");
 			Listhead lh = new Listhead();
 			String[] names = { "Requisition", "Line", "Product Code", "Product Name", "UOM", "Qty", "Rate", "Amount",
 					"VAT Rate", "VAT Amt", "Total" };
@@ -194,14 +234,12 @@ public class CreatePOFromPRDialog {
 				lh.appendChild(h);
 			}
 			grid.appendChild(lh);
-			box.appendChild(grid);
+			root.appendChild(grid);
+			root.appendChild(foot);
 
 			final Label totalLabel = new Label();
-			totalLabel.setStyle("font-weight:700;font-size:14px;");
-			box.appendChild(totalLabel);
-			final Label payableLabel = new Label();
-			payableLabel.setStyle("font-weight:700;font-size:14px;color:#166534;");
-			box.appendChild(payableLabel);
+			totalLabel.setStyle("font-weight:700;font-size:14px;color:#166534;");
+			foot.appendChild(totalLabel);
 
 			final List<LineRow> rows = new ArrayList<LineRow>();
 			final Runnable recalc = () -> {
@@ -218,14 +256,13 @@ public class CreatePOFromPRDialog {
 					sa = sa.add(r.amount);
 					sv = sv.add(r.vatAmt);
 				}
-				totalLabel.setValue("Total:   Amount " + MONEY.format(sa) + "   +   VAT " + MONEY.format(sv)
-						+ "   =   " + MONEY.format(sa.add(sv)));
 				BigDecimal tc = transport.getValue() == null ? BigDecimal.ZERO : transport.getValue();
 				BigDecimal oc = others.getValue() == null ? BigDecimal.ZERO : others.getValue();
 				BigDecimal disc = RfqPoService.discountAmount(sa.add(sv), grossPct.isChecked(), grossDisc.getValue());
-				payableLabel.setValue("Payable (sent for approval):   " + MONEY.format(sa.add(sv)) + "   -   Gross Discount "
-						+ MONEY.format(disc) + "   +   Transport " + MONEY.format(tc) + "   +   Others " + MONEY.format(oc)
-						+ "   =   " + MONEY.format(sa.add(sv).subtract(disc).add(tc).add(oc)));
+				totalLabel.setValue("Total:   Amount " + MONEY.format(sa) + "   -   Gross Discount " + MONEY.format(disc)
+						+ "   +   Transport " + MONEY.format(tc) + "   +   Others " + MONEY.format(oc)
+						+ "   +   VAT " + MONEY.format(sv)
+						+ "   =   " + MONEY.format(sa.subtract(disc).add(tc).add(oc).add(sv)));
 			};
 
 			for (PrLine l : lines) {
@@ -276,7 +313,7 @@ public class CreatePOFromPRDialog {
 			Button cancel = new Button("Cancel");
 			btns.appendChild(ok);
 			btns.appendChild(cancel);
-			box.appendChild(btns);
+			foot.appendChild(btns);
 			cancel.addEventListener(Events.ON_CLICK, e -> win.detach());
 
 			ok.addEventListener(Events.ON_CLICK, e -> {
@@ -302,7 +339,10 @@ public class CreatePOFromPRDialog {
 					req.othersCost = others.getValue() == null ? BigDecimal.ZERO : others.getValue();
 					req.grossDiscountPct = grossPct.isChecked();
 					req.grossDiscount = grossDisc.getValue() == null ? BigDecimal.ZERO : grossDisc.getValue();
-					req.description = description.getValue() == null ? "" : description.getValue();
+					req.description = description.getValue() == null ? "" : description.getValue().trim();
+					req.termId = idOf(termType);
+					req.termsText = termsText.getValue();
+					req.attachments.addAll(attachments);
 
 					for (LineRow r : rows) {
 						PrLineReq lr = new PrLineReq();
