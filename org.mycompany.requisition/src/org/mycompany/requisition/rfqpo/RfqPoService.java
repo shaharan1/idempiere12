@@ -748,9 +748,13 @@ public class RfqPoService {
 
 	/** Hands the Drafted PO to the approval matrix. A failure here leaves the PO Drafted. */
 	private String submit(int orderId, int docTypeId, String rfqDocNo, BigDecimal payable) {
+		return startApproval(orderId, docTypeId, "PO created from Comparative Statement " + rfqDocNo, payable);
+	}
+
+	private String startApproval(int orderId, int docTypeId, String remarks, BigDecimal payable) {
 		try {
 			ApprovalTransaction t = new ApprovalEngineClient().start(MOrder.Table_ID, orderId, payable, docTypeId,
-					"PO created from Comparative Statement " + rfqDocNo);
+					remarks);
 			if (t == null)
 				return "No approval process is configured for this PO. It stays Drafted.";
 			return "Submitted for approval: " + t.getDisplayName();
@@ -759,6 +763,297 @@ public class RfqPoService {
 			return "The PO was created but could not be submitted for approval (" + e.getMessage()
 					+ "). It stays Drafted: use Submit for Approval on the PO.";
 		}
+	}
+
+	// ------------------------------------------------------------ direct PO from PR (no RFQ / CS)
+
+	/**
+	 * true = only Completed requisitions can be turned into a PO directly. A Drafted requisition is not
+	 * approved yet, so ordering from it would skip the requisition approval. Set to false to allow Drafted too.
+	 */
+	public static final boolean PO_REQUIRES_COMPLETED_PR = true;
+
+	/** One requisition line that goes into a direct PO. */
+	public static class PrLine {
+		public int reqLineId, reqId, lineNo, productId, uomId, asiId, bpId;
+		public String reqNo = "", code = "", name = "", uom = "", docStatus = "";
+		public BigDecimal qty = BigDecimal.ZERO, rate = BigDecimal.ZERO;
+	}
+
+	public static class PrDefaults {
+		public int orgId, warehouseId, priceListId;
+		public String orgName = "";
+		public Timestamp dateRequired;
+		/** The supplier all the lines agree on (0 = none / different suppliers). */
+		public int bpId;
+	}
+
+	public static class PrLineReq {
+		public PrLine line;
+		public BigDecimal rate;
+		public int taxId;
+	}
+
+	public static class PrRequest {
+		public int bpId, orgId, warehouseId, docTypeId, priceListId, paymentTermId;
+		public String description;
+		public Timestamp dateOrdered, datePromised;
+		public BigDecimal transportCost = BigDecimal.ZERO, othersCost = BigDecimal.ZERO, grossDiscount = BigDecimal.ZERO;
+		public boolean grossDiscountPct;
+		public List<PrLineReq> lines = new ArrayList<PrLineReq>();
+	}
+
+	/** Fresh data of the ticked requisition lines (only lines that are still free: no RFQ, no PO). */
+	public List<PrLine> loadPrLines(List<Integer> reqLineIds) {
+		List<PrLine> list = new ArrayList<PrLine>();
+		if (reqLineIds == null || reqLineIds.isEmpty())
+			return list;
+		boolean hasRfqCol = hasColumn("m_requisitionline", "xx_rfq_id");
+		boolean hasBp = hasColumn("m_requisitionline", "c_bpartner_id");
+		StringBuilder sql = new StringBuilder();
+		sql.append("SELECT rl.M_RequisitionLine_ID, r.M_Requisition_ID, r.DocumentNo, r.DocStatus, rl.Line, rl.M_Product_ID, ");
+		sql.append("COALESCE(p.Value,''), COALESCE(p.Name, rl.Description, ''), COALESCE(rl.C_UOM_ID, p.C_UOM_ID, 0), ");
+		sql.append("COALESCE(NULLIF(um.UOMSymbol,''), um.Name, ''), COALESCE(rl.M_AttributeSetInstance_ID,0), ");
+		sql.append("COALESCE(rl.Qty,0), ");
+		// price: the one typed on the requisition line, else the supplier price of the product
+		sql.append("COALESCE(NULLIF(rl.PriceActual,0), (SELECT MAX(COALESCE(NULLIF(pp.PriceLastPO,0), pp.PriceList)) ");
+		sql.append("   FROM M_Product_PO pp WHERE pp.M_Product_ID=rl.M_Product_ID AND pp.IsActive='Y'), 0), ");
+		sql.append(hasBp ? "COALESCE(rl.C_BPartner_ID,0) " : "0 ");
+		sql.append("FROM M_RequisitionLine rl ");
+		sql.append("JOIN M_Requisition r ON r.M_Requisition_ID=rl.M_Requisition_ID ");
+		sql.append("LEFT JOIN M_Product p ON p.M_Product_ID=rl.M_Product_ID ");
+		sql.append("LEFT JOIN C_UOM um ON um.C_UOM_ID=COALESCE(rl.C_UOM_ID, p.C_UOM_ID) ");
+		sql.append("WHERE rl.IsActive='Y' AND rl.C_OrderLine_ID IS NULL ");
+		if (hasRfqCol)
+			sql.append("AND (rl.XX_RfQ_ID IS NULL OR rl.XX_RfQ_ID=0) ");
+		sql.append("AND rl.M_RequisitionLine_ID IN (");
+		for (int i = 0; i < reqLineIds.size(); i++)
+			sql.append(i == 0 ? "?" : ",?");
+		sql.append(") ORDER BY r.DocumentNo, rl.Line, rl.M_RequisitionLine_ID");
+
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement(sql.toString(), null);
+			for (int i = 0; i < reqLineIds.size(); i++)
+				ps.setInt(i + 1, reqLineIds.get(i).intValue());
+			rs = ps.executeQuery();
+			while (rs.next()) {
+				PrLine x = new PrLine();
+				x.reqLineId = rs.getInt(1);
+				x.reqId = rs.getInt(2);
+				x.reqNo = nvl(rs.getString(3));
+				x.docStatus = nvl(rs.getString(4));
+				x.lineNo = rs.getInt(5);
+				x.productId = rs.getInt(6);
+				x.code = nvl(rs.getString(7));
+				x.name = nvl(rs.getString(8));
+				x.uomId = rs.getInt(9);
+				x.uom = nvl(rs.getString(10));
+				x.asiId = rs.getInt(11);
+				x.qty = nz(rs.getBigDecimal(12));
+				x.rate = nz(rs.getBigDecimal(13));
+				x.bpId = rs.getInt(14);
+				list.add(x);
+			}
+		} catch (Exception e) {
+			log.severe("loadPrLines: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+		return list;
+	}
+
+	/** Why these lines cannot go into a direct PO, or null when they can. */
+	public static String checkPrLines(List<PrLine> lines, int askedCount) {
+		if (lines.size() < askedCount)
+			return "Some of the selected lines are already used in an RFQ or a PO. Press Refresh and select again.";
+		for (PrLine l : lines) {
+			if (l.productId <= 0)
+				return "Requisition " + l.reqNo + " line " + l.lineNo + " has no product.";
+			if (l.qty.signum() <= 0)
+				return "Requisition " + l.reqNo + " / " + l.name + " has no quantity.";
+			if (PO_REQUIRES_COMPLETED_PR && !"CO".equals(l.docStatus))
+				return "Requisition " + l.reqNo + " is not Completed (approved) yet. "
+						+ "A PO can be created directly only from a Completed requisition.";
+		}
+		return null;
+	}
+
+	/** Header defaults from the first selected requisition. */
+	public PrDefaults loadPrDefaults(List<PrLine> lines) {
+		PrDefaults d = new PrDefaults();
+		if (lines.isEmpty())
+			return d;
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement("SELECT AD_Org_ID, M_Warehouse_ID, M_PriceList_ID, DateRequired "
+					+ "FROM M_Requisition WHERE M_Requisition_ID=?", null);
+			ps.setInt(1, lines.get(0).reqId);
+			rs = ps.executeQuery();
+			if (rs.next()) {
+				d.orgId = rs.getInt(1);
+				d.warehouseId = rs.getInt(2);
+				d.priceListId = rs.getInt(3);
+				d.dateRequired = rs.getTimestamp(4);
+			}
+		} catch (Exception e) {
+			log.warning("loadPrDefaults: " + e.getMessage());
+		} finally {
+			DB.close(rs, ps);
+		}
+		d.orgName = DB.getSQLValueString(null, "SELECT Name FROM AD_Org WHERE AD_Org_ID=?", d.orgId);
+		if (d.orgName == null)
+			d.orgName = "";
+		// one supplier on every line = that supplier is the default
+		int bp = lines.get(0).bpId;
+		for (PrLine l : lines)
+			if (l.bpId != bp)
+				bp = 0;
+		d.bpId = Math.max(0, bp);
+		if (d.warehouseId <= 0) {
+			List<KeyNamePair> wh = warehouses();
+			if (wh.size() == 1)
+				d.warehouseId = wh.get(0).getKey();
+		}
+		return d;
+	}
+
+	/** Active suppliers (vendors) for the supplier box. */
+	public List<KeyNamePair> vendors() {
+		return pairs("SELECT C_BPartner_ID, Value || ' - ' || Name FROM C_BPartner WHERE IsVendor='Y' AND IsActive='Y' "
+				+ "AND AD_Client_ID IN (0,?) ORDER BY Name");
+	}
+
+	/** {PO_PaymentTerm_ID, PO_PriceList_ID} of a supplier (0 when not set). */
+	public int[] vendorDefaults(int bpId) {
+		int[] r = new int[] { 0, 0 };
+		if (bpId <= 0)
+			return r;
+		r[0] = Math.max(0, DB.getSQLValue(null, "SELECT PO_PaymentTerm_ID FROM C_BPartner WHERE C_BPartner_ID=?", bpId));
+		r[1] = Math.max(0, DB.getSQLValue(null, "SELECT PO_PriceList_ID FROM C_BPartner WHERE C_BPartner_ID=?", bpId));
+		return r;
+	}
+
+	/**
+	 * Direct PO from requisition lines: no RFQ, no Comparative Statement. The PO is created Drafted and handed to
+	 * the same approval matrix as a PO from a CS. The requisition lines are linked to the new order lines, so they
+	 * disappear from the Create RFQ From PR list.
+	 */
+	public Result createPoFromPr(PrRequest req) throws Exception {
+		if (!extraColumnsReady())
+			throw new Exception("Run db/12_create_po_extra_fields.sql first (Transport / Others cost, Gross Discount columns are missing).");
+		if (req.lines.isEmpty())
+			throw new Exception("Select at least one line.");
+		if (req.bpId <= 0)
+			throw new Exception("Supplier is required.");
+		if (req.transportCost == null) req.transportCost = BigDecimal.ZERO;
+		if (req.othersCost == null) req.othersCost = BigDecimal.ZERO;
+		if (req.grossDiscount == null) req.grossDiscount = BigDecimal.ZERO;
+		if (req.transportCost.signum() < 0 || req.othersCost.signum() < 0 || req.grossDiscount.signum() < 0)
+			throw new Exception("Transport Cost, Others Cost and Gross Discount cannot be negative.");
+		if (req.grossDiscountPct && req.grossDiscount.compareTo(HUNDRED) > 0)
+			throw new Exception("Gross Discount % cannot be more than 100.");
+
+		// the lines may have been used by an RFQ / another PO since the dialog was opened
+		List<Integer> ids = new ArrayList<Integer>();
+		for (PrLineReq lr : req.lines) {
+			if (lr.rate == null || lr.rate.signum() <= 0)
+				throw new Exception("Rate is required for " + lr.line.name + ".");
+			ids.add(Integer.valueOf(lr.line.reqLineId));
+		}
+		List<PrLine> fresh = loadPrLines(ids);
+		String problem = checkPrLines(fresh, ids.size());
+		if (problem != null)
+			throw new Exception(problem);
+
+		StringBuilder prNos = new StringBuilder();
+		for (PrLine l : fresh)
+			if (prNos.indexOf(l.reqNo) < 0)
+				prNos.append(prNos.length() > 0 ? ", " : "").append(l.reqNo);
+
+		int orderId;
+		String docNo;
+		BigDecimal payable;
+		Trx trx = Trx.get(Trx.createTrxName("PrPO"), true);
+		try {
+			String trxName = trx.getTrxName();
+			MBPartner bp = new MBPartner(Env.getCtx(), req.bpId, trxName);
+			MBPartnerLocation[] locs = bp.getLocations(false);
+			if (locs.length == 0)
+				throw new Exception("Supplier " + bp.getName() + " has no location. Add an address to the Business Partner first.");
+
+			MOrder order = new MOrder(Env.getCtx(), 0, trxName);
+			order.setIsSOTrx(false);
+			order.setC_DocTypeTarget_ID(req.docTypeId);
+			order.setC_BPartner_ID(req.bpId);
+			order.setC_BPartner_Location_ID(locs[0].getC_BPartner_Location_ID());
+			order.setM_PriceList_ID(req.priceListId);
+			order.setM_Warehouse_ID(req.warehouseId);
+			order.setC_PaymentTerm_ID(req.paymentTermId);
+			order.setDateOrdered(req.dateOrdered);
+			order.setDatePromised(req.datePromised);
+			order.setSalesRep_ID(Env.getAD_User_ID(Env.getCtx()));
+			order.setDescription(req.description);
+
+			int orgId = req.orgId;
+			MWarehouse wh = MWarehouse.get(Env.getCtx(), req.warehouseId, trxName);
+			if (wh != null && wh.getAD_Org_ID() > 0)
+				orgId = wh.getAD_Org_ID();
+			if (orgId > 0)
+				order.setAD_Org_ID(orgId);
+			order.saveEx();
+
+			int lineNo = 10;
+			for (PrLineReq lr : req.lines) {
+				PrLine l = lr.line;
+				MOrderLine ol = new MOrderLine(order);
+				ol.setLine(lineNo);
+				ol.setM_Product_ID(l.productId);
+				if (l.asiId > 0)
+					ol.setM_AttributeSetInstance_ID(l.asiId);
+				if (l.uomId > 0)
+					ol.setC_UOM_ID(l.uomId);
+				ol.setQty(l.qty);
+				ol.setPrice(lr.rate);
+				if (lr.taxId > 0)
+					ol.setC_Tax_ID(lr.taxId);
+				ol.saveEx();
+
+				// mark the requisition line as ordered; 0 rows = somebody else took it a moment ago
+				int n = DB.executeUpdateEx("UPDATE M_RequisitionLine SET C_OrderLine_ID=? "
+						+ "WHERE M_RequisitionLine_ID=? AND C_OrderLine_ID IS NULL",
+						new Object[] { Integer.valueOf(ol.getC_OrderLine_ID()), Integer.valueOf(l.reqLineId) }, trxName);
+				if (n != 1)
+					throw new Exception("Requisition " + l.reqNo + " / " + l.name + " was just used by another user.");
+				lineNo += 10;
+			}
+
+			BigDecimal linesPlusVat = new MOrder(Env.getCtx(), order.getC_Order_ID(), trxName).getGrandTotal();
+			BigDecimal discount = discountAmount(linesPlusVat, req.grossDiscountPct, req.grossDiscount);
+			payable = linesPlusVat.subtract(discount).add(req.transportCost).add(req.othersCost);
+			// XX_RfQ_ID stays empty: this PO has no CS
+			DB.executeUpdateEx("UPDATE C_Order SET XX_TransportCost=?, XX_OthersCost=?, "
+					+ "XX_IsGrossDiscountPct=?, XX_GrossDiscount=?, XX_PayableTotal=? WHERE C_Order_ID=?",
+					new Object[] { req.transportCost, req.othersCost, req.grossDiscountPct ? "Y" : "N",
+							req.grossDiscount, payable, Integer.valueOf(order.getC_Order_ID()) }, trxName);
+
+			orderId = order.getC_Order_ID();
+			docNo = order.getDocumentNo();
+			trx.commit();
+		} catch (Exception ex) {
+			trx.rollback();
+			throw ex;
+		} finally {
+			trx.close();
+		}
+
+		Result res = new Result();
+		res.orderId = orderId;
+		res.docNo = docNo;
+		res.approvalMessage = startApproval(orderId, req.docTypeId, "PO created directly from Requisition " + prNos, payable);
+		return res;
 	}
 
 	// ------------------------------------------------------------ small helpers
