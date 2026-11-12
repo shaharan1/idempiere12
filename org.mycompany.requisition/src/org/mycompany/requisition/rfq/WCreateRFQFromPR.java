@@ -57,6 +57,7 @@ import org.mycompany.requisition.rfqpo.CreatePOFromPRDialog;
  *  5. The list refreshes (the used lines disappear).
  *
  * Eligibility rule (same as before / RequisitionRFQService):
+ *  - the requisition is Completed (DocStatus = CO)
  *  - M_RequisitionLine.XX_RfQ_ID is null and C_OrderLine_ID is null, line is active.
  *
  * The RFQ is created in WCreateRFQDialog (save logic unchanged).
@@ -309,7 +310,8 @@ public class WCreateRFQFromPR extends ADForm implements EventListener<Event> {
 		sql.append("LEFT JOIN AD_Ref_List dl ON dl.AD_Reference_ID = 131 AND dl.Value = r.DocStatus ");
 		if (reqLineHasBPartner)
 			sql.append("LEFT JOIN C_BPartner bp ON bp.C_BPartner_ID = rl.C_BPartner_ID ");
-		sql.append("WHERE r.AD_Client_ID=? AND r.IsActive='Y' AND rl.IsActive='Y' AND rl.C_OrderLine_ID IS NULL ");
+		// only Completed (approved) requisitions can be used for an RFQ or a PO
+		sql.append("WHERE r.AD_Client_ID=? AND r.IsActive='Y' AND r.DocStatus='CO' AND rl.IsActive='Y' AND rl.C_OrderLine_ID IS NULL ");
 		if (reqLineHasRfqCol)
 			sql.append("AND (rl.XX_RfQ_ID IS NULL OR rl.XX_RfQ_ID=0) ");
 
