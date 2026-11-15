@@ -56,4 +56,19 @@ public class WGoodsReceiptForm extends ADForm{
 		private final Button btnAttach = new Button("Attachment");
 		private final Label lblAttach = new Label();
 		private final List<Media> attachments = new ArrayList()<Media>();
+		
+		
+		// PO box
+		private final Textbox txtSearch = new Textbox();
+		private final Button btnSearch = new Button("Search");
+		private final Button btnRefresh = new Button("Refresh");
+		private final Listbox poList = new Listbox();
+		private final Label lblPoCount = new Label();
+		private final List<Po> pos = new ArrayList<Po>();
+		
+		
+		
+		
+		
+		
 }
