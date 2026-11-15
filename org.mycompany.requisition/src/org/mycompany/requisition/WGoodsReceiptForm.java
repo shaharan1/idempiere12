@@ -499,9 +499,9 @@ public class WGoodsReceiptForm extends ADForm {
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 2));
+		g.appendChild(field("Attachment", false, at, 1));
 		// row 3
-		g.appendChild(field("Description (Note)", false, txtDesc, 6));
+		g.appendChild(field("Description (Note)", false, txtDesc, 1));
 		updateAttachLabel();
 		return g;
 	}
