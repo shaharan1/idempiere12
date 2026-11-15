@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="GoodsReceipt" pageWidth="595" pageHeight="842" columnWidth="535" leftMargin="30" rightMargin="30" topMargin="30" bottomMargin="30">
+<parameter name="IDS" class="java.lang.String"><defaultValueExpression><![CDATA["0"]]></defaultValueExpression></parameter>
+<parameter name="LOGO_LEFT" class="java.lang.String"><defaultValueExpression><![CDATA["C:/jasper/logo_left.png"]]></defaultValueExpression></parameter>
+<parameter name="LOGO_RIGHT" class="java.lang.String"><defaultValueExpression><![CDATA["C:/jasper/logo_right.png"]]></defaultValueExpression></parameter>
+<queryString><![CDATA[SELECT io.m_inout_id, io.documentno AS grn_no, io.movementdate AS movement_date,
+ o.documentno AS po_no, o.dateordered AS po_date, bp.name AS supplier, w.name AS warehouse,
+ io.poreference AS challan, dt.name AS doc_type,
+ (SELECT sl.name FROM ad_ref_list sl WHERE sl.ad_reference_id=131 AND sl.value=io.docstatus LIMIT 1) AS status,
+ io.description AS note, u.name AS prepared_by, io.created AS prepared_date,
+ l.line AS line_no, p.value AS item_code, p.name AS item_name, uom.uomsymbol AS uom,
+ ol.qtyordered AS ordered, l.movementqty AS received, lo.value AS locator, l.description AS remarks
+FROM m_inout io
+JOIN m_inoutline l ON l.m_inout_id=io.m_inout_id AND l.isactive='Y'
+LEFT JOIN c_order o ON o.c_order_id=io.c_order_id
+LEFT JOIN c_orderline ol ON ol.c_orderline_id=l.c_orderline_id
+LEFT JOIN c_bpartner bp ON bp.c_bpartner_id=io.c_bpartner_id
+LEFT JOIN m_warehouse w ON w.m_warehouse_id=io.m_warehouse_id
+LEFT JOIN c_doctype dt ON dt.c_doctype_id=io.c_doctype_id
+LEFT JOIN ad_user u ON u.ad_user_id=io.createdby
+LEFT JOIN m_product p ON p.m_product_id=l.m_product_id
+LEFT JOIN c_uom uom ON uom.c_uom_id=COALESCE(l.c_uom_id,p.c_uom_id)
+LEFT JOIN m_locator lo ON lo.m_locator_id=l.m_locator_id
+WHERE io.m_inout_id IN ($P!{IDS})
+ORDER BY io.documentno, l.line]]></queryString>
+<field name="grn_no" class="java.lang.String"/>
+<field name="movement_date" class="java.sql.Timestamp"/>
+<field name="po_no" class="java.lang.String"/>
+<field name="po_date" class="java.sql.Timestamp"/>
+<field name="supplier" class="java.lang.String"/>
+<field name="warehouse" class="java.lang.String"/>
+<field name="challan" class="java.lang.String"/>
+<field name="doc_type" class="java.lang.String"/>
+<field name="status" class="java.lang.String"/>
+<field name="note" class="java.lang.String"/>
+<field name="prepared_by" class="java.lang.String"/>
+<field name="prepared_date" class="java.sql.Timestamp"/>
+<field name="m_inout_id" class="java.lang.Integer"/>
+<field name="line_no" class="java.lang.Integer"/>
+<field name="item_code" class="java.lang.String"/>
+<field name="item_name" class="java.lang.String"/>
+<field name="uom" class="java.lang.String"/>
+<field name="ordered" class="java.math.BigDecimal"/>
+<field name="received" class="java.math.BigDecimal"/>
+<field name="locator" class="java.lang.String"/>
+<field name="remarks" class="java.lang.String"/>
+<group name="grn" isStartNewPage="true"><groupExpression><![CDATA[$F{m_inout_id}]]></groupExpression>
+<groupHeader><band height="170">
+<rectangle><reportElement mode="Transparent" x="180" y="0" width="180" height="36"/><graphicElement><pen lineWidth="0.75"/></graphicElement></rectangle>
+<staticText><reportElement x="180" y="0" width="180" height="36"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="11" isBold="true"/></textElement><text><![CDATA[Goods Received Note]]></text></staticText>
+<staticText><reportElement x="0" y="52" width="100" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Supplier]]></text></staticText>
+<staticText><reportElement x="100" y="52" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="112" y="52" width="225" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{supplier}]]></textFieldExpression></textField>
+<staticText><reportElement x="0" y="74" width="100" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[PO No.]]></text></staticText>
+<staticText><reportElement x="100" y="74" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="112" y="74" width="225" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{po_no}]]></textFieldExpression></textField>
+<staticText><reportElement x="0" y="96" width="100" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Warehouse]]></text></staticText>
+<staticText><reportElement x="100" y="96" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="112" y="96" width="225" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{warehouse}]]></textFieldExpression></textField>
+<staticText><reportElement x="0" y="118" width="100" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Challan / Ref No.]]></text></staticText>
+<staticText><reportElement x="100" y="118" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="112" y="118" width="225" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{challan}]]></textFieldExpression></textField>
+<rectangle><reportElement mode="Opaque" backcolor="#EEEEEE" x="340" y="46" width="195" height="92"/><graphicElement><pen lineWidth="0.5"/></graphicElement></rectangle>
+<staticText><reportElement x="350" y="50" width="75" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[GRN No.]]></text></staticText>
+<staticText><reportElement x="425" y="50" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="437" y="50" width="98" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{grn_no}]]></textFieldExpression></textField>
+<staticText><reportElement x="350" y="71" width="75" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[GRN Date]]></text></staticText>
+<staticText><reportElement x="425" y="71" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField pattern="dd-MM-yy" isBlankWhenNull="true"><reportElement x="437" y="71" width="98" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{movement_date}]]></textFieldExpression></textField>
+<staticText><reportElement x="350" y="92" width="75" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[PO Date]]></text></staticText>
+<staticText><reportElement x="425" y="92" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField pattern="dd-MM-yy" isBlankWhenNull="true"><reportElement x="437" y="92" width="98" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{po_date}]]></textFieldExpression></textField>
+<staticText><reportElement x="350" y="113" width="75" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Status]]></text></staticText>
+<staticText><reportElement x="425" y="113" width="10" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[:]]></text></staticText>
+<textField isBlankWhenNull="true"><reportElement x="437" y="113" width="98" height="20"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{status}]]></textFieldExpression></textField>
+</band></groupHeader>
+<groupFooter><band height="215">
+<staticText><reportElement x="0" y="8" width="200" height="14"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Note (if any):]]></text></staticText>
+<textField isStretchWithOverflow="true" isBlankWhenNull="true"><reportElement x="0" y="24" width="535" height="60"/><textElement textAlignment="Left" verticalAlignment="Top"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{note}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="0" y="118" width="100" height="40"/><textElement textAlignment="Center" verticalAlignment="Bottom"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{prepared_by}]]></textFieldExpression></textField>
+<textField pattern="dd-MM-yy hh:mm a" isBlankWhenNull="true"><reportElement x="0" y="160" width="100" height="12"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{prepared_date}]]></textFieldExpression></textField>
+<line><reportElement x="2" y="176" width="96" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="2" y="178" width="96" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Prepared by]]></text></staticText>
+<line><reportElement x="110" y="176" width="96" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="110" y="178" width="96" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Received by]]></text></staticText>
+<line><reportElement x="218" y="176" width="96" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="218" y="178" width="96" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Store In-charge]]></text></staticText>
+<line><reportElement x="326" y="176" width="96" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="326" y="178" width="96" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Checked by]]></text></staticText>
+<line><reportElement x="434" y="176" width="96" height="0"/><graphicElement><pen lineWidth="0.75"/></graphicElement></line>
+<staticText><reportElement x="434" y="178" width="96" height="14"/><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="false"/></textElement><text><![CDATA[Approved by]]></text></staticText>
+</band></groupFooter></group>
+<pageHeader><band height="55">
+<image scaleImage="RetainShape" onErrorType="Blank"><reportElement x="0" y="5" width="170" height="45"/><imageExpression><![CDATA[$P{LOGO_LEFT}]]></imageExpression></image>
+<image scaleImage="RetainShape" onErrorType="Blank"><reportElement x="385" y="0" width="150" height="55"/><imageExpression><![CDATA[$P{LOGO_RIGHT}]]></imageExpression></image>
+</band></pageHeader>
+<columnHeader><band height="24">
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="0" y="0" width="25" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Sl.]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="25" y="0" width="65" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Item Code]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="90" y="0" width="150" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Item Name]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="240" y="0" width="35" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[UoM]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="275" y="0" width="55" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Ordered]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="330" y="0" width="55" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Received]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="385" y="0" width="60" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Locator]]></text></staticText>
+<staticText><reportElement mode="Opaque" backcolor="#EEEEEE" x="445" y="0" width="90" height="24"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="8" isBold="true"/></textElement><text><![CDATA[Remarks]]></text></staticText>
+</band></columnHeader>
+<detail><band height="24">
+<textField isBlankWhenNull="true"><reportElement x="0" y="0" width="25" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$V{REPORT_COUNT}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="25" y="0" width="65" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{item_code}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="90" y="0" width="150" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{item_name}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="240" y="0" width="35" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{uom}]]></textFieldExpression></textField>
+<textField pattern="#,##0.00" isBlankWhenNull="true"><reportElement x="275" y="0" width="55" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{ordered}]]></textFieldExpression></textField>
+<textField pattern="#,##0.00" isBlankWhenNull="true"><reportElement x="330" y="0" width="55" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{received}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="385" y="0" width="60" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{locator}]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="445" y="0" width="90" height="24"/><box leftPadding="5" rightPadding="5"><pen lineWidth="0.5"/></box><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="7" isBold="false"/></textElement><textFieldExpression><![CDATA[$F{remarks}]]></textFieldExpression></textField>
+</band></detail>
+<pageFooter><band height="30">
+<staticText><reportElement x="0" y="5" width="300" height="10"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="5" isBold="true"/></textElement><text><![CDATA[Corporate Office Address:]]></text></staticText>
+<staticText><reportElement x="0" y="14" width="400" height="10"/><textElement textAlignment="Left" verticalAlignment="Middle"><font fontName="SansSerif" size="5" isBold="false"/></textElement><text><![CDATA[Primitek Tower, House #43/B, Road #24, Block #CWS (B), Gulshan-1, Dhaka-1212. Hotline: +88-09612-300800]]></text></staticText>
+<staticText><reportElement x="400" y="5" width="70" height="10"/><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="6" isBold="true"/></textElement><text><![CDATA[Date Printed:]]></text></staticText>
+<textField pattern="MM/dd/yyyy hh:mm a"><reportElement x="470" y="5" width="65" height="10"/><textElement textAlignment="Right"><font size="6" isBold="true"/></textElement><textFieldExpression><![CDATA[new java.util.Date()]]></textFieldExpression></textField>
+<textField isBlankWhenNull="true"><reportElement x="485" y="18" width="50" height="10"/><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="SansSerif" size="6" isBold="false"/></textElement><textFieldExpression><![CDATA["Page " + $V{PAGE_NUMBER}]]></textFieldExpression></textField>
+</band></pageFooter>
+</jasperReport>
