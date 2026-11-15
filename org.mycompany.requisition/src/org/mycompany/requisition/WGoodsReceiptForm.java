@@ -495,15 +495,16 @@ public class WGoodsReceiptForm extends ADForm {
 		g.appendChild(field("VAT Challan Date", false, dtVat, 1));
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
+		g.appendChild(field("Description (Note)", false, txtDesc, 1));
+		updateAttachLabel();
+		
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
 		g.appendChild(field("Attachment", false, at, 1));
-		// row 3
-		g.appendChild(field("Description (Note)", false, txtDesc, 1));
-		updateAttachLabel();
 		return g;
+		
 	}
 
 	private Div buildPoBox() {
