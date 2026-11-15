@@ -2,6 +2,7 @@ package org.mycompany.requisition;
 
 import org.adempiere.webui.component.Combobox;
 import org.adempiere.webui.component.Datebox;
+import org.adempiere.webui.component.Textbox;
 import org.adempiere.webui.panel.ADForm;
 import org.compiere.util.CLogger;
 import org.compiere.util.Env;
