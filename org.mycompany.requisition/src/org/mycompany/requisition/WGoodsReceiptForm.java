@@ -67,7 +67,17 @@ public class WGoodsReceiptForm extends ADForm{
 		private final List<Po> pos = new ArrayList<Po>();
 		
 		
-		
+
+		// lines
+		private final Listbox lineList = new Listbox();
+		private final Label lblTotals = new Label();
+		private final List<GLine> lines = new ArrayList<GLine>();
+		private final Map<Integer, BigDecimal> keepQty = new HashMap<Integer, BigDecimal>();
+		private final Map<Integer, Set<Integer>> removedByOrder = new HashMap<Integer, Set<Integer>>();
+		private Set<Integer> prevSel = new HashSet<Integer>();
+
+		private final Button btnOk = new Button("\u2714  Save GRN");
+		private final Button btnCancel = new Button("\u2716  Cancel");
 		
 		
 		
