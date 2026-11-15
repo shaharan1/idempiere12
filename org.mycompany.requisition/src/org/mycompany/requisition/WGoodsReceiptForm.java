@@ -1,8 +1,6 @@
 package org.mycompany.requisition;
 
 import java.math.BigDecimal;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
@@ -23,10 +21,18 @@ import org.adempiere.webui.panel.ADForm;
 import org.adempiere.webui.session.SessionManager;
 import org.adempiere.webui.util.ZKUpdateUtil;
 import org.compiere.model.MAttachment;
+import org.compiere.model.MBPartner;
+import org.compiere.model.MDocType;
 import org.compiere.model.MInOut;
 import org.compiere.model.MInOutLine;
+import org.compiere.model.MLocator;
 import org.compiere.model.MOrder;
 import org.compiere.model.MOrderLine;
+import org.compiere.model.MOrg;
+import org.compiere.model.MProduct;
+import org.compiere.model.MUOM;
+import org.compiere.model.MWarehouse;
+import org.compiere.model.Query;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -477,26 +483,15 @@ public class WGoodsReceiptForm extends ADForm {
 	// header data
 	// =====================================================================
 
-	private void fillCombo(Combobox cb, String sql, Object... params) {
+	/** (re)fills a combo from {id, name} pairs */
+	private void fillCombo(Combobox cb, List<Object[]> rows) {
 		while (cb.getItemCount() > 0)
 			cb.removeItemAt(0);
 		cb.setValue("");
-		PreparedStatement ps = null;
-		ResultSet rs = null;
-		try {
-			ps = DB.prepareStatement(sql, null);
-			for (int i = 0; i < params.length; i++)
-				ps.setObject(i + 1, params[i]);
-			rs = ps.executeQuery();
-			while (rs.next()) {
-				Comboitem ci = new Comboitem(rs.getString(2));
-				ci.setAttribute("id", Integer.valueOf(rs.getInt(1)));
-				cb.appendChild(ci);
-			}
-		} catch (Exception e) {
-			log.log(Level.SEVERE, sql, e);
-		} finally {
-			DB.close(rs, ps);
+		for (Object[] r : rows) {
+			Comboitem ci = new Comboitem((String) r[1]);
+			ci.setAttribute("id", r[0]);
+			cb.appendChild(ci);
 		}
 	}
 
@@ -530,25 +525,39 @@ public class WGoodsReceiptForm extends ADForm {
 	}
 
 	private void loadHeaderData() {
-		String org = DB.getSQLValueString(null, "SELECT Name FROM AD_Org WHERE AD_Org_ID=?", orgId);
-		lblOrg.setValue(orgId > 0 && org != null ? org : "(select an organization at login)");
-		fillCombo(cbDocType, "SELECT C_DocType_ID, Name FROM C_DocType WHERE IsActive='Y' AND DocBaseType='MMR' "
-				+ "AND IsSOTrx='N' AND AD_Client_ID=? ORDER BY IsDefault DESC, Name", clientId);
+		MOrg org = orgId > 0 ? MOrg.get(Env.getCtx(), orgId) : null;
+		lblOrg.setValue(org != null ? org.getName() : "(select an organization at login)");
+
+		List<Object[]> types = new ArrayList<Object[]>();
+		List<MDocType> dts = new Query(Env.getCtx(), MDocType.Table_Name,
+				"DocBaseType=? AND IsSOTrx='N' AND AD_Client_ID=?", null).setParameters(MDocType.DOCBASETYPE_MaterialReceipt, clientId)
+				.setOnlyActiveRecords(true).setOrderBy("IsDefault DESC, Name").list();
+		for (MDocType d : dts)
+			types.add(new Object[] { Integer.valueOf(d.getC_DocType_ID()), d.getName() });
+		fillCombo(cbDocType, types);
 		selectFirst(cbDocType);
-		fillCombo(cbWarehouse, "SELECT M_Warehouse_ID, Name FROM M_Warehouse WHERE IsActive='Y' AND AD_Client_ID=? "
-				+ (orgId > 0 ? "AND (AD_Org_ID=? OR AD_Org_ID=0) " : "") + "ORDER BY Name",
-				orgId > 0 ? new Object[] { clientId, orgId } : new Object[] { clientId });
+
+		List<Object[]> whs = new ArrayList<Object[]>();
+		Query wq = orgId > 0
+				? new Query(Env.getCtx(), MWarehouse.Table_Name, "AD_Client_ID=? AND (AD_Org_ID=? OR AD_Org_ID=0)", null)
+						.setParameters(clientId, orgId)
+				: new Query(Env.getCtx(), MWarehouse.Table_Name, "AD_Client_ID=?", null).setParameters(clientId);
+		for (MWarehouse w : wq.setOnlyActiveRecords(true).setOrderBy("Name").<MWarehouse>list())
+			whs.add(new Object[] { Integer.valueOf(w.getM_Warehouse_ID()), w.getName() });
+		fillCombo(cbWarehouse, whs);
 		warehouseChanged();
 	}
 
 	private void warehouseChanged() {
 		int wh = idOf(cbWarehouse);
-		if (wh <= 0) {
-			fillCombo(cbLocator, "SELECT M_Locator_ID, Value FROM M_Locator WHERE 1=0");
-			return;
+		List<Object[]> locs = new ArrayList<Object[]>();
+		if (wh > 0) {
+			List<MLocator> ls = new Query(Env.getCtx(), MLocator.Table_Name, "M_Warehouse_ID=?", null)
+					.setParameters(wh).setOnlyActiveRecords(true).setOrderBy("IsDefault DESC, Value").list();
+			for (MLocator l : ls)
+				locs.add(new Object[] { Integer.valueOf(l.getM_Locator_ID()), l.getValue() });
 		}
-		fillCombo(cbLocator, "SELECT M_Locator_ID, Value FROM M_Locator WHERE IsActive='Y' AND M_Warehouse_ID=? "
-				+ "ORDER BY IsDefault DESC, Value", wh);
+		fillCombo(cbLocator, locs);
 		selectFirst(cbLocator);
 	}
 
@@ -613,53 +622,48 @@ public class WGoodsReceiptForm extends ADForm {
 			poList.removeItemAt(0);
 		pos.clear();
 
-		StringBuilder sql = new StringBuilder(
-				"SELECT o.C_Order_ID, o.M_Warehouse_ID, o.DocumentNo, o.DateOrdered, bp.Name, w.Name, o.GrandTotal, "
-						+ "(SELECT COUNT(*) FROM C_OrderLine ol WHERE ol.C_Order_ID=o.C_Order_ID AND ol.M_Product_ID>0 "
-						+ "AND ol.QtyOrdered-ol.QtyDelivered>0) "
-						+ "FROM C_Order o JOIN C_BPartner bp ON bp.C_BPartner_ID=o.C_BPartner_ID "
-						+ "LEFT JOIN M_Warehouse w ON w.M_Warehouse_ID=o.M_Warehouse_ID "
-						+ "WHERE o.IsSOTrx='N' AND o.DocStatus='CO' AND o.AD_Client_ID=? "
-						+ "AND EXISTS (SELECT 1 FROM C_OrderLine ol WHERE ol.C_Order_ID=o.C_Order_ID AND ol.M_Product_ID>0 "
-						+ "AND ol.QtyOrdered-ol.QtyDelivered>0) ");
+		String where = "IsSOTrx='N' AND DocStatus=? AND AD_Client_ID=?" + (orgId > 0 ? " AND AD_Org_ID=?" : "");
 		List<Object> p = new ArrayList<Object>();
+		p.add(DocAction.STATUS_Completed);
 		p.add(Integer.valueOf(clientId));
-		if (orgId > 0) {
-			sql.append("AND o.AD_Org_ID=? ");
+		if (orgId > 0)
 			p.add(Integer.valueOf(orgId));
-		}
-		String q = txtSearch.getValue() == null ? "" : txtSearch.getValue().trim().toUpperCase();
-		if (q.length() > 0) {
-			sql.append("AND (UPPER(o.DocumentNo) LIKE ? OR UPPER(bp.Name) LIKE ?) ");
-			p.add("%" + q + "%");
-			p.add("%" + q + "%");
-		}
-		sql.append("ORDER BY o.DateOrdered DESC, o.DocumentNo DESC LIMIT " + MAX_PO);
+		List<MOrder> orders = new Query(Env.getCtx(), MOrder.Table_Name, where, null).setParameters(p)
+				.setOrderBy("DateOrdered DESC, DocumentNo DESC").list();
 
-		PreparedStatement ps = null;
-		ResultSet rs = null;
-		try {
-			ps = DB.prepareStatement(sql.toString(), null);
-			for (int i = 0; i < p.size(); i++)
-				ps.setObject(i + 1, p.get(i));
-			rs = ps.executeQuery();
-			while (rs.next()) {
-				Po po = new Po();
-				po.id = rs.getInt(1);
-				po.warehouseId = rs.getInt(2);
-				po.docNo = rs.getString(3);
-				po.date = rs.getTimestamp(4);
-				po.supplier = rs.getString(5);
-				po.warehouse = rs.getString(6);
-				po.total = rs.getBigDecimal(7);
-				po.pending = rs.getInt(8);
-				pos.add(po);
+		String q = txtSearch.getValue() == null ? "" : txtSearch.getValue().trim().toUpperCase();
+		Map<Integer, String> whNames = new HashMap<Integer, String>();
+		for (MOrder o : orders) {
+			if (pos.size() >= MAX_PO)
+				break;
+			MBPartner bp = MBPartner.get(Env.getCtx(), o.getC_BPartner_ID());
+			String supplier = bp == null ? "" : bp.getName();
+			String docNo = o.getDocumentNo() == null ? "" : o.getDocumentNo();
+			if (q.length() > 0 && !docNo.toUpperCase().contains(q) && !supplier.toUpperCase().contains(q))
+				continue;
+			int pending = 0;
+			for (MOrderLine ol : o.getLines())
+				if (ol.getM_Product_ID() > 0 && ol.getQtyOrdered().subtract(ol.getQtyDelivered()).signum() > 0)
+					pending++;
+			if (pending == 0)
+				continue;
+			Po po = new Po();
+			po.id = o.getC_Order_ID();
+			po.warehouseId = o.getM_Warehouse_ID();
+			po.docNo = docNo;
+			po.date = o.getDateOrdered();
+			po.supplier = supplier;
+			if (po.warehouseId > 0) {
+				String wn = whNames.get(Integer.valueOf(po.warehouseId));
+				if (wn == null) {
+					wn = MWarehouse.get(Env.getCtx(), po.warehouseId).getName();
+					whNames.put(Integer.valueOf(po.warehouseId), wn);
+				}
+				po.warehouse = wn;
 			}
-		} catch (Exception e) {
-			log.log(Level.SEVERE, sql.toString(), e);
-			warn("Could not read the purchase orders:\n" + e.getMessage());
-		} finally {
-			DB.close(rs, ps);
+			po.total = o.getGrandTotal();
+			po.pending = pending;
+			pos.add(po);
 		}
 
 		for (Po po : pos) {
@@ -724,47 +728,36 @@ public class WGoodsReceiptForm extends ADForm {
 		lines.clear();
 
 		if (!sel.isEmpty()) {
-			StringBuilder in = new StringBuilder();
-			for (Integer id : sel) {
-				if (in.length() > 0)
-					in.append(',');
-				in.append(id.intValue());
-			}
-			String sql = "SELECT ol.C_OrderLine_ID, ol.C_Order_ID, o.DocumentNo, p.Value, p.Name, "
-					+ "COALESCE(u.UOMSymbol, u.Name), ol.QtyOrdered, ol.QtyDelivered "
-					+ "FROM C_OrderLine ol JOIN C_Order o ON o.C_Order_ID=ol.C_Order_ID "
-					+ "JOIN M_Product p ON p.M_Product_ID=ol.M_Product_ID "
-					+ "LEFT JOIN C_UOM u ON u.C_UOM_ID=ol.C_UOM_ID "
-					+ "WHERE ol.C_Order_ID IN (" + in + ") AND ol.QtyOrdered-ol.QtyDelivered>0 "
-					+ "ORDER BY o.DocumentNo, ol.Line, ol.C_OrderLine_ID";
-			PreparedStatement ps = null;
-			ResultSet rs = null;
-			try {
-				ps = DB.prepareStatement(sql, null);
-				rs = ps.executeQuery();
-				while (rs.next()) {
-					GLine g = new GLine();
-					g.olId = rs.getInt(1);
-					g.orderId = rs.getInt(2);
-					Set<Integer> rem = removedByOrder.get(Integer.valueOf(g.orderId));
-					if (rem != null && rem.contains(Integer.valueOf(g.olId)))
+			// ticked POs in the order they are listed
+			for (Po po : pos) {
+				if (!sel.contains(Integer.valueOf(po.id)))
+					continue;
+				MOrder o = new MOrder(Env.getCtx(), po.id, null);
+				Set<Integer> rem = removedByOrder.get(Integer.valueOf(po.id));
+				for (MOrderLine ol : o.getLines()) {
+					if (ol.getM_Product_ID() <= 0)
 						continue;
-					g.poNo = rs.getString(3);
-					g.code = rs.getString(4);
-					g.name = rs.getString(5);
-					g.uom = rs.getString(6) == null ? "" : rs.getString(6);
-					g.ordered = rs.getBigDecimal(7);
-					g.received = rs.getBigDecimal(8);
-					g.pending = g.ordered.subtract(g.received);
+					BigDecimal pend = ol.getQtyOrdered().subtract(ol.getQtyDelivered());
+					if (pend.signum() <= 0)
+						continue;
+					if (rem != null && rem.contains(Integer.valueOf(ol.getC_OrderLine_ID())))
+						continue;
+					GLine g = new GLine();
+					g.olId = ol.getC_OrderLine_ID();
+					g.orderId = po.id;
+					g.poNo = po.docNo;
+					MProduct prod = MProduct.get(Env.getCtx(), ol.getM_Product_ID());
+					g.code = prod.getValue();
+					g.name = prod.getName();
+					MUOM uom = ol.getC_UOM_ID() > 0 ? MUOM.get(Env.getCtx(), ol.getC_UOM_ID()) : null;
+					g.uom = uom == null ? "" : (uom.getUOMSymbol() != null ? uom.getUOMSymbol() : uom.getName());
+					g.ordered = ol.getQtyOrdered();
+					g.received = ol.getQtyDelivered();
+					g.pending = pend;
 					BigDecimal k = keepQty.get(Integer.valueOf(g.olId));
-					g.qty = k != null ? k : g.pending;
+					g.qty = k != null ? k : pend;
 					lines.add(g);
 				}
-			} catch (Exception e) {
-				log.log(Level.SEVERE, sql, e);
-				warn("Could not read the PO lines:\n" + e.getMessage());
-			} finally {
-				DB.close(rs, ps);
 			}
 			// the warehouse of the first ticked PO, when none is chosen yet
 			if (idOf(cbWarehouse) <= 0)
