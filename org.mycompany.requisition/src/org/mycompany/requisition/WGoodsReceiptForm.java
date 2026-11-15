@@ -32,6 +32,8 @@ import org.compiere.model.MOrg;
 import org.compiere.model.MProduct;
 import org.compiere.model.MUOM;
 import org.compiere.model.MWarehouse;
+import org.compiere.model.PO;
+import org.compiere.model.POInfo;
 import org.compiere.model.Query;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
@@ -62,9 +64,15 @@ import org.zkoss.zul.Messagebox;
  *    (tick one, several, or all of them; the search box filters by PO No. or supplier).
  * 2. The lines still pending on the ticked POs appear in the Receipt Line table
  *    (Receive Qty is pre-filled with the pending qty; change it, or remove a line).
+ *    Each line also takes Pack Size, No of Pack and Challan Qty.
  * 3. Save creates ONE completed material receipt (M_InOut, MovementType V+) per PO, linked to
  *    the PO lines, so stock and the PO "delivered" qty are updated by the standard document
  *    process. Then it asks whether to view the GRN PDF.
+ * <p>
+ * Header: VAT Challan No / Date and Delivery Challan No / Date are saved on every GRN created in
+ * that go. Their columns (on M_InOut / M_InOutLine) are looked up by name in the Application
+ * Dictionary (see resolveColumns); a value whose column cannot be found is not saved and the
+ * user is told after saving.
  * <p>
  * Attachments work exactly like the Requisition form: + Add File, click a name to open it,
  * the cross removes it, OK closes. Files are stored on every GRN saved in that go.
@@ -75,7 +83,7 @@ public class WGoodsReceiptForm extends ADForm {
 	private static final CLogger log = CLogger.getCLogger(WGoodsReceiptForm.class);
 
 	private static final int MAX_PO = 300;
-	private static final String CSS_VERSION = "g1";
+	private static final String CSS_VERSION = "g2";
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -87,6 +95,10 @@ public class WGoodsReceiptForm extends ADForm {
 	private Combobox cbLocator;
 	private final Datebox dtMove = new Datebox();
 	private final Textbox txtRef = new Textbox();
+	private final Textbox txtVatNo = new Textbox();
+	private final Datebox dtVat = new Datebox();
+	private final Textbox txtDelNo = new Textbox();
+	private final Datebox dtDel = new Datebox();
 	private final Textbox txtDesc = new Textbox();
 	private final Button btnAttach = new Button("Attachment");
 	private final Label lblAttach = new Label();
@@ -105,11 +117,24 @@ public class WGoodsReceiptForm extends ADForm {
 	private final Label lblTotals = new Label();
 	private final List<GLine> lines = new ArrayList<GLine>();
 	private final Map<Integer, BigDecimal> keepQty = new HashMap<Integer, BigDecimal>();
+	private final Map<Integer, String> keepPack = new HashMap<Integer, String>();
+	private final Map<Integer, BigDecimal> keepNoPack = new HashMap<Integer, BigDecimal>();
+	private final Map<Integer, BigDecimal> keepChQty = new HashMap<Integer, BigDecimal>();
 	private final Map<Integer, Set<Integer>> removedByOrder = new HashMap<Integer, Set<Integer>>();
 	private Set<Integer> prevSel = new HashSet<Integer>();
 
 	private final Button btnOk = new Button("\u2714  Save GRN");
+	private final Button btnReload = new Button("\u21BB  Reload");
 	private final Button btnCancel = new Button("\u2716  Cancel");
+
+	// database columns of the challan / pack fields (found by name, null when the column does not exist)
+	private String colVatNo;
+	private String colVatDate;
+	private String colDelNo;
+	private String colDelDate;
+	private String colPack;
+	private String colNoPack;
+	private String colChQty;
 
 	private static final class Po {
 		int id;
@@ -133,6 +158,9 @@ public class WGoodsReceiptForm extends ADForm {
 		BigDecimal received = BigDecimal.ZERO;
 		BigDecimal pending = BigDecimal.ZERO;
 		BigDecimal qty = BigDecimal.ZERO;
+		String packSize = "";
+		BigDecimal noPack;
+		BigDecimal challanQty;
 	}
 
 	// =====================================================================
@@ -146,6 +174,7 @@ public class WGoodsReceiptForm extends ADForm {
 		setSclass(sc == null || sc.isEmpty() ? "xx-req" : sc + " xx-req");
 		installCss();
 		try {
+			resolveColumns();
 			buildUi();
 			loadHeaderData();
 			loadPOs();
@@ -169,6 +198,7 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-req .xx-span2 { grid-column:span 2; }
 .xx-req .xx-span3 { grid-column:span 3; }
 .xx-req .xx-span4 { grid-column:span 4; }
+.xx-req .xx-span6 { grid-column:1 / -1; }
 @media (max-width:1500px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media (max-width:1000px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 2; } }
 @media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
@@ -217,6 +247,7 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-req .z-listbox .z-listitem:nth-child(even) > .z-listcell, .xx-reqwin .z-listbox .z-listitem:nth-child(even) > .z-listcell { background:#f8fafc; }
 .xx-req .z-listbox .z-listitem:hover > .z-listcell, .xx-reqwin .z-listbox .z-listitem:hover > .z-listcell { background:#e7f1ff; }
 .xx-req .z-listbox .z-listcell .z-decimalbox { min-height:24px; text-align:right; }
+.xx-req .z-listbox .z-listcell .z-textbox { min-height:24px; }
 .xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 .xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
 /* Add Product card: 24 column grid (4 x 6 on the first row, 6+6+6+3+3 on the second) */
@@ -310,6 +341,84 @@ public class WGoodsReceiptForm extends ADForm {
 	}
 
 	// =====================================================================
+	// challan / pack columns (found by name in the Application Dictionary)
+	// =====================================================================
+
+	/**
+	 * First active column of the table whose name matches one of the LIKE patterns (tried in order),
+	 * shortest name first. null when there is none.
+	 */
+	private static String findColumn(String table, String exclude, String... patterns) {
+		for (String p : patterns) {
+			StringBuilder sql = new StringBuilder(
+					"SELECT c.ColumnName FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID "
+							+ "WHERE t.TableName=? AND c.IsActive='Y' AND LOWER(c.ColumnName) LIKE ?");
+			List<Object> params = new ArrayList<Object>();
+			params.add(table);
+			params.add(p);
+			if (exclude != null) {
+				sql.append(" AND LOWER(c.ColumnName) NOT LIKE ?");
+				params.add(exclude);
+			}
+			sql.append(" ORDER BY LENGTH(c.ColumnName), c.ColumnName");
+			String r = DB.getSQLValueString((String) null, sql.toString(), params.toArray());
+			if (r != null && r.length() > 0)
+				return r;
+		}
+		return null;
+	}
+
+	private void resolveColumns() {
+		colVatNo = findColumn(MInOut.Table_Name, null, "%vat%challan%no%", "%vat%challan%num%");
+		colVatDate = findColumn(MInOut.Table_Name, null, "%vat%challan%date%");
+		colDelNo = findColumn(MInOut.Table_Name, null, "%deliver%challan%no%", "%deliver%challan%num%");
+		colDelDate = findColumn(MInOut.Table_Name, null, "%deliver%challan%date%");
+		colPack = findColumn(MInOutLine.Table_Name, null, "%pack%size%");
+		colNoPack = findColumn(MInOutLine.Table_Name, "%size%", "%no%pack%");
+		colChQty = findColumn(MInOutLine.Table_Name, null, "%challan%qty%", "%challan%quantity%");
+		log.info("GRN columns: VATNo=" + colVatNo + " VATDate=" + colVatDate + " DelNo=" + colDelNo + " DelDate="
+				+ colDelDate + " PackSize=" + colPack + " NoOfPack=" + colNoPack + " ChallanQty=" + colChQty);
+	}
+
+	/** sets a column by name, converting the value to the column's type; false when the column does not exist */
+	private static boolean putCol(PO po, String col, Object val) {
+		if (col == null)
+			return false;
+		int idx = po.get_ColumnIndex(col);
+		if (idx < 0)
+			return false;
+		if (val == null)
+			return true;
+		Class<?> cls = POInfo.getPOInfo(Env.getCtx(), po.get_Table_ID()).getColumnClass(idx);
+		Object v;
+		try {
+			if (cls == String.class)
+				v = val.toString();
+			else if (cls == BigDecimal.class)
+				v = val instanceof BigDecimal ? val : new BigDecimal(val.toString().trim().replace(",", ""));
+			else if (cls == Integer.class)
+				v = Integer.valueOf(new BigDecimal(val.toString().trim().replace(",", "")).intValue());
+			else if (cls == Timestamp.class)
+				v = val instanceof Timestamp ? val : new Timestamp(((Date) val).getTime());
+			else
+				v = val;
+		} catch (NumberFormatException e) {
+			throw new AdempiereException("'" + val + "' is not a valid number for " + col);
+		}
+		po.set_ValueOfColumn(col, v);
+		return true;
+	}
+
+	private static String txt(Textbox tb) {
+		String v = tb.getValue();
+		return v == null ? "" : v.trim();
+	}
+
+	private static Timestamp ts(Datebox d) {
+		return d.getValue() == null ? null : new Timestamp(d.getValue().getTime());
+	}
+
+	// =====================================================================
 	// UI
 	// =====================================================================
 
@@ -335,10 +444,13 @@ public class WGoodsReceiptForm extends ADForm {
 		left.setSclass("xx-foot-grp");
 		left.appendChild(lblTotals);
 		btnOk.setSclass("btn btn-success");
+		btnReload.setSclass("btn btn-outline-primary");
+		btnReload.setTooltiptext("Clear the form and load the header data and the purchase orders again");
 		btnCancel.setSclass("btn btn-danger");
 		Div right = new Div();
 		right.setSclass("xx-foot-grp");
 		right.appendChild(btnOk);
+		right.appendChild(btnReload);
 		right.appendChild(btnCancel);
 		foot.appendChild(left);
 		foot.appendChild(right);
@@ -352,25 +464,44 @@ public class WGoodsReceiptForm extends ADForm {
 		g.setSclass("xx-grid");
 		dtMove.setFormat("dd-MM-yyyy");
 		dtMove.setValue(new Date());
+		dtVat.setFormat("dd-MM-yyyy");
+		dtDel.setFormat("dd-MM-yyyy");
 		txtRef.setMaxlength(20);
+		txtVatNo.setMaxlength(40);
+		txtDelNo.setMaxlength(40);
 		txtDesc.setMaxlength(255);
+		// Description: one line at first, drag the bottom-right corner to make it bigger or smaller again
+		txtDesc.setMultiline(true);
+		txtDesc.setRows(1);
+		txtDesc.setSclass("xx-desc");
 		ZKUpdateUtil.setWidth(txtRef, "100%");
+		ZKUpdateUtil.setWidth(txtVatNo, "100%");
+		ZKUpdateUtil.setWidth(txtDelNo, "100%");
 		ZKUpdateUtil.setWidth(txtDesc, "100%");
 		ZKUpdateUtil.setWidth(dtMove, "100%");
+		ZKUpdateUtil.setWidth(dtVat, "100%");
+		ZKUpdateUtil.setWidth(dtDel, "100%");
 		btnAttach.setSclass("btn btn-outline-primary");
 
+		// row 1
 		g.appendChild(field("Organization", true, readonly(lblOrg), 1));
 		g.appendChild(field("GRN Document", true, cbDocType, 1));
 		g.appendChild(field("Warehouse", true, cbWarehouse, 1));
 		g.appendChild(field("Locator", true, cbLocator, 1));
 		g.appendChild(field("GRN Date", true, dtMove, 1));
 		g.appendChild(field("Challan / Supplier Ref. No.", false, txtRef, 1));
-		g.appendChild(field("Description (Note)", false, txtDesc, 3));
+		// row 2
+		g.appendChild(field("VAT Challan No", false, txtVatNo, 1));
+		g.appendChild(field("VAT Challan Date", false, dtVat, 1));
+		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
+		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 1));
+		g.appendChild(field("Attachment", false, at, 2));
+		// row 3
+		g.appendChild(field("Description (Note)", false, txtDesc, 6));
 		updateAttachLabel();
 		return g;
 	}
@@ -418,7 +549,10 @@ public class WGoodsReceiptForm extends ADForm {
 		lh.appendChild(header("Ordered", "90px"));
 		lh.appendChild(header("Received", "90px"));
 		lh.appendChild(header("Pending", "90px"));
-		lh.appendChild(header("Receive Qty", "120px"));
+		lh.appendChild(header("Receive Qty", "110px"));
+		lh.appendChild(header("Pack Size", "100px"));
+		lh.appendChild(header("No of Pack", "100px"));
+		lh.appendChild(header("Challan Qty", "110px"));
 		lh.appendChild(header("", "60px"));
 		lineList.appendChild(lh);
 		box.appendChild(lineList);
@@ -450,7 +584,7 @@ public class WGoodsReceiptForm extends ADForm {
 
 	private Div field(String text, boolean required, Component c, int span) {
 		Div d = new Div();
-		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : ""));
+		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : span == 6 ? " xx-span6" : ""));
 		Label l = new Label(text);
 		l.setSclass("form-label" + (required ? " xx-req-mark" : ""));
 		d.appendChild(l);
@@ -600,7 +734,28 @@ public class WGoodsReceiptForm extends ADForm {
 		poList.addEventListener(Events.ON_SELECT, ev -> reloadLines());
 		btnAttach.addEventListener(Events.ON_CLICK, ev -> openAttachments());
 		btnOk.addEventListener(Events.ON_CLICK, ev -> save());
+		btnReload.addEventListener(Events.ON_CLICK, ev -> {
+			if (lines.isEmpty()) {
+				doReload();
+				return;
+			}
+			Messagebox.show("Reload the form?\n\nThe ticked PO(s) and everything you entered will be cleared.",
+					"Goods Receipt", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
+					(org.zkoss.zk.ui.event.Event e2) -> {
+						if (Messagebox.ON_YES.equals(e2.getName()))
+							doReload();
+					});
+		});
 		btnCancel.addEventListener(Events.ON_CLICK, ev -> close());
+	}
+
+	/** clears the form and loads the header data and the purchase orders again */
+	private void doReload() {
+		resetForm();
+		txtSearch.setValue("");
+		poList.clearSelection();
+		loadHeaderData();
+		loadPOs();
 	}
 
 	private void close() {
@@ -718,8 +873,13 @@ public class WGoodsReceiptForm extends ADForm {
 	// =====================================================================
 
 	private void reloadLines() {
-		for (GLine g : lines)
-			keepQty.put(Integer.valueOf(g.olId), g.qty);
+		for (GLine g : lines) {
+			Integer k = Integer.valueOf(g.olId);
+			keepQty.put(k, g.qty);
+			keepPack.put(k, g.packSize);
+			keepNoPack.put(k, g.noPack);
+			keepChQty.put(k, g.challanQty);
+		}
 		Set<Integer> sel = selectedOrderIds();
 		for (Integer id : sel)
 			if (!prevSel.contains(id))
@@ -754,8 +914,13 @@ public class WGoodsReceiptForm extends ADForm {
 					g.ordered = ol.getQtyOrdered();
 					g.received = ol.getQtyDelivered();
 					g.pending = pend;
-					BigDecimal k = keepQty.get(Integer.valueOf(g.olId));
+					Integer key = Integer.valueOf(g.olId);
+					BigDecimal k = keepQty.get(key);
 					g.qty = k != null ? k : pend;
+					String kp = keepPack.get(key);
+					g.packSize = kp == null ? "" : kp;
+					g.noPack = keepNoPack.get(key);
+					g.challanQty = keepChQty.get(key);
 					lines.add(g);
 				}
 			}
@@ -786,6 +951,7 @@ public class WGoodsReceiptForm extends ADForm {
 			li.appendChild(right(num(g.received)));
 			li.appendChild(right(num(g.pending)));
 
+			// Receive Qty
 			Listcell qc = new Listcell();
 			final Decimalbox db = new Decimalbox();
 			db.setFormat("#,##0.####");
@@ -798,6 +964,36 @@ public class WGoodsReceiptForm extends ADForm {
 			});
 			qc.appendChild(db);
 			li.appendChild(qc);
+
+			// Pack Size
+			Listcell pc = new Listcell();
+			final Textbox tbPack = new Textbox();
+			tbPack.setMaxlength(60);
+			tbPack.setValue(g.packSize == null ? "" : g.packSize);
+			ZKUpdateUtil.setWidth(tbPack, "100%");
+			tbPack.addEventListener(Events.ON_CHANGE, ev -> g.packSize = txt(tbPack));
+			pc.appendChild(tbPack);
+			li.appendChild(pc);
+
+			// No of Pack
+			Listcell nc = new Listcell();
+			final Decimalbox dbNo = new Decimalbox();
+			dbNo.setFormat("#,##0.####");
+			dbNo.setValue(g.noPack);
+			ZKUpdateUtil.setWidth(dbNo, "100%");
+			dbNo.addEventListener(Events.ON_CHANGE, ev -> g.noPack = dbNo.getValue());
+			nc.appendChild(dbNo);
+			li.appendChild(nc);
+
+			// Challan Qty
+			Listcell cc = new Listcell();
+			final Decimalbox dbCh = new Decimalbox();
+			dbCh.setFormat("#,##0.####");
+			dbCh.setValue(g.challanQty);
+			ZKUpdateUtil.setWidth(dbCh, "100%");
+			dbCh.addEventListener(Events.ON_CHANGE, ev -> g.challanQty = dbCh.getValue());
+			cc.appendChild(dbCh);
+			li.appendChild(cc);
 
 			Listcell rm = new Listcell();
 			Button x = new Button("\u2716");
@@ -1044,6 +1240,38 @@ public class WGoodsReceiptForm extends ADForm {
 			return;
 		}
 
+		final String vatNo = txt(txtVatNo);
+		final String delNo = txt(txtDelNo);
+		final Timestamp vatDate = ts(dtVat);
+		final Timestamp delDate = ts(dtDel);
+
+		// values that cannot be saved because the database has no such column
+		final List<String> notSaved = new ArrayList<String>();
+		if (vatNo.length() > 0 && colVatNo == null)
+			notSaved.add("VAT Challan No");
+		if (vatDate != null && colVatDate == null)
+			notSaved.add("VAT Challan Date");
+		if (delNo.length() > 0 && colDelNo == null)
+			notSaved.add("Delivery Challan No");
+		if (delDate != null && colDelDate == null)
+			notSaved.add("Delivery Challan Date");
+		boolean anyPack = false, anyNoPack = false, anyChQty = false;
+		for (List<GLine> l : byOrder.values())
+			for (GLine g : l) {
+				if (g.packSize != null && g.packSize.trim().length() > 0)
+					anyPack = true;
+				if (g.noPack != null)
+					anyNoPack = true;
+				if (g.challanQty != null)
+					anyChQty = true;
+			}
+		if (anyPack && colPack == null)
+			notSaved.add("Pack Size");
+		if (anyNoPack && colNoPack == null)
+			notSaved.add("No of Pack");
+		if (anyChQty && colChQty == null)
+			notSaved.add("Challan Qty");
+
 		final String trxName = Trx.createTrxName("XXGRN");
 		Trx trx = Trx.get(trxName, true);
 		try {
@@ -1062,6 +1290,14 @@ public class WGoodsReceiptForm extends ADForm {
 					io.setPOReference(ref);
 				if (desc.length() > 0)
 					io.setDescription(desc);
+				if (vatNo.length() > 0)
+					putCol(io, colVatNo, vatNo);
+				if (vatDate != null)
+					putCol(io, colVatDate, vatDate);
+				if (delNo.length() > 0)
+					putCol(io, colDelNo, delNo);
+				if (delDate != null)
+					putCol(io, colDelDate, delDate);
 				io.saveEx();
 
 				for (GLine g : e.getValue()) {
@@ -1069,6 +1305,12 @@ public class WGoodsReceiptForm extends ADForm {
 					MInOutLine iol = new MInOutLine(io);
 					iol.setOrderLine(ol, locId, g.qty);
 					iol.setQty(g.qty);
+					if (g.packSize != null && g.packSize.trim().length() > 0)
+						putCol(iol, colPack, g.packSize.trim());
+					if (g.noPack != null)
+						putCol(iol, colNoPack, g.noPack);
+					if (g.challanQty != null)
+						putCol(iol, colChQty, g.challanQty);
 					iol.saveEx();
 				}
 
@@ -1092,7 +1334,10 @@ public class WGoodsReceiptForm extends ADForm {
 			trx.commit(true);
 			resetForm();
 			loadPOs();
-			Messagebox.show("GRN " + String.join(", ", nos) + " saved and completed.\n\nDo you want to view the GRN PDF?",
+			String note = notSaved.isEmpty() ? ""
+					: "\n\nNOT saved (no matching column found in the database): " + String.join(", ", notSaved) + ".";
+			Messagebox.show("GRN " + String.join(", ", nos) + " saved and completed." + note
+					+ "\n\nDo you want to view the GRN PDF?",
 					"Goods Receipt", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
 					(org.zkoss.zk.ui.event.Event ev) -> {
 						if (Messagebox.ON_YES.equals(ev.getName()))
@@ -1110,11 +1355,18 @@ public class WGoodsReceiptForm extends ADForm {
 	private void resetForm() {
 		lines.clear();
 		keepQty.clear();
+		keepPack.clear();
+		keepNoPack.clear();
+		keepChQty.clear();
 		removedByOrder.clear();
 		prevSel = new HashSet<Integer>();
 		attachments.clear();
 		updateAttachLabel();
 		txtRef.setValue("");
+		txtVatNo.setValue("");
+		dtVat.setValue(null);
+		txtDelNo.setValue("");
+		dtDel.setValue(null);
 		txtDesc.setValue("");
 		dtMove.setValue(new Date());
 		refreshLines();
