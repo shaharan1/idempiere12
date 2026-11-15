@@ -81,4 +81,16 @@ public class WGoodsReceiptForm extends ADForm{
 		
 		
 		
+		
+		private static final class Po {
+			int id;
+			int warehouseId;
+			String docNo = "";
+			Timestamp date;
+			String supplier = "";
+			String warehouse = "";
+			int pending;
+			BigDecimal total = BigDecimal.ZERO;
+		}
+		
 }
