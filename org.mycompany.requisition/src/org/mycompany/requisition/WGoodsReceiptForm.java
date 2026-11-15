@@ -107,6 +107,22 @@ public class WGoodsReceiptForm extends ADForm{
 			BigDecimal pending = BigDecimal.ZERO;
 			BigDecimal qty = BigDecimal.ZERO;
 		}
+
+
+
+		// =====================================================================
+		// init
+		// =====================================================================
+		
+		
+		
+		@Override
+		protected void initForm() {
+			
+			org.mycompany.requisition.ui.XxTheme.wrap(this);
+			// TODO Auto-generated method stub
+			
+		}
 		
 		
 		
