@@ -93,4 +93,23 @@ public class WGoodsReceiptForm extends ADForm{
 			BigDecimal total = BigDecimal.ZERO;
 		}
 		
+		
+		
+		private static final class GLine {
+			int olId;
+			int orderId;
+			String poNo = "";
+			String code = "";
+			String name = "";
+			String uom = "";
+			BigDecimal ordered = BigDecimal.ZERO;
+			BigDecimal received = BigDecimal.ZERO;
+			BigDecimal pending = BigDecimal.ZERO;
+			BigDecimal qty = BigDecimal.ZERO;
+		}
+		
+		
+		
+		
+		
 }
