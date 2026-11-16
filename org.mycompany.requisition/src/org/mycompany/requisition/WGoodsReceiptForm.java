@@ -30,6 +30,7 @@ import org.compiere.model.MOrder;
 import org.compiere.model.MOrderLine;
 import org.compiere.model.MOrg;
 import org.compiere.model.MProduct;
+import org.compiere.model.MTable;
 import org.compiere.model.MUOM;
 import org.compiere.model.MWarehouse;
 import org.compiere.model.PO;
@@ -308,90 +309,73 @@ public class WGoodsReceiptForm extends ADForm {
 			+ "var w=null;try{w=zk.Widget.$(e.target);}catch(x){}"
 			+ "if(w&&!(w.isOpen&&w.isOpen())){e.preventDefault();e.stopPropagation();openIt(e.target);}}},true);})();";
 
-//	private static final String COMBO_JS = "(function(){if(window.__xxComboV==='2')return;window.__xxComboV='2';"
-//			+ "function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}"
-//			+ "function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}"
-//			+ "document.addEventListener('click',function(e){var t=e.target;if(!mine(t)||t.disabled)return;"
-//			+ "if(t.value&&t.value.length)return;"
-//			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);"
-//			+ "document.addEventListener('keydown',function(e){if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;"
-//			+ "var t=e.target;if(!mine(t)||t.disabled)return;"
-//			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
-	
-	
-	
-	// Replace the whole existing "private static final String COMBO_JS = ..." constant with this one,
-	// in BOTH forms (WRequisitionForm and WGoodsReceiptForm). Nothing else needs to change.
-	//
-	// Behaviour in every combobox inside .xx-req:
-	//   Arrow Down / Arrow Up : opens the list if it is closed, then moves the highlight item by item
-	//   Enter                 : puts the highlighted item into the field (same as clicking it)
-	//   Esc                   : closes the list
-	//   click on an empty box : opens the list (as before)
-
-		private static final String COMBO_JS = """
-	(function(){
-	if(window.__xxComboOff){try{window.__xxComboOff();}catch(x){}}
-	var IDX=-1;
-	function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}
-	function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}
-	function pop(w){return w&&w.$n?w.$n('pp'):null;}
-	function shown(el){return !!(el&&el.getClientRects&&el.getClientRects().length>0);}
-	function isOpen(w){var p=pop(w);return !!(p&&p.style.display!=='none'&&shown(p));}
-	function items(w){var p=pop(w),r=[];if(!p)return r;var a=p.querySelectorAll('.z-comboitem');
-	  for(var i=0;i<a.length;i++)if(shown(a[i]))r.push(a[i]);return r;}
-	function mark(w,i){var a=items(w);
-	  for(var k=0;k<a.length;k++)a[k].classList.remove('z-comboitem-over','z-comboitem-over-seld');
-	  if(i>=0&&i<a.length){a[i].classList.add('z-comboitem-over');
-	    if(a[i].scrollIntoView)a[i].scrollIntoView({block:'nearest'});}
-	  IDX=i;}
-	function pick(w,el){var iw=null;try{iw=zk.Widget.$(el);}catch(x){}
-	  if(iw&&typeof w._select==='function'){
-	    w._select(iw,{sendOnSelect:true});
-	    if(typeof w.close==='function')w.close({focus:true,sendOnOpen:true});
-	  }else{el.click();}}
-	function onKey(e){
-	  var t=e.target;if(!mine(t)||t.disabled)return;
-	  var k=e.key;if(k!=='ArrowDown'&&k!=='ArrowUp'&&k!=='Enter'&&k!=='Escape')return;
-	  var w=wid(t);if(!w)return;
-	  var open=isOpen(w);
-	  if(k==='ArrowDown'||k==='ArrowUp'){
-	    e.preventDefault();e.stopPropagation();
-	    if(!open){
-	      if(typeof w.open==='function')w.open();
-	      IDX=-1;
-	      setTimeout(function(){var n=items(w).length;if(n)mark(w,k==='ArrowDown'?0:n-1);},40);
-	      return;}
-	    var n=items(w).length;if(!n)return;
-	    var i=IDX;
-	    if(k==='ArrowDown')i=i<0?0:Math.min(i+1,n-1);
-	    else i=i<0?n-1:Math.max(i-1,0);
-	    mark(w,i);
-	  }else if(k==='Enter'){
-	    if(open&&IDX>=0){var a=items(w);
-	      if(a[IDX]){e.preventDefault();e.stopPropagation();pick(w,a[IDX]);IDX=-1;}}
-	  }else if(k==='Escape'){
-	    if(open){e.preventDefault();e.stopPropagation();
-	      if(typeof w.close==='function')w.close({focus:true});IDX=-1;}
-	  }
-	}
-	function onClick(e){var t=e.target;if(!mine(t)||t.disabled)return;
-	  if(t.value&&t.value.length)return;
-	  var w=wid(t);if(w&&typeof w.open==='function'&&!isOpen(w))w.open();}
-	function onInput(e){if(mine(e.target))IDX=-1;}
-	function onFocus(e){if(mine(e.target))IDX=-1;}
-	document.addEventListener('keydown',onKey,true);
-	document.addEventListener('click',onClick,true);
-	document.addEventListener('input',onInput,true);
-	document.addEventListener('focusin',onFocus,true);
-	window.__xxComboOff=function(){
-	  document.removeEventListener('keydown',onKey,true);
-	  document.removeEventListener('click',onClick,true);
-	  document.removeEventListener('input',onInput,true);
-	  document.removeEventListener('focusin',onFocus,true);};
-	})();
-	""";
-	
+	private static final String COMBO_JS = """
+(function(){
+if(window.__xxComboOff){try{window.__xxComboOff();}catch(x){}}
+var IDX=-1;
+function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}
+function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}
+function pop(w){return w&&w.$n?w.$n('pp'):null;}
+function shown(el){return !!(el&&el.getClientRects&&el.getClientRects().length>0);}
+function isOpen(w){var p=pop(w);return !!(p&&p.style.display!=='none'&&shown(p));}
+function items(w){var p=pop(w),r=[];if(!p)return r;var a=p.querySelectorAll('.z-comboitem');
+  for(var i=0;i<a.length;i++)if(shown(a[i]))r.push(a[i]);return r;}
+function mark(w,i){var a=items(w);
+  for(var k=0;k<a.length;k++)a[k].classList.remove('z-comboitem-over','z-comboitem-over-seld');
+  if(i>=0&&i<a.length){a[i].classList.add('z-comboitem-over');
+    if(a[i].scrollIntoView)a[i].scrollIntoView({block:'nearest'});}
+  IDX=i;}
+// the server may (re)fill the list right after it opens: wait until it stops changing, then highlight
+function settle(w,last){var tries=0,prev=null,same=0;
+  (function tick(){var a=items(w),f=a.length?a[0]:null;
+    if(f&&f===prev)same++;else{same=0;prev=f;}
+    if(same>=2||++tries>15){if(a.length)mark(w,last?a.length-1:0);}
+    else setTimeout(tick,60);})();}
+function pick(w,el){
+  el.click();
+  setTimeout(function(){
+    if(!isOpen(w))return;
+    var iw=null;try{iw=zk.Widget.$(el);}catch(x){}
+    if(iw&&typeof w._select==='function')w._select(iw,{sendOnSelect:true});
+    if(typeof w.close==='function')w.close({focus:true});
+  },250);}
+function onKey(e){
+  var t=e.target;if(!mine(t)||t.disabled)return;
+  var k=e.key;if(k!=='ArrowDown'&&k!=='ArrowUp'&&k!=='Enter'&&k!=='Escape')return;
+  var w=wid(t);if(!w)return;
+  var open=isOpen(w);
+  if(k==='ArrowDown'||k==='ArrowUp'){
+    e.preventDefault();e.stopPropagation();
+    if(!open){IDX=-1;if(typeof w.open==='function')w.open();settle(w,k==='ArrowUp');return;}
+    var n=items(w).length;if(!n)return;
+    var i=IDX;
+    if(k==='ArrowDown')i=i<0?0:Math.min(i+1,n-1);
+    else i=i<0?n-1:Math.max(i-1,0);
+    mark(w,i);
+  }else if(k==='Enter'){
+    if(open&&IDX>=0){var a=items(w);
+      if(a[IDX]){e.preventDefault();e.stopPropagation();pick(w,a[IDX]);IDX=-1;}}
+  }else if(k==='Escape'){
+    if(open){e.preventDefault();e.stopPropagation();
+      if(typeof w.close==='function')w.close({focus:true});IDX=-1;}
+  }
+}
+function onClick(e){var t=e.target;if(!mine(t)||t.disabled)return;
+  if(t.value&&t.value.length)return;
+  var w=wid(t);if(w&&typeof w.open==='function'&&!isOpen(w))w.open();}
+function onInput(e){if(mine(e.target))IDX=-1;}
+function onFocus(e){if(mine(e.target))IDX=-1;}
+document.addEventListener('keydown',onKey,true);
+document.addEventListener('click',onClick,true);
+document.addEventListener('input',onInput,true);
+document.addEventListener('focusin',onFocus,true);
+window.__xxComboOff=function(){
+  document.removeEventListener('keydown',onKey,true);
+  document.removeEventListener('click',onClick,true);
+  document.removeEventListener('input',onInput,true);
+  document.removeEventListener('focusin',onFocus,true);};
+})();
+""";
 
 	private static final String ENTER_JS = "(function(){if(window.__xxEnterV==='1')return;window.__xxEnterV='1';"
 			+ "document.addEventListener('keydown',function(e){"
@@ -419,26 +403,40 @@ public class WGoodsReceiptForm extends ADForm {
 	// challan / pack columns (found by name in the Application Dictionary)
 	// =====================================================================
 
+	/** LIKE-style match without SQL: '%' separates the parts that must appear in this order (lower case) */
+	private static boolean matches(String lc, String pattern) {
+		int from = 0;
+		for (String part : pattern.split("%")) {
+			if (part.isEmpty())
+				continue;
+			int ix = lc.indexOf(part, from);
+			if (ix < 0)
+				return false;
+			from = ix + part.length();
+		}
+		return true;
+	}
+
 	/**
-	 * First active column of the table whose name matches one of the LIKE patterns (tried in order),
-	 * shortest name first. null when there is none.
+	 * Column of the table whose name matches one of the patterns (tried in order), shortest name first.
+	 * Read from the model (POInfo), no SQL. null when there is none.
 	 */
 	private static String findColumn(String table, String exclude, String... patterns) {
+		POInfo info = POInfo.getPOInfo(Env.getCtx(), MTable.getTable_ID(table));
+		if (info == null)
+			return null;
 		for (String p : patterns) {
-			StringBuilder sql = new StringBuilder(
-					"SELECT c.ColumnName FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID "
-							+ "WHERE t.TableName=? AND c.IsActive='Y' AND LOWER(c.ColumnName) LIKE ?");
-			List<Object> params = new ArrayList<Object>();
-			params.add(table);
-			params.add(p);
-			if (exclude != null) {
-				sql.append(" AND LOWER(c.ColumnName) NOT LIKE ?");
-				params.add(exclude);
+			String best = null;
+			for (int i = 0; i < info.getColumnCount(); i++) {
+				String cn = info.getColumnName(i);
+				String lc = cn.toLowerCase();
+				if (exclude != null && matches(lc, exclude))
+					continue;
+				if (matches(lc, p) && (best == null || cn.length() < best.length()))
+					best = cn;
 			}
-			sql.append(" ORDER BY LENGTH(c.ColumnName), c.ColumnName");
-			String r = DB.getSQLValueString((String) null, sql.toString(), params.toArray());
-			if (r != null && r.length() > 0)
-				return r;
+			if (best != null)
+				return best;
 		}
 		return null;
 	}
@@ -570,16 +568,15 @@ public class WGoodsReceiptForm extends ADForm {
 		g.appendChild(field("VAT Challan Date", false, dtVat, 1));
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
-		g.appendChild(field("Description (Note)", false, txtDesc, 1));
-		updateAttachLabel();
-		
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 1));
+		g.appendChild(field("Attachment", false, at, 2));
+		// row 3
+		g.appendChild(field("Description (Note)", false, txtDesc, 6));
+		updateAttachLabel();
 		return g;
-		
 	}
 
 	private Div buildPoBox() {
