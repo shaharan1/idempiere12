@@ -604,6 +604,7 @@ window.__xxComboOff=function(){
 		lh.appendChild(header("Warehouse", "190px"));
 		lh.appendChild(header("Pending Lines", "130px"));
 		lh.appendChild(header("PO Total", "150px"));
+		lh.appendChild(header("", null)); // spacer: baki jayga ta nei
 		poList.appendChild(lh);
 		box.appendChild(poList);
 		return box;
