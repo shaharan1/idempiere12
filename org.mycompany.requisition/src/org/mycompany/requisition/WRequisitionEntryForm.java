@@ -854,6 +854,14 @@ public class WRequisitionEntryForm extends ADForm {
 		String name = "";
 		Runnable onChange;
 		private String typed = "";
+		
+		private long quietUntil = 0;
+
+		/** focus without dropping the list down (used after + Add Product) */
+		void focusQuiet() {
+			quietUntil = System.currentTimeMillis() + 3000;
+			box.focus();
+		}
 
 		Picker(String title, String select, String order, boolean showCode, Filter filter) {
 			this.title = title;
