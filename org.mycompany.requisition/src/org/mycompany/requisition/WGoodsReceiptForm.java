@@ -554,7 +554,7 @@ window.__xxComboOff=function(){
 		ZKUpdateUtil.setWidth(dtMove, "100%");
 		ZKUpdateUtil.setWidth(dtVat, "100%");
 		ZKUpdateUtil.setWidth(dtDel, "100%");
-		btnAttach.setSclass("btn btn-outline-primary");
+		btnAttach.setSclass("btn btn-outline-primary 100%");
 
 		// row 1
 		g.appendChild(field("Organization", true, readonly(lblOrg), 1));
@@ -574,7 +574,7 @@ window.__xxComboOff=function(){
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 2));
+		g.appendChild(field("Attachment", false, at, 1));
 		
 		return g;
 	}
@@ -601,9 +601,9 @@ window.__xxComboOff=function(){
 		lh.appendChild(header("PO No.", "110px"));
 		lh.appendChild(header("PO Date", "100px"));
 		lh.appendChild(header("Supplier", null));
-		lh.appendChild(header("Warehouse", "170px"));
-		lh.appendChild(header("Pending Lines", "110px"));
-		lh.appendChild(header("PO Total", "130px"));
+		lh.appendChild(header("Warehouse", "190px"));
+		lh.appendChild(header("Pending Lines", "130px"));
+		lh.appendChild(header("PO Total", "150px"));
 		poList.appendChild(lh);
 		box.appendChild(poList);
 		return box;
