@@ -907,6 +907,7 @@ window.__xxComboOff=function(){
 			Listcell t = new Listcell(money(po.total));
 			t.setStyle("text-align:right;");
 			li.appendChild(t);
+			li.appendChild(new Listcell("")); // spacer cell, jate row er line puro porjonto thake
 			poList.appendChild(li);
 			if (ticked.contains(Integer.valueOf(po.id)))
 				poList.addItemToSelection(li);
