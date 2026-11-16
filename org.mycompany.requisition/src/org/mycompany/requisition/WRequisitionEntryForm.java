@@ -1488,13 +1488,16 @@ public class WRequisitionEntryForm extends ADForm {
 		refreshLines();
 
 		// next product: keep the categories, clear the rest (Date Required (Line) goes back to the header date)
+	
+		
+		closeList(pProduct.box);
 		pProduct.clear(false);
 		txtSpec.setValue("");
 		decQty.setValue((BigDecimal) null);
 		entryRate = null;
 		syncLineDate();
 		productChanged();
-		pProduct.box.focus(); // ready for the next product
+		pProduct.focusQuiet(); // ready for the next product, list stays closed
 	}
 
 	private static String money(BigDecimal v) {
