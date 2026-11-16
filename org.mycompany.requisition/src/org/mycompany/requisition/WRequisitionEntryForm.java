@@ -882,6 +882,13 @@ public class WRequisitionEntryForm extends ADForm {
 			// options are not dropped down again (Up / Down, the arrow button or typing opens the list)
 			box.addEventListener(Events.ON_FOCUS, e -> {
 				typed = "";
+				
+				if (System.currentTimeMillis() < quietUntil) {
+					quietUntil = 0;
+					box.select();
+					return;
+				}
+				
 				if (id <= 0) {
 					load("");
 					openList(box);
