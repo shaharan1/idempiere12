@@ -600,11 +600,10 @@ window.__xxComboOff=function(){
 		lh.setSizable(true);
 		lh.appendChild(header("PO No.", "110px"));
 		lh.appendChild(header("PO Date", "100px"));
-		lh.appendChild(header("Supplier", null));
+		lh.appendChild(header("Supplier", "480px"));
 		lh.appendChild(header("Warehouse", "190px"));
 		lh.appendChild(header("Pending Lines", "130px"));
 		lh.appendChild(header("PO Total", "150px"));
-		lh.appendChild(header("", null)); // spacer: baki jayga ta nei
 		poList.appendChild(lh);
 		box.appendChild(poList);
 		return box;
