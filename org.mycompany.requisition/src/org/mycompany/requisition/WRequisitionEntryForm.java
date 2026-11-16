@@ -726,7 +726,7 @@ public class WRequisitionEntryForm extends ADForm {
 				value = v == null ? "" : String.valueOf(v);
 				name = it.getLabel();
 				typed = "";
-				show(""); // the arrow keys / the arrow button show the whole list again
+//				show(""); // the arrow keys / the arrow button show the whole list again
 				box.setValue(name);
 				if (!oldValue.equals(value) && onChange != null)
 					onChange.run();
@@ -907,7 +907,7 @@ public class WRequisitionEntryForm extends ADForm {
 						set(((Integer) v[0]).intValue(), (String) v[1], (String) v[2], true);
 					else
 						box.setValue(display());
-					load(""); // next click shows the whole list again
+//					load(""); // next click shows the whole list again
 				}
 			});
 			box.addEventListener(Events.ON_CHANGE, e -> resolve(box.getValue()));
