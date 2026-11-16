@@ -308,15 +308,90 @@ public class WGoodsReceiptForm extends ADForm {
 			+ "var w=null;try{w=zk.Widget.$(e.target);}catch(x){}"
 			+ "if(w&&!(w.isOpen&&w.isOpen())){e.preventDefault();e.stopPropagation();openIt(e.target);}}},true);})();";
 
-	private static final String COMBO_JS = "(function(){if(window.__xxComboV==='2')return;window.__xxComboV='2';"
-			+ "function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}"
-			+ "function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}"
-			+ "document.addEventListener('click',function(e){var t=e.target;if(!mine(t)||t.disabled)return;"
-			+ "if(t.value&&t.value.length)return;"
-			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);"
-			+ "document.addEventListener('keydown',function(e){if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;"
-			+ "var t=e.target;if(!mine(t)||t.disabled)return;"
-			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
+//	private static final String COMBO_JS = "(function(){if(window.__xxComboV==='2')return;window.__xxComboV='2';"
+//			+ "function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}"
+//			+ "function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}"
+//			+ "document.addEventListener('click',function(e){var t=e.target;if(!mine(t)||t.disabled)return;"
+//			+ "if(t.value&&t.value.length)return;"
+//			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);"
+//			+ "document.addEventListener('keydown',function(e){if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;"
+//			+ "var t=e.target;if(!mine(t)||t.disabled)return;"
+//			+ "var w=wid(t);if(w&&typeof w.open==='function'&&!(w.isOpen&&w.isOpen()))w.open();},true);})();";
+	
+	
+	
+	// Replace the whole existing "private static final String COMBO_JS = ..." constant with this one,
+	// in BOTH forms (WRequisitionForm and WGoodsReceiptForm). Nothing else needs to change.
+	//
+	// Behaviour in every combobox inside .xx-req:
+	//   Arrow Down / Arrow Up : opens the list if it is closed, then moves the highlight item by item
+	//   Enter                 : puts the highlighted item into the field (same as clicking it)
+	//   Esc                   : closes the list
+	//   click on an empty box : opens the list (as before)
+
+		private static final String COMBO_JS = """
+	(function(){
+	if(window.__xxComboOff){try{window.__xxComboOff();}catch(x){}}
+	var IDX=-1;
+	function mine(t){return t&&t.classList&&t.classList.contains('z-combobox-input')&&t.closest&&t.closest('.xx-req');}
+	function wid(t){try{return zk.Widget.$(t);}catch(x){return null;}}
+	function pop(w){return w&&w.$n?w.$n('pp'):null;}
+	function shown(el){return !!(el&&el.getClientRects&&el.getClientRects().length>0);}
+	function isOpen(w){var p=pop(w);return !!(p&&p.style.display!=='none'&&shown(p));}
+	function items(w){var p=pop(w),r=[];if(!p)return r;var a=p.querySelectorAll('.z-comboitem');
+	  for(var i=0;i<a.length;i++)if(shown(a[i]))r.push(a[i]);return r;}
+	function mark(w,i){var a=items(w);
+	  for(var k=0;k<a.length;k++)a[k].classList.remove('z-comboitem-over','z-comboitem-over-seld');
+	  if(i>=0&&i<a.length){a[i].classList.add('z-comboitem-over');
+	    if(a[i].scrollIntoView)a[i].scrollIntoView({block:'nearest'});}
+	  IDX=i;}
+	function pick(w,el){var iw=null;try{iw=zk.Widget.$(el);}catch(x){}
+	  if(iw&&typeof w._select==='function'){
+	    w._select(iw,{sendOnSelect:true});
+	    if(typeof w.close==='function')w.close({focus:true,sendOnOpen:true});
+	  }else{el.click();}}
+	function onKey(e){
+	  var t=e.target;if(!mine(t)||t.disabled)return;
+	  var k=e.key;if(k!=='ArrowDown'&&k!=='ArrowUp'&&k!=='Enter'&&k!=='Escape')return;
+	  var w=wid(t);if(!w)return;
+	  var open=isOpen(w);
+	  if(k==='ArrowDown'||k==='ArrowUp'){
+	    e.preventDefault();e.stopPropagation();
+	    if(!open){
+	      if(typeof w.open==='function')w.open();
+	      IDX=-1;
+	      setTimeout(function(){var n=items(w).length;if(n)mark(w,k==='ArrowDown'?0:n-1);},40);
+	      return;}
+	    var n=items(w).length;if(!n)return;
+	    var i=IDX;
+	    if(k==='ArrowDown')i=i<0?0:Math.min(i+1,n-1);
+	    else i=i<0?n-1:Math.max(i-1,0);
+	    mark(w,i);
+	  }else if(k==='Enter'){
+	    if(open&&IDX>=0){var a=items(w);
+	      if(a[IDX]){e.preventDefault();e.stopPropagation();pick(w,a[IDX]);IDX=-1;}}
+	  }else if(k==='Escape'){
+	    if(open){e.preventDefault();e.stopPropagation();
+	      if(typeof w.close==='function')w.close({focus:true});IDX=-1;}
+	  }
+	}
+	function onClick(e){var t=e.target;if(!mine(t)||t.disabled)return;
+	  if(t.value&&t.value.length)return;
+	  var w=wid(t);if(w&&typeof w.open==='function'&&!isOpen(w))w.open();}
+	function onInput(e){if(mine(e.target))IDX=-1;}
+	function onFocus(e){if(mine(e.target))IDX=-1;}
+	document.addEventListener('keydown',onKey,true);
+	document.addEventListener('click',onClick,true);
+	document.addEventListener('input',onInput,true);
+	document.addEventListener('focusin',onFocus,true);
+	window.__xxComboOff=function(){
+	  document.removeEventListener('keydown',onKey,true);
+	  document.removeEventListener('click',onClick,true);
+	  document.removeEventListener('input',onInput,true);
+	  document.removeEventListener('focusin',onFocus,true);};
+	})();
+	""";
+	
 
 	private static final String ENTER_JS = "(function(){if(window.__xxEnterV==='1')return;window.__xxEnterV='1';"
 			+ "document.addEventListener('keydown',function(e){"
