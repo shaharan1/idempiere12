@@ -86,7 +86,7 @@ public class WGoodsReceiptForm extends ADForm {
 	private static final CLogger log = CLogger.getCLogger(WGoodsReceiptForm.class);
 
 	private static final int MAX_PO = 300;
-	private static final String CSS_VERSION = "g3";
+	private static final String CSS_VERSION = "g4";
 	/** tolerance rates (custom table); its columns are found by name, see resolveColumns */
 	private static final String TOL_TABLE = "T_ToleranceRateMR";
 	private static final BigDecimal HUNDRED = new BigDecimal(100);
@@ -221,6 +221,11 @@ public class WGoodsReceiptForm extends ADForm {
 @media (max-width:1500px) { .xx-req .xx-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media (max-width:1000px) { .xx-req .xx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 2; } }
 @media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
+.xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(8,minmax(0,1fr)); }
+.xx-req .xx-span5 { grid-column:span 5; }
+@media (max-width:1300px) { .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(4,minmax(0,1fr)); } .xx-req .xx-span5 { grid-column:1 / -1; } }
+@media (max-width:1000px) { .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:600px)  { .xx-req .xx-grid.xx-grid8 { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span5 { grid-column:span 1; } }
 .xx-req .xx-field { min-width:0; }
 .xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
 .xx-req .form-label.xx-req-mark { color:#dc3545; }
@@ -634,7 +639,7 @@ window.__xxComboOff=function(){
 
 	private Div buildHeader() {
 		Div g = new Div();
-		g.setSclass("xx-grid");
+		g.setSclass("xx-grid xx-grid8");
 		dtMove.setFormat("dd-MM-yyyy");
 		dtMove.setValue(new Date());
 		dtVat.setFormat("dd-MM-yyyy");
@@ -656,37 +661,35 @@ window.__xxComboOff=function(){
 		ZKUpdateUtil.setWidth(dtDel, "100%");
 		btnAttach.setSclass("btn btn-outline-primary btn-block");
 
-		// row 1: PO search (dropdown + Search + Refresh + count)
+		// row 1: PO search (dropdown + Search + Refresh + count), Attachment, Supplier
 		Div bar = new Div();
 		bar.setStyle("display:flex;align-items:center;gap:8px;flex-wrap:wrap;");
-		ZKUpdateUtil.setWidth(cbPo, "460px");
+		ZKUpdateUtil.setWidth(cbPo, "380px");
 		btnSearch.setSclass("btn btn-primary");
 		btnRefresh.setSclass("btn btn-outline-primary");
 		bar.appendChild(cbPo);
 		bar.appendChild(btnSearch);
 		bar.appendChild(btnRefresh);
 		bar.appendChild(lblPoCount);
-		g.appendChild(field("Search PO No. or Supplier", true, bar, 4));
+		g.appendChild(field("Search PO No. or Supplier", true, bar, 5));
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 2));
-
-		// row 2: loaded from the PO
+		g.appendChild(field("Attachment", false, at, 1));
 		g.appendChild(field("Supplier", false, readonly(lblSupplier), 2));
+		// row 2
 		g.appendChild(field("PO Date", false, readonly(lblPoDate), 1));
 		g.appendChild(field("PO Total", false, readonly(lblPoTotal), 1));
 		g.appendChild(field("Organization", true, readonly(lblOrg), 1));
 		g.appendChild(field("GRN Document", true, cbDocType, 1));
-		// row 3
 		g.appendChild(field("Warehouse", true, cbWarehouse, 1));
 		g.appendChild(field("Locator", true, cbLocator, 1));
 		g.appendChild(field("GRN Date", true, dtMove, 1));
 		g.appendChild(field("Challan / Supplier Ref. No.", false, txtRef, 1));
+		// row 3
 		g.appendChild(field("VAT Challan No", false, txtVatNo, 1));
 		g.appendChild(field("VAT Challan Date", false, dtVat, 1));
-		// row 4
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
 		g.appendChild(field("Tolerance Rule", false, cbTolerance, 2));
@@ -752,7 +755,7 @@ window.__xxComboOff=function(){
 
 	private Div field(String text, boolean required, Component c, int span) {
 		Div d = new Div();
-		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : span == 4 ? " xx-span4" : span == 6 ? " xx-span6" : ""));
+		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : span == 4 ? " xx-span4" : span == 5 ? " xx-span5" : span == 6 ? " xx-span6" : ""));
 		Label l = new Label(text);
 		l.setSclass("form-label" + (required ? " xx-req-mark" : ""));
 		d.appendChild(l);
