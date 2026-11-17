@@ -104,7 +104,7 @@ public class WGoodsReceiptForm extends ADForm {
 	private Combobox cbLocator;
 	private Combobox cbDamLoc;
 	private Combobox cbTolerance;
-	private final Label lblTolInfo = new Label();
+//	private final Label lblTolInfo = new Label();
 	private final Datebox dtMove = new Datebox();
 	private final Textbox txtRef = new Textbox();
 	private final Textbox txtVatNo = new Textbox();
@@ -620,7 +620,7 @@ window.__xxComboOff=function(){
 		else
 			info = ruleCount + " rule(s) valid.  Columns found: Rate=" + colTolRate + ", From=" + colTolFrom + ", DocType="
 					+ colTolDocType + ", Segment=" + colTolSegment;
-		lblTolInfo.setValue(info);
+//		lblTolInfo.setValue(info);
 		cbTolerance.setSelectedItem(best);
 	}
 
