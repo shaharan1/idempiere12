@@ -7,11 +7,12 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Level;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.adempiere.exceptions.AdempiereException;
 import org.adempiere.webui.component.Button;
@@ -33,19 +34,20 @@ import org.compiere.model.MOrg;
 import org.compiere.model.MProduct;
 import org.compiere.model.MTable;
 import org.compiere.model.MUOM;
+import org.compiere.model.MUser;
 import org.compiere.model.MWarehouse;
 import org.compiere.model.PO;
 import org.compiere.model.POInfo;
 import org.compiere.model.Query;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
-import org.compiere.util.DB;
 import org.compiere.util.Env;
 import org.compiere.util.Trx;
 import org.zkoss.util.media.Media;
 import org.zkoss.zk.ui.Component;
 import org.zkoss.zk.ui.Executions;
 import org.zkoss.zk.ui.event.Events;
+import org.zkoss.zk.ui.event.InputEvent;
 import org.zkoss.zk.ui.event.UploadEvent;
 import org.zkoss.zk.ui.util.Clients;
 import org.zkoss.zul.Combobox;
@@ -62,26 +64,21 @@ import org.zkoss.zul.Messagebox;
 /**
  * Goods Received Note (GRN) form.
  * <p>
- * 1. The box lists every COMPLETED purchase order that still has something to receive
- *    (tick one, several, or all of them; the search box filters by PO No. or supplier).
- * 2. The lines still pending on the ticked POs appear in the Receipt Line table
- *    (Receive Qty is pre-filled with the pending qty; change it, or remove a line).
- *    Each line also takes Pack Size, No of Pack and Challan Qty.
- * 3. Save creates ONE completed material receipt (M_InOut, MovementType V+) per PO, linked to
- *    the PO lines, so stock and the PO "delivered" qty are updated by the standard document
- *    process. Then it asks whether to view the GRN PDF.
+ * 1. Pick ONE completed purchase order in the "Search PO No. or Supplier" box (dropdown: PO No | Date | Supplier | PO Total).
+ *    Supplier, PO Date, PO Total and Warehouse are loaded into the header and the pending lines of the PO
+ *    appear in the Receipt Line table.
+ * 2. Receive Qty is pre-filled with the pending qty. Less or more (within the tolerance of the rule picked) can be received.
+ *    Each line has a Partial / Complete button: Partial keeps the PO line open for the rest, Complete closes it with this receipt.
+ * 3. Damaged Qty is part of the Receive Qty. Only the Good Qty (Receive - Damaged) goes to stock. The supplier rate stays the
+ *    same, so the damaged qty does not reduce the payable: Net Cost / Unit = (Rate x Receive Qty) / Good Qty.
+ * 4. Save creates ONE completed material receipt (M_InOut, MovementType V+) linked to the PO lines.
+ *    The whole calculation is written on the receipt line (Description, and the DamagedQty / EffCost columns when they exist)
+ *    and the GRN PDF reads it from there.
  * <p>
- * Header: VAT Challan No / Date and Delivery Challan No / Date are saved on every GRN created in
- * that go. Their columns (on M_InOut / M_InOutLine) are looked up by name in the Application
- * Dictionary (see resolveColumns); a value whose column cannot be found is not saved and the
- * user is told after saving.
+ * Header: VAT Challan No / Date and Delivery Challan No / Date are looked up by name in the Application Dictionary
+ * (see resolveColumns); a value whose column cannot be found is not saved and the user is told after saving.
  * <p>
- * Partial / tolerance / damage: a line received for less than its pending Qty shows Partial (the PO stays open);
- * up to the tolerance % of the rule picked (T_ToleranceRateMR) more than pending may be received; a Damaged Qty is received
- * into the Damage / Quarantine Locator so it never joins the good stock.
- * <p>
- * Attachments work exactly like the Requisition form: + Add File, click a name to open it,
- * the cross removes it, OK closes. Files are stored on every GRN saved in that go.
+ * Attachments work exactly like the Requisition form: + Add File, click a name to open it, the cross removes it, OK closes.
  */
 public class WGoodsReceiptForm extends ADForm {
 
@@ -89,7 +86,7 @@ public class WGoodsReceiptForm extends ADForm {
 	private static final CLogger log = CLogger.getCLogger(WGoodsReceiptForm.class);
 
 	private static final int MAX_PO = 300;
-	private static final String CSS_VERSION = "g2";
+	private static final String CSS_VERSION = "g3";
 	/** tolerance rates (custom table); its columns are found by name, see resolveColumns */
 	private static final String TOL_TABLE = "T_ToleranceRateMR";
 	private static final BigDecimal HUNDRED = new BigDecimal(100);
@@ -99,12 +96,14 @@ public class WGoodsReceiptForm extends ADForm {
 
 	// header
 	private final Label lblOrg = new Label();
+	private final Label lblSupplier = new Label();
+	private final Label lblPoDate = new Label();
+	private final Label lblPoTotal = new Label();
+	private Combobox cbPo;
 	private Combobox cbDocType;
 	private Combobox cbWarehouse;
 	private Combobox cbLocator;
-	private Combobox cbDamLoc;
 	private Combobox cbTolerance;
-//	private final Label lblTolInfo = new Label();
 	private final Datebox dtMove = new Datebox();
 	private final Textbox txtRef = new Textbox();
 	private final Textbox txtVatNo = new Textbox();
@@ -116,30 +115,26 @@ public class WGoodsReceiptForm extends ADForm {
 	private final Label lblAttach = new Label();
 	private final List<Media> attachments = new ArrayList<Media>();
 
-	// PO box
-	private final Textbox txtSearch = new Textbox();
+	// PO search
 	private final Button btnSearch = new Button("Search");
 	private final Button btnRefresh = new Button("Refresh");
-	private final Listbox poList = new Listbox();
 	private final Label lblPoCount = new Label();
 	private final List<Po> pos = new ArrayList<Po>();
+	private int selectedPoId = 0;
 
 	// lines
 	private final Listbox lineList = new Listbox();
 	private final Label lblTotals = new Label();
 	private final List<GLine> lines = new ArrayList<GLine>();
-	private final Map<Integer, BigDecimal> keepQty = new HashMap<Integer, BigDecimal>();
-	private final Map<Integer, String> keepPack = new HashMap<Integer, String>();
-	private final Map<Integer, BigDecimal> keepNoPack = new HashMap<Integer, BigDecimal>();
-	private final Map<Integer, BigDecimal> keepChQty = new HashMap<Integer, BigDecimal>();
-	private final Map<Integer, BigDecimal> keepDmg = new HashMap<Integer, BigDecimal>();
-	private final Map<Integer, String> keepDmgReason = new HashMap<Integer, String>();
-	private final Map<Integer, Set<Integer>> removedByOrder = new HashMap<Integer, Set<Integer>>();
-	private Set<Integer> prevSel = new HashSet<Integer>();
+	private final Set<Integer> removedLines = new HashSet<Integer>();
 
 	private final Button btnOk = new Button("\u2714  Save GRN");
 	private final Button btnReload = new Button("\u21BB  Reload");
 	private final Button btnCancel = new Button("\u2716  Cancel");
+
+	// what the GRN PDF shows about the tolerance rule that was picked when the GRN was saved
+	private String pdfTolerance = "";
+	private String pdfSegment = "";
 
 	// database columns of the challan / pack fields (found by name, null when the column does not exist)
 	private String colVatNo;
@@ -149,6 +144,8 @@ public class WGoodsReceiptForm extends ADForm {
 	private String colPack;
 	private String colNoPack;
 	private String colChQty;
+	private String colDamQty;
+	private String colEffCost;
 	// columns of the tolerance table
 	private String colTolRate;
 	private String colTolFrom;
@@ -176,7 +173,9 @@ public class WGoodsReceiptForm extends ADForm {
 		BigDecimal ordered = BigDecimal.ZERO;
 		BigDecimal received = BigDecimal.ZERO;
 		BigDecimal pending = BigDecimal.ZERO;
+		BigDecimal price = BigDecimal.ZERO;
 		BigDecimal qty = BigDecimal.ZERO;
+		boolean complete;
 		String packSize = "";
 		BigDecimal noPack;
 		BigDecimal challanQty;
@@ -215,13 +214,12 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-req .xx-card-header::before { content:""; width:4px; height:1.1em; background:#0d6efd; border-radius:2px; margin-right:.6rem; }
 .xx-req .xx-card-body { padding:.5rem .75rem .6rem; }
 .xx-req .xx-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.4rem .6rem; text-align:left; }
-.xx-req .xx-grid7 { grid-template-columns:repeat(7,minmax(0,1fr)); }
 .xx-req .xx-span2 { grid-column:span 2; }
 .xx-req .xx-span3 { grid-column:span 3; }
 .xx-req .xx-span4 { grid-column:span 4; }
 .xx-req .xx-span6 { grid-column:1 / -1; }
-@media (max-width:1500px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(4,minmax(0,1fr)); } }
-@media (max-width:1000px) { .xx-req .xx-grid, .xx-req .xx-grid7 { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 2; } }
+@media (max-width:1500px) { .xx-req .xx-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media (max-width:1000px) { .xx-req .xx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 2; } }
 @media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
 .xx-req .xx-field { min-width:0; }
 .xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
@@ -260,7 +258,9 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-form.xx-req button.z-button.btn-outline-danger:hover, .xx-reqwin button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
 .xx-form.xx-req button.z-button.btn[disabled], .xx-reqwin button.z-button.btn[disabled] { opacity:.55; cursor:not-allowed; }
 .xx-req .xx-main { background:#f1f4f9; }
-.xx-req .xx-card-header + .z-listbox, .xx-req .xx-card > .z-listbox { margin:0; }
+/* top bar: stays in view (Reload button) while the page scrolls */
+.xx-req .xx-topbar { position:sticky; top:0; z-index:25; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .85rem; background:#f1f4f9; border-bottom:1px solid #dee2e6; box-shadow:0 2px 4px rgba(16,24,40,.06); }
+.xx-req .xx-top-title, .xx-req .xx-top-title.z-label { font-size:.95rem; font-weight:700; color:#0a2e6b; }
 /* line tables: a visible box round every line and cell */
 .xx-req .z-listbox, .xx-reqwin .z-listbox { min-height:200px; border:1px solid #adb5bd !important; border-radius:.375rem; }
 .xx-req .z-listbox .z-listheader, .xx-reqwin .z-listbox .z-listheader { border-right:1px solid rgba(255,255,255,.45) !important; }
@@ -271,51 +271,8 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-req .z-listbox .z-listcell .z-textbox { min-height:24px; }
 .xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 .xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
-/* Add Product card: 24 column grid (4 x 6 on the first row, 6+6+6+3+3 on the second) */
-.xx-req .xx-grid.xx-grid24 { grid-template-columns:repeat(24,minmax(0,1fr)); }
-.xx-req .xx-c3 { grid-column:span 3; }
-.xx-req .xx-c6 { grid-column:span 6; }
-@media (max-width:1000px) { .xx-req .xx-grid.xx-grid24 { grid-template-columns:repeat(12,minmax(0,1fr)); } .xx-req .xx-c3 { grid-column:span 3; } .xx-req .xx-c6 { grid-column:span 6; } }
-@media (max-width:600px)  { .xx-req .xx-grid.xx-grid24 { grid-template-columns:minmax(0,1fr); } .xx-req .xx-c3, .xx-req .xx-c6 { grid-column:span 1; } }
 /* Description: same size as the other fields; drag the corner to make it bigger (and smaller again) */
 .xx-req textarea.xx-desc { height:26px; min-height:26px; max-height:320px; resize:vertical; overflow:auto; line-height:1.4; }
-/* Product Specification: same size as its neighbours, room for 2 lines; while typing it opens up to a bigger box over the fields below */
-.xx-req .xx-specwrap { position:relative; height:26px; }
-.xx-req .xx-specwrap textarea.xx-spec { position:absolute; left:0; top:0; width:100%; height:26px; min-height:26px; max-height:none; box-sizing:border-box; resize:none; overflow:hidden; font-size:.7rem; line-height:1.05; padding:1px .5rem; }
-.xx-req .xx-specwrap textarea.xx-spec:focus { height:56px; z-index:30; overflow:auto; font-size:.8rem; line-height:1.35; padding:.25rem .5rem; box-shadow:0 .5rem 1rem rgba(0,0,0,.18), 0 0 0 .25rem rgba(13,110,253,.25) !important; }
-/* totals row at the end of the line table */
-.xx-req .z-listbox .z-listfooter { background:#e7f1ff !important; border-top:2px solid #0d6efd !important; border-right:1px solid #b6d4fe !important; font-weight:700; }
-.xx-req .z-listbox .z-listfooter .z-label { font-size:.82rem; font-weight:700; color:#0a2e6b; }
-/* the banner and the Hide / Show Requisition Header button stay in view while the page scrolls */
-.xx-req .xx-sticky { position:sticky; top:0; z-index:25; background:#f1f4f9; padding-bottom:4px; box-shadow:0 2px 4px rgba(16,24,40,.06); }
-/* hide / show the Requisition (master data) card */
-.xx-req .xx-toggle { display:flex; align-items:center; justify-content:flex-end; gap:.6rem; margin:6px 10px 0; }
-.xx-req .xx-sum { font-size:.78rem; font-weight:600; color:#084298; background:#e7f1ff; border:1px solid #b6d4fe; padding:.15rem .7rem; border-radius:999px; }
-.xx-req .xx-sum .z-label { font-size:.78rem; font-weight:600; color:#084298; }
-/* view / edit banner */
-.xx-req .xx-banner { margin:6px 10px 0; padding:.4rem .9rem; border-radius:.5rem; border:1px solid #b6d4fe; background:#cfe2ff; color:#084298; }
-.xx-req .xx-banner .z-label { font-size:.82rem; font-weight:600; color:inherit; }
-.xx-req .xx-banner.xx-banner-ro { border-color:#ffecb5; background:#fff3cd; color:#664d03; }
-/* status badges of the All Requisition list */
-.xx-reqwin .xx-badge { display:inline-block; padding:.15rem .55rem; border-radius:999px; font-size:.72rem; font-weight:600; color:#fff; }
-.xx-reqwin .xx-badge-draft { background:#6c757d; }
-.xx-reqwin .xx-badge-wait { background:#fd7e14; }
-.xx-reqwin .xx-badge-prog { background:#0d6efd; }
-.xx-reqwin .xx-badge-ok { background:#198754; }
-.xx-reqwin .xx-badge-bad { background:#dc3545; }
-/* status button of the All Requisition list + the approval history pop-up */
-.xx-reqwin button.z-button.xx-st { border-radius:999px !important; font-weight:600 !important; color:#fff !important; padding:.1rem .85rem !important; min-height:24px !important; cursor:pointer; }
-.xx-reqwin button.z-button.xx-st-draft { background:#6c757d !important; border:1px solid #6c757d !important; }
-.xx-reqwin button.z-button.xx-st-wait { background:#fd7e14 !important; border:1px solid #fd7e14 !important; }
-.xx-reqwin button.z-button.xx-st-prog { background:#0d6efd !important; border:1px solid #0d6efd !important; }
-.xx-reqwin button.z-button.xx-st-ok { background:#198754 !important; border:1px solid #198754 !important; }
-.xx-reqwin button.z-button.xx-st-bad { background:#dc3545 !important; border:1px solid #dc3545 !important; }
-.xx-reqwin button.z-button.xx-st:hover { filter:brightness(.9); }
-.xx-reqwin .xx-hist-head { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem 1.2rem; padding:.55rem .85rem; margin-bottom:8px; background:#f1f4f9; border:1px solid #dee2e6; border-radius:.5rem; }
-.xx-reqwin .xx-hist-title { font-size:1rem; font-weight:700; color:#0a2e6b; }
-.xx-reqwin .xx-hist-meta { font-size:.8rem; color:#495057; }
-.xx-reqwin .xx-hist-note { margin:6px 2px; font-size:.82rem; color:#664d03; }
-.xx-reqwin .xx-link { color:#0d6efd; font-weight:700; text-decoration:underline; cursor:pointer; }
 """;
 
 	private static final String DATE_JS = "(function(){if(window.__xxDateV==='2')return;window.__xxDateV='2';"
@@ -472,6 +429,8 @@ window.__xxComboOff=function(){
 		colPack = findColumn(MInOutLine.Table_Name, null, "%pack%size%");
 		colNoPack = findColumn(MInOutLine.Table_Name, "%size%", "%no%pack%");
 		colChQty = findColumn(MInOutLine.Table_Name, null, "%challan%qty%", "%challan%quantity%");
+		colDamQty = findColumn(MInOutLine.Table_Name, "%reason%", "%damag%qty%", "%damag%");
+		colEffCost = findColumn(MInOutLine.Table_Name, null, "%eff%cost%", "%net%cost%");
 		colTolRate = findColumn(TOL_TABLE, "%_id%", "%rate%", "%toler%", "%percent%");
 		colTolFrom = findColumn(TOL_TABLE, null, "%valid%from%", "%date%from%", "%from%");
 		colTolDocType = findColumn(TOL_TABLE, null, "%doctype%");
@@ -479,7 +438,8 @@ window.__xxComboOff=function(){
 		log.info("GRN tolerance columns: Rate=" + colTolRate + " ValidFrom=" + colTolFrom + " DocType=" + colTolDocType
 				+ " Segment=" + colTolSegment);
 		log.info("GRN columns: VATNo=" + colVatNo + " VATDate=" + colVatDate + " DelNo=" + colDelNo + " DelDate="
-				+ colDelDate + " PackSize=" + colPack + " NoOfPack=" + colNoPack + " ChallanQty=" + colChQty);
+				+ colDelDate + " PackSize=" + colPack + " NoOfPack=" + colNoPack + " ChallanQty=" + colChQty
+				+ " DamagedQty=" + colDamQty + " EffCost=" + colEffCost);
 	}
 
 	/** sets a column by name, converting the value to the column's type; false when the column does not exist */
@@ -552,8 +512,8 @@ window.__xxComboOff=function(){
 	}
 
 	/**
-	 * Fills the Tolerance Rule box with the rules that are valid on the GRN date for this organization,
-	 * and picks the best one for the GRN Document (same document type first, then the newest Valid from).
+	 * Fills the Tolerance Rule box with the rules that are valid on the GRN date for this organization.
+	 * (The best fitting one is worked out as before, but "No tolerance" stays selected: the user picks the rule.)
 	 */
 	private void loadTolerance() {
 		while (cbTolerance.getItemCount() > 0)
@@ -561,15 +521,11 @@ window.__xxComboOff=function(){
 		cbTolerance.setValue("");
 		Comboitem none = new Comboitem("No tolerance (0%)");
 		none.setAttribute("rate", BigDecimal.ZERO);
+		none.setAttribute("segment", "");
 		cbTolerance.appendChild(none);
-		Comboitem best = none;
-		int ruleCount = 0;
 		if (colTolRate != null) {
 			Timestamp onDate = dtMove.getValue() == null ? new Timestamp(System.currentTimeMillis())
 					: new Timestamp(dtMove.getValue().getTime());
-			int grnDocType = idOf(cbDocType);
-			int bestScore = 0;
-			Timestamp bestFrom = null;
 			try {
 				List<PO> rows = new Query(Env.getCtx(), TOL_TABLE, null, null).setClient_ID()
 						.setOnlyActiveRecords(true).list();
@@ -595,33 +551,20 @@ window.__xxComboOff=function(){
 							+ (from == null ? "" : "  |  from " + dmy(from)) + (bad ? "  |  rate ignored" : "");
 					Comboitem ci = new Comboitem(label);
 					ci.setAttribute("rate", bad ? BigDecimal.ZERO : rate);
+					ci.setAttribute("segment", seg);
 					cbTolerance.appendChild(ci);
-					ruleCount++;
-					if (!bad && rate.signum() > 0 && (rowDt == 0 || rowDt == grnDocType)) {
-						int score = rowDt != 0 ? 2 : 1;
-						if (score > bestScore
-								|| (score == bestScore && from != null && (bestFrom == null || from.after(bestFrom)))) {
-							best = ci;
-							bestScore = score;
-							bestFrom = from;
-						}
-					}
 				}
 			} catch (Exception e) {
 				log.log(Level.WARNING, "tolerance rules not read: " + e.getMessage(), e);
 			}
 		}
-		// what was found, so it can be checked on screen
-		String info;
-		if (MTable.getTable_ID(TOL_TABLE) <= 0)
-			info = TOL_TABLE + " is not in the Application Dictionary: tolerance is off.";
-		else if (colTolRate == null)
-			info = TOL_TABLE + ": no Rate column found: tolerance is off.";
-		else
-			info = ruleCount + " rule(s) valid.  Columns found: Rate=" + colTolRate + ", From=" + colTolFrom + ", DocType="
-					+ colTolDocType + ", Segment=" + colTolSegment;
-//		lblTolInfo.setValue(info);
-		cbTolerance.setSelectedItem(best);
+		cbTolerance.setSelectedItem(none);
+	}
+
+	/** the tolerance rule list depends on the GRN Document and the GRN Date; the line limits depend on the rule */
+	private void toleranceChanged() {
+		loadTolerance();
+		refreshLines();
 	}
 
 	/** tolerance rate (percent) of the rule picked, 0 when none */
@@ -649,14 +592,26 @@ window.__xxComboOff=function(){
 		ZKUpdateUtil.setWidth(this, "99%");
 		ZKUpdateUtil.setHeight(this, "100%");
 
+		cbPo = newCombo("Search PO No. or Supplier");
+		cbPo.setAutocomplete(false);
+		cbPo.setAutodrop(false);
 		cbDocType = newCombo("GRN Document");
 		cbWarehouse = newCombo("Warehouse");
 		cbLocator = newCombo("Locator");
-		cbDamLoc = newCombo("Damage / Quarantine Locator");
 		cbTolerance = newCombo("Tolerance Rule");
 
+		// fixed top bar: stays in view while the page scrolls
+		Div top = new Div();
+		top.setSclass("xx-topbar");
+		Label title = new Label("Goods Received Note");
+		title.setSclass("xx-top-title");
+		btnReload.setSclass("btn btn-outline-primary");
+		btnReload.setTooltiptext("Clear the form and load the header data and the purchase orders again");
+		top.appendChild(title);
+		top.appendChild(btnReload);
+		main.appendChild(top);
+
 		main.appendChild(card("Goods Received Note", buildHeader()));
-		main.appendChild(card("Completed Purchase Orders  (tick the PO(s) to receive)", buildPoBox()));
 		main.appendChild(card("Receipt Line", buildLineBox()));
 
 		Div foot = new Div();
@@ -665,13 +620,10 @@ window.__xxComboOff=function(){
 		left.setSclass("xx-foot-grp");
 		left.appendChild(lblTotals);
 		btnOk.setSclass("btn btn-success");
-		btnReload.setSclass("btn btn-outline-primary");
-		btnReload.setTooltiptext("Clear the form and load the header data and the purchase orders again");
 		btnCancel.setSclass("btn btn-danger");
 		Div right = new Div();
 		right.setSclass("xx-foot-grp");
 		right.appendChild(btnOk);
-		right.appendChild(btnReload);
 		right.appendChild(btnCancel);
 		foot.appendChild(left);
 		foot.appendChild(right);
@@ -704,63 +656,44 @@ window.__xxComboOff=function(){
 		ZKUpdateUtil.setWidth(dtDel, "100%");
 		btnAttach.setSclass("btn btn-outline-primary btn-block");
 
-		// row 1
+		// row 1: PO search (dropdown + Search + Refresh + count)
+		Div bar = new Div();
+		bar.setStyle("display:flex;align-items:center;gap:8px;flex-wrap:wrap;");
+		ZKUpdateUtil.setWidth(cbPo, "560px");
+		btnSearch.setSclass("btn btn-primary");
+		btnRefresh.setSclass("btn btn-outline-primary");
+		bar.appendChild(cbPo);
+		bar.appendChild(btnSearch);
+		bar.appendChild(btnRefresh);
+		bar.appendChild(lblPoCount);
+		g.appendChild(field("Search PO No. or Supplier", true, bar, 6));
+
+		// row 2: loaded from the PO
+		g.appendChild(field("Supplier", false, readonly(lblSupplier), 2));
+		g.appendChild(field("PO Date", false, readonly(lblPoDate), 1));
+		g.appendChild(field("PO Total", false, readonly(lblPoTotal), 1));
 		g.appendChild(field("Organization", true, readonly(lblOrg), 1));
 		g.appendChild(field("GRN Document", true, cbDocType, 1));
+		// row 3
 		g.appendChild(field("Warehouse", true, cbWarehouse, 1));
 		g.appendChild(field("Locator", true, cbLocator, 1));
 		g.appendChild(field("GRN Date", true, dtMove, 1));
 		g.appendChild(field("Challan / Supplier Ref. No.", false, txtRef, 1));
-		// row 2
 		g.appendChild(field("VAT Challan No", false, txtVatNo, 1));
 		g.appendChild(field("VAT Challan Date", false, dtVat, 1));
+		// row 4
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
-		g.appendChild(field("Description (Note)", false, txtDesc, 1));
+		g.appendChild(field("Tolerance Rule", false, cbTolerance, 2));
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 1));
-		// row 3: partial / tolerance / damage
-		Div tol = new Div();
-		tol.appendChild(cbTolerance);
-//		lblTolInfo.setSclass("xx-attach-note");
-//		tol.appendChild(lblTolInfo);
-		g.appendChild(field("Tolerance Rule", false, tol, 2));
-		g.appendChild(field("Damage / Quarantine Locator", false, cbDamLoc, 2));
+		g.appendChild(field("Attachment", false, at, 2));
+		// row 5
+		g.appendChild(field("Description (Note)", false, txtDesc, 6));
 		updateAttachLabel();
 		return g;
-	}
-
-	private Div buildPoBox() {
-		Div box = new Div();
-		Div bar = new Div();
-		bar.setStyle("display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;");
-		txtSearch.setPlaceholder("Search PO No. or Supplier");
-		txtSearch.setWidth("260px");
-		btnSearch.setSclass("btn btn-primary");
-		btnRefresh.setSclass("btn btn-outline-primary");
-		bar.appendChild(txtSearch);
-		bar.appendChild(btnSearch);
-		bar.appendChild(btnRefresh);
-		bar.appendChild(lblPoCount);
-		box.appendChild(bar);
-
-		poList.setCheckmark(true);
-		poList.setMultiple(true);
-		poList.setHeight("250px");
-		Listhead lh = new Listhead();
-		lh.setSizable(true);
-		lh.appendChild(header("PO No.", "110px"));
-		lh.appendChild(header("PO Date", "100px"));
-		lh.appendChild(header("Supplier", "480px"));
-		lh.appendChild(header("Warehouse", "190px"));
-		lh.appendChild(header("Pending Lines", "130px"));
-		lh.appendChild(header("PO Total", "150px"));
-		poList.appendChild(lh);
-		box.appendChild(poList);
-		return box;
 	}
 
 	private Div buildLineBox() {
@@ -773,17 +706,22 @@ window.__xxComboOff=function(){
 		lh.appendChild(header("Item Code", "120px"));
 		lh.appendChild(header("Item Name", null));
 		lh.appendChild(header("UOM", "60px"));
-		lh.appendChild(header("Ordered", "90px"));
-		lh.appendChild(header("Received", "90px"));
-		lh.appendChild(header("Pending", "90px"));
-		lh.appendChild(header("Receive Qty", "110px"));
-		lh.appendChild(header("Balance", "80px"));
+		lh.appendChild(header("Ordered", "85px"));
+		lh.appendChild(header("Received", "85px"));
+		lh.appendChild(header("Pending", "85px"));
+		lh.appendChild(header("Receive Qty", "105px"));
+		lh.appendChild(header("Balance", "75px"));
 		lh.appendChild(header("Status", "190px"));
-		lh.appendChild(header("Damaged Qty", "105px"));
-		lh.appendChild(header("Damage Reason", "170px"));
-		lh.appendChild(header("Pack Size", "100px"));
-		lh.appendChild(header("No of Pack", "100px"));
-		lh.appendChild(header("Challan Qty", "110px"));
+		lh.appendChild(header("Damaged Qty", "100px"));
+		lh.appendChild(header("Damage Reason", "150px"));
+		lh.appendChild(header("Good Qty", "85px"));
+		lh.appendChild(header("Rate", "90px"));
+		lh.appendChild(header("Receive Value", "120px"));
+		lh.appendChild(header("Net Cost / Unit", "115px"));
+		lh.appendChild(header("PO Line", "100px"));
+		lh.appendChild(header("Pack Size", "95px"));
+		lh.appendChild(header("No of Pack", "95px"));
+		lh.appendChild(header("Challan Qty", "105px"));
 		lh.appendChild(header("", "60px"));
 		lineList.appendChild(lh);
 		box.appendChild(lineList);
@@ -925,16 +863,6 @@ window.__xxComboOff=function(){
 		}
 		fillCombo(cbLocator, locs);
 		selectFirst(cbLocator);
-		// the damage / quarantine locator: same warehouse; a locator called damage / quarantine / reject is taken
-		fillCombo(cbDamLoc, locs);
-		for (Object o : cbDamLoc.getItems()) {
-			Comboitem ci = (Comboitem) o;
-			String nm = ci.getLabel() == null ? "" : ci.getLabel().toLowerCase();
-			if (nm.contains("damage") || nm.contains("quarantine") || nm.contains("reject")) {
-				cbDamLoc.setSelectedItem(ci);
-				break;
-			}
-		}
 	}
 
 	private void selectWarehouse(int id) {
@@ -963,24 +891,43 @@ window.__xxComboOff=function(){
 			resolve(cbWarehouse);
 			warehouseChanged();
 		});
-		for (final Combobox c : new Combobox[] { cbDocType, cbLocator, cbDamLoc, cbTolerance }) {
+		for (final Combobox c : new Combobox[] { cbDocType, cbLocator, cbTolerance }) {
 			c.addEventListener(Events.ON_CHANGE, ev -> resolve(c));
 			c.addEventListener(Events.ON_OK, ev -> resolve(c));
 		}
 		// the rule that fits depends on the GRN Document and the GRN Date
-		cbDocType.addEventListener(Events.ON_CHANGE, ev -> loadTolerance());
-		cbDocType.addEventListener(Events.ON_SELECT, ev -> loadTolerance());
-		dtMove.addEventListener(Events.ON_CHANGE, ev -> loadTolerance());
+		cbDocType.addEventListener(Events.ON_CHANGE, ev -> toleranceChanged());
+		cbDocType.addEventListener(Events.ON_SELECT, ev -> toleranceChanged());
+		dtMove.addEventListener(Events.ON_CHANGE, ev -> toleranceChanged());
 		// a different rule: the allowed quantity of every line changes
 		cbTolerance.addEventListener(Events.ON_CHANGE, ev -> refreshLines());
 		cbTolerance.addEventListener(Events.ON_SELECT, ev -> refreshLines());
-		btnSearch.addEventListener(Events.ON_CLICK, ev -> loadPOs());
-		btnRefresh.addEventListener(Events.ON_CLICK, ev -> {
-			txtSearch.setValue("");
-			loadPOs();
+
+		// PO search box: typing filters the dropdown, picking loads the PO
+		cbPo.addEventListener(Events.ON_CHANGING, ev -> {
+			fillPoCombo(((InputEvent) ev).getValue());
+			cbPo.setOpen(true);
 		});
-		txtSearch.addEventListener(Events.ON_OK, ev -> loadPOs());
-		poList.addEventListener(Events.ON_SELECT, ev -> reloadLines());
+		cbPo.addEventListener(Events.ON_SELECT, ev -> pickPo());
+		cbPo.addEventListener(Events.ON_CHANGE, ev -> {
+			String v = cbPo.getValue() == null ? "" : cbPo.getValue().trim();
+			if (v.isEmpty() && selectedPoId > 0)
+				clearPo();
+		});
+		cbPo.addEventListener(Events.ON_OK, ev -> {
+			if (cbPo.getSelectedItem() != null)
+				pickPo();
+			else {
+				fillPoCombo(cbPo.getValue());
+				cbPo.setOpen(true);
+			}
+		});
+		btnSearch.addEventListener(Events.ON_CLICK, ev -> {
+			fillPoCombo(cbPo.getSelectedItem() != null ? "" : cbPo.getValue());
+			cbPo.setOpen(true);
+		});
+		btnRefresh.addEventListener(Events.ON_CLICK, ev -> loadPOs());
+
 		btnAttach.addEventListener(Events.ON_CLICK, ev -> openAttachments());
 		btnOk.addEventListener(Events.ON_CLICK, ev -> save());
 		btnReload.addEventListener(Events.ON_CLICK, ev -> {
@@ -988,7 +935,7 @@ window.__xxComboOff=function(){
 				doReload();
 				return;
 			}
-			Messagebox.show("Reload the form?\n\nThe ticked PO(s) and everything you entered will be cleared.",
+			Messagebox.show("Reload the form?\n\nThe selected PO and everything you entered will be cleared.",
 					"Goods Receipt", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
 					(org.zkoss.zk.ui.event.Event e2) -> {
 						if (Messagebox.ON_YES.equals(e2.getName()))
@@ -1001,8 +948,6 @@ window.__xxComboOff=function(){
 	/** clears the form and loads the header data and the purchase orders again */
 	private void doReload() {
 		resetForm();
-		txtSearch.setValue("");
-		poList.clearSelection();
 		loadHeaderData();
 		loadPOs();
 	}
@@ -1020,12 +965,7 @@ window.__xxComboOff=function(){
 	// =====================================================================
 
 	private void loadPOs() {
-		// keep what is ticked while the list is searched again
-		Set<Integer> ticked = selectedOrderIds();
-		while (poList.getItemCount() > 0)
-			poList.removeItemAt(0);
 		pos.clear();
-
 		String where = "IsSOTrx='N' AND DocStatus=? AND AD_Client_ID=?" + (orgId > 0 ? " AND AD_Org_ID=?" : "");
 		List<Object> p = new ArrayList<Object>();
 		p.add(DocAction.STATUS_Completed);
@@ -1035,28 +975,23 @@ window.__xxComboOff=function(){
 		List<MOrder> orders = new Query(Env.getCtx(), MOrder.Table_Name, where, null).setParameters(p)
 				.setOrderBy("DateOrdered DESC, DocumentNo DESC").list();
 
-		String q = txtSearch.getValue() == null ? "" : txtSearch.getValue().trim().toUpperCase();
 		Map<Integer, String> whNames = new HashMap<Integer, String>();
 		for (MOrder o : orders) {
 			if (pos.size() >= MAX_PO)
 				break;
-			MBPartner bp = MBPartner.get(Env.getCtx(), o.getC_BPartner_ID());
-			String supplier = bp == null ? "" : bp.getName();
-			String docNo = o.getDocumentNo() == null ? "" : o.getDocumentNo();
-			if (q.length() > 0 && !docNo.toUpperCase().contains(q) && !supplier.toUpperCase().contains(q))
-				continue;
 			int pending = 0;
 			for (MOrderLine ol : o.getLines())
 				if (ol.getM_Product_ID() > 0 && ol.getQtyOrdered().subtract(ol.getQtyDelivered()).signum() > 0)
 					pending++;
 			if (pending == 0)
 				continue;
+			MBPartner bp = MBPartner.get(Env.getCtx(), o.getC_BPartner_ID());
 			Po po = new Po();
 			po.id = o.getC_Order_ID();
 			po.warehouseId = o.getM_Warehouse_ID();
-			po.docNo = docNo;
+			po.docNo = o.getDocumentNo() == null ? "" : o.getDocumentNo();
 			po.date = o.getDateOrdered();
-			po.supplier = supplier;
+			po.supplier = bp == null ? "" : bp.getName();
 			if (po.warehouseId > 0) {
 				String wn = whNames.get(Integer.valueOf(po.warehouseId));
 				if (wn == null) {
@@ -1069,35 +1004,87 @@ window.__xxComboOff=function(){
 			po.pending = pending;
 			pos.add(po);
 		}
-
-		for (Po po : pos) {
-			Listitem li = new Listitem();
-			li.appendChild(new Listcell(po.docNo));
-			li.appendChild(new Listcell(dmy(po.date)));
-			li.appendChild(new Listcell(po.supplier));
-			li.appendChild(new Listcell(po.warehouse == null ? "" : po.warehouse));
-			Listcell c = new Listcell(String.valueOf(po.pending));
-			c.setStyle("text-align:right;");
-			li.appendChild(c);
-			Listcell t = new Listcell(money(po.total));
-			t.setStyle("text-align:right;");
-			li.appendChild(t);
-			poList.appendChild(li);
-			if (ticked.contains(Integer.valueOf(po.id)))
-				poList.addItemToSelection(li);
-		}
 		lblPoCount.setValue(pos.size() + " completed PO(s) waiting for receipt");
+		// the PO that was picked may be fully received by now
+		if (selectedPoId > 0 && poById(selectedPoId) == null) {
+			selectedPoId = 0;
+			cbPo.setValue("");
+		}
+		fillPoCombo("");
+		if (selectedPoId > 0)
+			selectComboPo(selectedPoId);
+		updatePoInfo();
 		reloadLines();
 	}
 
-	private Set<Integer> selectedOrderIds() {
-		Set<Integer> ids = new java.util.LinkedHashSet<Integer>();
-		for (Listitem li : poList.getSelectedItems()) {
-			int ix = li.getIndex();
-			if (ix >= 0 && ix < pos.size())
-				ids.add(Integer.valueOf(pos.get(ix).id));
+	private static String poLabel(Po po) {
+		return po.docNo + "  |  " + dmy(po.date) + "  |  " + po.supplier + "  |  " + money(po.total);
+	}
+
+	/** dropdown: PO No | Date | Supplier | PO Total, filtered by what is typed */
+	private void fillPoCombo(String filter) {
+		while (cbPo.getItemCount() > 0)
+			cbPo.removeItemAt(0);
+		String q = filter == null ? "" : filter.trim().toUpperCase();
+		for (Po po : pos) {
+			String label = poLabel(po);
+			if (q.length() > 0 && !label.toUpperCase().contains(q))
+				continue;
+			Comboitem ci = new Comboitem(label);
+			ci.setAttribute("id", Integer.valueOf(po.id));
+			cbPo.appendChild(ci);
 		}
-		return ids;
+	}
+
+	private void selectComboPo(int id) {
+		for (Object o : cbPo.getItems()) {
+			Comboitem ci = (Comboitem) o;
+			Object v = ci.getAttribute("id");
+			if (v instanceof Integer && ((Integer) v).intValue() == id) {
+				cbPo.setSelectedItem(ci);
+				return;
+			}
+		}
+	}
+
+	private void pickPo() {
+		Comboitem ci = cbPo.getSelectedItem();
+		if (ci == null)
+			return;
+		Object v = ci.getAttribute("id");
+		if (!(v instanceof Integer))
+			return;
+		int id = ((Integer) v).intValue();
+		if (id != selectedPoId)
+			removedLines.clear();
+		selectedPoId = id;
+		updatePoInfo();
+		reloadLines();
+	}
+
+	/** the search box was emptied: no PO any more */
+	private void clearPo() {
+		selectedPoId = 0;
+		removedLines.clear();
+		updatePoInfo();
+		reloadLines();
+	}
+
+	private Po poById(int id) {
+		for (Po p : pos)
+			if (p.id == id)
+				return p;
+		return null;
+	}
+
+	/** Supplier / PO Date / PO Total / Warehouse of the header follow the PO that was picked */
+	private void updatePoInfo() {
+		Po po = selectedPoId > 0 ? poById(selectedPoId) : null;
+		lblSupplier.setValue(po == null ? "" : po.supplier);
+		lblPoDate.setValue(po == null ? "" : dmy(po.date));
+		lblPoTotal.setValue(po == null ? "" : money(po.total));
+		if (po != null && po.warehouseId > 0)
+			selectWarehouse(po.warehouseId);
 	}
 
 	private static String dmy(Timestamp t) {
@@ -1106,6 +1093,10 @@ window.__xxComboOff=function(){
 
 	private static String money(BigDecimal v) {
 		return v == null ? "" : String.format("%,.2f", v);
+	}
+
+	private static String cost(BigDecimal v) {
+		return String.format("%,.4f", v);
 	}
 
 	private static String num(BigDecimal v) {
@@ -1117,74 +1108,48 @@ window.__xxComboOff=function(){
 		return s.toPlainString();
 	}
 
+	/** plain number with a fixed number of decimals (no thousand separators): used in the receipt line description */
+	private static String plain(BigDecimal v, int scale) {
+		return nz(v).setScale(scale, RoundingMode.HALF_UP).toPlainString();
+	}
+
+	private static BigDecimal nz(BigDecimal b) {
+		return b == null ? BigDecimal.ZERO : b;
+	}
+
 	// =====================================================================
 	// lines
 	// =====================================================================
 
 	private void reloadLines() {
-		for (GLine g : lines) {
-			Integer k = Integer.valueOf(g.olId);
-			keepQty.put(k, g.qty);
-			keepPack.put(k, g.packSize);
-			keepNoPack.put(k, g.noPack);
-			keepChQty.put(k, g.challanQty);
-			keepDmg.put(k, g.damaged);
-			keepDmgReason.put(k, g.damageReason);
-		}
-		Set<Integer> sel = selectedOrderIds();
-		for (Integer id : sel)
-			if (!prevSel.contains(id))
-				removedByOrder.remove(id); // ticked again: all its lines come back
-		prevSel = new HashSet<Integer>(sel);
 		lines.clear();
-
-		if (!sel.isEmpty()) {
-			// ticked POs in the order they are listed
-			for (Po po : pos) {
-				if (!sel.contains(Integer.valueOf(po.id)))
+		Po po = selectedPoId > 0 ? poById(selectedPoId) : null;
+		if (po != null) {
+			MOrder o = new MOrder(Env.getCtx(), po.id, null);
+			for (MOrderLine ol : o.getLines()) {
+				if (ol.getM_Product_ID() <= 0)
 					continue;
-				MOrder o = new MOrder(Env.getCtx(), po.id, null);
-				Set<Integer> rem = removedByOrder.get(Integer.valueOf(po.id));
-				for (MOrderLine ol : o.getLines()) {
-					if (ol.getM_Product_ID() <= 0)
-						continue;
-					BigDecimal pend = ol.getQtyOrdered().subtract(ol.getQtyDelivered());
-					if (pend.signum() <= 0)
-						continue;
-					if (rem != null && rem.contains(Integer.valueOf(ol.getC_OrderLine_ID())))
-						continue;
-					GLine g = new GLine();
-					g.olId = ol.getC_OrderLine_ID();
-					g.orderId = po.id;
-					g.poNo = po.docNo;
-					MProduct prod = MProduct.get(Env.getCtx(), ol.getM_Product_ID());
-					g.code = prod.getValue();
-					g.name = prod.getName();
-					MUOM uom = ol.getC_UOM_ID() > 0 ? MUOM.get(Env.getCtx(), ol.getC_UOM_ID()) : null;
-					g.uom = uom == null ? "" : (uom.getUOMSymbol() != null ? uom.getUOMSymbol() : uom.getName());
-					g.ordered = ol.getQtyOrdered();
-					g.received = ol.getQtyDelivered();
-					g.pending = pend;
-					Integer key = Integer.valueOf(g.olId);
-					BigDecimal k = keepQty.get(key);
-					g.qty = k != null ? k : pend;
-					String kp = keepPack.get(key);
-					g.packSize = kp == null ? "" : kp;
-					g.noPack = keepNoPack.get(key);
-					g.challanQty = keepChQty.get(key);
-					g.damaged = keepDmg.get(key);
-					String kr = keepDmgReason.get(key);
-					g.damageReason = kr == null ? "" : kr;
-					lines.add(g);
-				}
+				BigDecimal pend = ol.getQtyOrdered().subtract(ol.getQtyDelivered());
+				if (pend.signum() <= 0)
+					continue;
+				if (removedLines.contains(Integer.valueOf(ol.getC_OrderLine_ID())))
+					continue;
+				GLine g = new GLine();
+				g.olId = ol.getC_OrderLine_ID();
+				g.orderId = po.id;
+				g.poNo = po.docNo;
+				MProduct prod = MProduct.get(Env.getCtx(), ol.getM_Product_ID());
+				g.code = prod.getValue();
+				g.name = prod.getName();
+				MUOM uom = ol.getC_UOM_ID() > 0 ? MUOM.get(Env.getCtx(), ol.getC_UOM_ID()) : null;
+				g.uom = uom == null ? "" : (uom.getUOMSymbol() != null ? uom.getUOMSymbol() : uom.getName());
+				g.ordered = ol.getQtyOrdered();
+				g.received = ol.getQtyDelivered();
+				g.pending = pend;
+				g.price = nz(ol.getPriceActual());
+				g.qty = pend;
+				lines.add(g);
 			}
-			// the warehouse of the first ticked PO, when none is chosen yet
-			if (idOf(cbWarehouse) <= 0)
-				for (Po po : pos)
-					if (sel.contains(Integer.valueOf(po.id)) && po.warehouseId > 0) {
-						selectWarehouse(po.warehouseId);
-						break;
-					}
 		}
 		refreshLines();
 	}
@@ -1205,21 +1170,35 @@ window.__xxComboOff=function(){
 			li.appendChild(right(num(g.received)));
 			li.appendChild(right(num(g.pending)));
 
-			// Balance + Status follow the Receive Qty (partial / full / over within tolerance / over the limit)
 			final Label lblBal = new Label();
 			final Label lblSt = new Label();
+			final Label lblGood = new Label();
+			final Label lblVal = new Label();
+			final Label lblEff = new Label();
+			final Button btnMode = new Button();
+
+			// Balance, Status, Good Qty, Value, Net Cost and the Partial / Complete button follow the quantities
 			final Runnable upd = () -> {
-				BigDecimal q = g.qty == null ? BigDecimal.ZERO : g.qty;
-				BigDecimal bal = g.pending.subtract(q);
-				lblBal.setValue(num(bal.signum() < 0 ? BigDecimal.ZERO : bal));
+				BigDecimal q = nz(g.qty);
+				BigDecimal dm = nz(g.damaged);
+				boolean full = q.compareTo(g.pending) >= 0;
+				boolean closes = q.signum() > 0 && (full || g.complete);
+				BigDecimal bal = closes ? BigDecimal.ZERO : g.pending.subtract(q).max(BigDecimal.ZERO);
+				lblBal.setValue(num(bal));
+
 				String st;
 				String color;
 				if (q.signum() <= 0) {
 					st = "-";
 					color = "#6c757d";
 				} else if (q.compareTo(g.pending) < 0) {
-					st = "Partial";
-					color = "#fd7e14";
+					if (g.complete) {
+						st = "Short close (-" + num(g.pending.subtract(q)) + ")";
+						color = "#198754";
+					} else {
+						st = "Partial";
+						color = "#fd7e14";
+					}
 				} else if (q.compareTo(g.pending) == 0) {
 					st = "Full";
 					color = "#198754";
@@ -1232,8 +1211,23 @@ window.__xxComboOff=function(){
 				}
 				lblSt.setValue(st);
 				lblSt.setStyle("font-weight:600;color:" + color + ";");
+
+				// the supplier rate stays; the damaged qty does not reduce the payable, it raises the cost of the good qty
+				BigDecimal good = q.subtract(dm);
+				BigDecimal value = g.price.multiply(q).setScale(2, RoundingMode.HALF_UP);
+				lblGood.setValue(num(good.signum() < 0 ? BigDecimal.ZERO : good));
+				lblVal.setValue(money(value));
+				lblEff.setValue(good.signum() > 0 ? cost(value.divide(good, 4, RoundingMode.HALF_UP)) : "-");
+
+				boolean complete = full || g.complete;
+				btnMode.setLabel(complete ? "Complete" : "Partial");
+				btnMode.setSclass(complete ? "btn btn-sm btn-success" : "btn btn-sm btn-outline-primary");
+				btnMode.setDisabled(full);
+				btnMode.setTooltiptext(full
+						? "The whole pending qty is received: this receipt closes the PO line."
+						: "Partial = the PO line stays open for the rest.  "
+								+ "Complete = this receipt closes the PO line (no more partial).");
 			};
-			upd.run();
 
 			// Receive Qty
 			Listcell qc = new Listcell();
@@ -1242,8 +1236,7 @@ window.__xxComboOff=function(){
 			db.setValue(g.qty);
 			ZKUpdateUtil.setWidth(db, "100%");
 			db.addEventListener(Events.ON_CHANGE, ev -> {
-				BigDecimal v = db.getValue();
-				g.qty = v == null ? BigDecimal.ZERO : v;
+				g.qty = nz(db.getValue());
 				upd.run();
 				updateTotals();
 			});
@@ -1258,7 +1251,7 @@ window.__xxComboOff=function(){
 			sc.appendChild(lblSt);
 			li.appendChild(sc);
 
-			// Damaged Qty + reason (goes to the damage / quarantine locator)
+			// Damaged Qty + reason
 			Listcell dc = new Listcell();
 			final Decimalbox dbDmg = new Decimalbox();
 			dbDmg.setFormat("#,##0.####");
@@ -1266,6 +1259,7 @@ window.__xxComboOff=function(){
 			ZKUpdateUtil.setWidth(dbDmg, "100%");
 			dbDmg.addEventListener(Events.ON_CHANGE, ev -> {
 				g.damaged = dbDmg.getValue();
+				upd.run();
 				updateTotals();
 			});
 			dc.appendChild(dbDmg);
@@ -1278,6 +1272,30 @@ window.__xxComboOff=function(){
 			tbRes.addEventListener(Events.ON_CHANGE, ev -> g.damageReason = txt(tbRes));
 			rc.appendChild(tbRes);
 			li.appendChild(rc);
+
+			// Good Qty, Rate, Receive Value, Net Cost / Unit
+			Listcell gc = new Listcell();
+			gc.setStyle("text-align:right;font-weight:600;");
+			gc.appendChild(lblGood);
+			li.appendChild(gc);
+			li.appendChild(right(money(g.price)));
+			Listcell vc = new Listcell();
+			vc.setStyle("text-align:right;");
+			vc.appendChild(lblVal);
+			li.appendChild(vc);
+			Listcell ec = new Listcell();
+			ec.setStyle("text-align:right;font-weight:600;");
+			ec.appendChild(lblEff);
+			li.appendChild(ec);
+
+			// Partial / Complete
+			Listcell mc = new Listcell();
+			btnMode.addEventListener(Events.ON_CLICK, ev -> {
+				g.complete = !g.complete;
+				upd.run();
+			});
+			mc.appendChild(btnMode);
+			li.appendChild(mc);
 
 			// Pack Size
 			Listcell pc = new Listcell();
@@ -1314,17 +1332,14 @@ window.__xxComboOff=function(){
 			x.setSclass("btn btn-sm btn-outline-danger");
 			x.setTooltiptext("Remove this line");
 			x.addEventListener(Events.ON_CLICK, ev -> {
-				Set<Integer> rem = removedByOrder.get(Integer.valueOf(g.orderId));
-				if (rem == null) {
-					rem = new HashSet<Integer>();
-					removedByOrder.put(Integer.valueOf(g.orderId), rem);
-				}
-				rem.add(Integer.valueOf(g.olId));
+				removedLines.add(Integer.valueOf(g.olId));
 				lines.remove(g);
 				refreshLines();
 			});
 			rm.appendChild(x);
 			li.appendChild(rm);
+
+			upd.run();
 			lineList.appendChild(li);
 		}
 		updateTotals();
@@ -1339,13 +1354,14 @@ window.__xxComboOff=function(){
 	private void updateTotals() {
 		BigDecimal q = BigDecimal.ZERO;
 		BigDecimal d = BigDecimal.ZERO;
+		BigDecimal v = BigDecimal.ZERO;
 		for (GLine g : lines) {
-			q = q.add(g.qty);
-			if (g.damaged != null)
-				d = d.add(g.damaged);
+			q = q.add(nz(g.qty));
+			d = d.add(nz(g.damaged));
+			v = v.add(g.price.multiply(nz(g.qty)));
 		}
-		lblTotals.setValue(lines.size() + " line(s)   |   Total Receive Qty: " + num(q) + "   |   Damaged: " + num(d)
-				+ "   |   Accepted: " + num(q.subtract(d)));
+		lblTotals.setValue(lines.size() + " line(s)   |   Receive Qty: " + num(q) + "   |   Damaged: " + num(d)
+				+ "   |   Good Qty: " + num(q.subtract(d)) + "   |   Receive Value: " + money(v));
 	}
 
 	// =====================================================================
@@ -1517,11 +1533,14 @@ window.__xxComboOff=function(){
 		resolve(cbDocType);
 		resolve(cbWarehouse);
 		resolve(cbLocator);
-		resolve(cbDamLoc);
 		resolve(cbTolerance);
 		final int docTypeId = idOf(cbDocType);
 		final int whId = idOf(cbWarehouse);
 		final int locId = idOf(cbLocator);
+		if (selectedPoId <= 0) {
+			warn("Select a purchase order first.");
+			return;
+		}
 		if (docTypeId <= 0) {
 			warn("GRN Document is required.");
 			return;
@@ -1540,8 +1559,7 @@ window.__xxComboOff=function(){
 		}
 		final Timestamp moveDate = new Timestamp(dtMove.getValue().getTime());
 
-		boolean anyDamage = false;
-		Map<Integer, List<GLine>> byOrder = new LinkedHashMap<Integer, List<GLine>>();
+		final List<GLine> toReceive = new ArrayList<GLine>();
 		for (GLine g : lines) {
 			if (g.qty == null || g.qty.signum() <= 0)
 				continue;
@@ -1554,43 +1572,28 @@ window.__xxComboOff=function(){
 								: ". No tolerance rule is selected."));
 				return;
 			}
-			if (g.damaged != null && g.damaged.signum() > 0) {
-				if (g.damaged.compareTo(g.qty) > 0) {
-					warn("PO " + g.poNo + " / " + g.code + ": Damaged Qty " + num(g.damaged)
-							+ " is more than the Receive Qty " + num(g.qty) + ".");
+			BigDecimal dmg = nz(g.damaged);
+			if (dmg.signum() < 0) {
+				warn("PO " + g.poNo + " / " + g.code + ": Damaged Qty cannot be negative.");
+				return;
+			}
+			if (dmg.signum() > 0) {
+				if (dmg.compareTo(g.qty) >= 0) {
+					warn("PO " + g.poNo + " / " + g.code + ": Damaged Qty " + num(dmg)
+							+ " must be less than the Receive Qty " + num(g.qty) + " (there must be some good Qty).");
 					return;
 				}
 				if (g.damageReason == null || g.damageReason.trim().isEmpty()) {
 					warn("PO " + g.poNo + " / " + g.code + ": Damage Reason is required when there is a Damaged Qty.");
 					return;
 				}
-				anyDamage = true;
 			}
-			List<GLine> l = byOrder.get(Integer.valueOf(g.orderId));
-			if (l == null) {
-				l = new ArrayList<GLine>();
-				byOrder.put(Integer.valueOf(g.orderId), l);
-			}
-			l.add(g);
+			toReceive.add(g);
 		}
-		if (byOrder.isEmpty()) {
-			warn("Tick at least one PO and enter a Receive Qty above 0.");
+		if (toReceive.isEmpty()) {
+			warn("Enter a Receive Qty above 0 on at least one line.");
 			return;
 		}
-		final int damLocId = idOf(cbDamLoc);
-		final String damLocName = cbDamLoc.getValue() == null ? "" : cbDamLoc.getValue();
-		if (anyDamage) {
-			if (damLocId <= 0) {
-				warn("Damage / Quarantine Locator is required when there is a Damaged Qty.");
-				return;
-			}
-			if (damLocId == locId) {
-				warn("Damage / Quarantine Locator must be a different locator from the normal Locator, "
-						+ "or the damaged goods would join the good stock.");
-				return;
-			}
-		}
-		final boolean damaged = anyDamage;
 
 		final String vatNo = txt(txtVatNo);
 		final String delNo = txt(txtDelNo);
@@ -1608,21 +1611,26 @@ window.__xxComboOff=function(){
 		if (delDate != null && colDelDate == null)
 			notSaved.add("Delivery Challan Date");
 		boolean anyPack = false, anyNoPack = false, anyChQty = false;
-		for (List<GLine> l : byOrder.values())
-			for (GLine g : l) {
-				if (g.packSize != null && g.packSize.trim().length() > 0)
-					anyPack = true;
-				if (g.noPack != null)
-					anyNoPack = true;
-				if (g.challanQty != null)
-					anyChQty = true;
-			}
+		for (GLine g : toReceive) {
+			if (g.packSize != null && g.packSize.trim().length() > 0)
+				anyPack = true;
+			if (g.noPack != null)
+				anyNoPack = true;
+			if (g.challanQty != null)
+				anyChQty = true;
+		}
 		if (anyPack && colPack == null)
 			notSaved.add("Pack Size");
 		if (anyNoPack && colNoPack == null)
 			notSaved.add("No of Pack");
 		if (anyChQty && colChQty == null)
 			notSaved.add("Challan Qty");
+
+		// what the PDF shows about the tolerance rule
+		Comboitem tci = cbTolerance.getSelectedItem();
+		Object seg = tci == null ? null : tci.getAttribute("segment");
+		pdfSegment = seg == null ? "" : seg.toString();
+		pdfTolerance = toleranceRate().signum() > 0 ? num(toleranceRate()) + "%" : "No tolerance";
 
 		final String trxName = Trx.createTrxName("XXGRN");
 		Trx trx = Trx.get(trxName, true);
@@ -1632,63 +1640,64 @@ window.__xxComboOff=function(){
 			String ref = txtRef.getValue() == null ? "" : txtRef.getValue().trim();
 			String desc = txtDesc.getValue() == null ? "" : txtDesc.getValue().trim();
 
-			for (Map.Entry<Integer, List<GLine>> e : byOrder.entrySet()) {
-				MOrder po = new MOrder(Env.getCtx(), e.getKey().intValue(), trxName);
-				MInOut io = new MInOut(po, docTypeId, moveDate);
-				io.setM_Warehouse_ID(whId);
-				io.setMovementType(MInOut.MOVEMENTTYPE_VendorReceipts);
-				io.setIsSOTrx(false);
-				if (ref.length() > 0)
-					io.setPOReference(ref);
-				if (desc.length() > 0)
-					io.setDescription(desc);
-				if (vatNo.length() > 0)
-					putCol(io, colVatNo, vatNo);
-				if (vatDate != null)
-					putCol(io, colVatDate, vatDate);
-				if (delNo.length() > 0)
-					putCol(io, colDelNo, delNo);
-				if (delDate != null)
-					putCol(io, colDelDate, delDate);
-				io.saveEx();
+			MOrder po = new MOrder(Env.getCtx(), selectedPoId, trxName);
+			MInOut io = new MInOut(po, docTypeId, moveDate);
+			io.setM_Warehouse_ID(whId);
+			io.setMovementType(MInOut.MOVEMENTTYPE_VendorReceipts);
+			io.setIsSOTrx(false);
+			if (ref.length() > 0)
+				io.setPOReference(ref);
+			if (desc.length() > 0)
+				io.setDescription(desc);
+			if (vatNo.length() > 0)
+				putCol(io, colVatNo, vatNo);
+			if (vatDate != null)
+				putCol(io, colVatDate, vatDate);
+			if (delNo.length() > 0)
+				putCol(io, colDelNo, delNo);
+			if (delDate != null)
+				putCol(io, colDelDate, delDate);
+			io.saveEx();
 
-				for (GLine g : e.getValue()) {
-					MOrderLine ol = new MOrderLine(Env.getCtx(), g.olId, trxName);
-					BigDecimal dmg = g.damaged == null ? BigDecimal.ZERO : g.damaged;
-					BigDecimal accepted = g.qty.subtract(dmg);
-					// good quantity: normal locator
-					if (accepted.signum() > 0)
-						addReceiptLine(io, ol, locId, accepted, null, g, true, trxName);
-					// damaged quantity: damage / quarantine locator, kept out of the good stock
-					if (dmg.signum() > 0)
-						addReceiptLine(io, ol, damLocId, dmg, "DAMAGED: " + g.damageReason.trim(), g,
-								accepted.signum() <= 0, trxName);
-				}
-
-				io.setDocAction(DocAction.ACTION_Complete);
-				if (!io.processIt(DocAction.ACTION_Complete))
-					throw new AdempiereException("PO " + po.getDocumentNo() + ": " + io.getProcessMsg());
-				io.saveEx();
-
-				if (!attachments.isEmpty()) {
-					MAttachment att = new MAttachment(Env.getCtx(), MInOut.Table_ID, io.get_ID(), trxName);
-					for (Media m : attachments) {
-						byte[] bytes = m.isBinary() ? m.getByteData() : m.getStringData().getBytes("UTF-8");
-						att.addEntry(m.getName(), bytes);
-					}
-					att.saveEx();
-				}
-				ids.add(Integer.valueOf(io.get_ID()));
-				nos.add(io.getDocumentNo());
+			for (GLine g : toReceive) {
+				MOrderLine ol = new MOrderLine(Env.getCtx(), g.olId, trxName);
+				addReceiptLine(io, ol, locId, g);
 			}
+
+			io.setDocAction(DocAction.ACTION_Complete);
+			if (!io.processIt(DocAction.ACTION_Complete))
+				throw new AdempiereException("PO " + po.getDocumentNo() + ": " + io.getProcessMsg());
+			io.saveEx();
+
+			// PO lines: the damaged qty counts as supplied (the payable does not drop);
+			// Complete / over receipt closes the line
+			boolean anyClose = false;
+			for (GLine g : toReceive)
+				anyClose |= settlePoLine(g, trxName);
+			if (anyClose) {
+				MOrder po2 = new MOrder(Env.getCtx(), selectedPoId, trxName);
+				// gives back the reservation (ordered qty) of the closed lines;
+				// remove this call if your iDempiere version does not compile it
+				po2.reserveStock(MDocType.get(Env.getCtx(), po2.getC_DocType_ID()), po2.getLines(true, null));
+			}
+
+			if (!attachments.isEmpty()) {
+				MAttachment att = new MAttachment(Env.getCtx(), MInOut.Table_ID, io.get_ID(), trxName);
+				for (Media m : attachments) {
+					byte[] bytes = m.isBinary() ? m.getByteData() : m.getStringData().getBytes("UTF-8");
+					att.addEntry(m.getName(), bytes);
+				}
+				att.saveEx();
+			}
+			ids.add(Integer.valueOf(io.get_ID()));
+			nos.add(io.getDocumentNo());
 
 			trx.commit(true);
 			resetForm();
 			loadPOs();
-			String dmNote = damaged ? "\n\nDamaged goods were received into the locator: " + damLocName + "." : "";
 			String note = notSaved.isEmpty() ? ""
 					: "\n\nNOT saved (no matching column found in the database): " + String.join(", ", notSaved) + ".";
-			Messagebox.show("GRN " + String.join(", ", nos) + " saved and completed." + dmNote + note
+			Messagebox.show("GRN " + String.join(", ", nos) + " saved and completed." + note
 					+ "\n\nDo you want to view the GRN PDF?",
 					"Goods Receipt", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
 					(org.zkoss.zk.ui.event.Event ev) -> {
@@ -1704,36 +1713,75 @@ window.__xxComboOff=function(){
 		}
 	}
 
-	/** one receipt line linked to the PO line; the pack / challan values go on one line per product line */
-	private MInOutLine addReceiptLine(MInOut io, MOrderLine ol, int locatorId, BigDecimal qty, String descr, GLine g,
-			boolean withExtras, String trxName) {
+	/**
+	 * One receipt line: only the GOOD qty goes to stock; the whole calculation is written on the line.
+	 * Description format (read back by the PDF):
+	 * "Ord 100 | Recv 95 | Dmg 5 | Good 90 | Rate 10.0000 | Value 950.00 | Eff 10.5556 | St Partial | Reason text"
+	 */
+	private MInOutLine addReceiptLine(MInOut io, MOrderLine ol, int locatorId, GLine g) {
+		BigDecimal dmg = nz(g.damaged);
+		BigDecimal good = g.qty.subtract(dmg);
+		BigDecimal value = g.price.multiply(g.qty).setScale(2, RoundingMode.HALF_UP);
+		BigDecimal eff = value.divide(good, 4, RoundingMode.HALF_UP);
+		String status = g.qty.compareTo(g.pending) > 0 ? "Over (tolerance)"
+				: g.qty.compareTo(g.pending) == 0 ? "Full" : g.complete ? "Complete (short)" : "Partial";
+
 		MInOutLine iol = new MInOutLine(io);
-		iol.setOrderLine(ol, locatorId, qty);
-		iol.setQty(qty);
-		if (descr != null)
-			iol.setDescription(descr.length() > 255 ? descr.substring(0, 255) : descr);
-		if (withExtras) {
-			if (g.packSize != null && g.packSize.trim().length() > 0)
-				putCol(iol, colPack, g.packSize.trim());
-			if (g.noPack != null)
-				putCol(iol, colNoPack, g.noPack);
-			if (g.challanQty != null)
-				putCol(iol, colChQty, g.challanQty);
-		}
+		iol.setOrderLine(ol, locatorId, good);
+		iol.setQty(good);
+		String d = "Ord " + num(g.ordered) + " | Recv " + num(g.qty) + " | Dmg " + num(dmg) + " | Good " + num(good)
+				+ " | Rate " + plain(g.price, 4) + " | Value " + plain(value, 2) + " | Eff " + plain(eff, 4)
+				+ " | St " + status;
+		if (dmg.signum() > 0)
+			d += " | Reason " + g.damageReason.trim().replace('|', '/');
+		iol.setDescription(d.length() > 255 ? d.substring(0, 255) : d);
+		if (g.packSize != null && g.packSize.trim().length() > 0)
+			putCol(iol, colPack, g.packSize.trim());
+		if (g.noPack != null)
+			putCol(iol, colNoPack, g.noPack);
+		if (g.challanQty != null)
+			putCol(iol, colChQty, g.challanQty);
+		putCol(iol, colDamQty, dmg);
+		putCol(iol, colEffCost, eff);
 		iol.saveEx();
 		return iol;
 	}
 
+	/**
+	 * After the receipt is completed: count the damaged qty as supplied, and close the PO line when it is
+	 * Complete (short close). true = the ordered qty of a line was reduced.
+	 */
+	private boolean settlePoLine(GLine g, String trxName) {
+		MOrderLine ol = new MOrderLine(Env.getCtx(), g.olId, trxName);
+		BigDecimal dmg = nz(g.damaged);
+		boolean changed = false;
+		if (dmg.signum() > 0) {
+			ol.setQtyDelivered(ol.getQtyDelivered().add(dmg));
+			changed = true;
+		}
+		boolean ordChanged = false;
+		if (g.complete && g.qty.compareTo(g.pending) < 0) {
+			BigDecimal old = ol.getQtyOrdered();
+			BigDecimal dlv = ol.getQtyDelivered();
+			if (old.compareTo(dlv) > 0) {
+				ol.setQtyLostSales(old.subtract(dlv));
+				ol.setQtyOrdered(dlv);
+				ol.addDescription("GRN close (" + num(old) + ")");
+				changed = true;
+				ordChanged = true;
+			}
+		}
+		if (changed)
+			ol.saveEx();
+		return ordChanged;
+	}
+
 	private void resetForm() {
 		lines.clear();
-		keepQty.clear();
-		keepPack.clear();
-		keepNoPack.clear();
-		keepChQty.clear();
-		keepDmg.clear();
-		keepDmgReason.clear();
-		removedByOrder.clear();
-		prevSel = new HashSet<Integer>();
+		removedLines.clear();
+		selectedPoId = 0;
+		cbPo.setValue("");
+		updatePoInfo();
 		attachments.clear();
 		updateAttachLabel();
 		txtRef.setValue("");
@@ -1747,7 +1795,7 @@ window.__xxComboOff=function(){
 	}
 
 	// =====================================================================
-	// PDF
+	// PDF (rows are built from the saved receipts, no SQL)
 	// =====================================================================
 
 	private static final String PDF_JRXML = "/org/mycompany/requisition/GoodsReceipt.jrxml";
@@ -1765,35 +1813,130 @@ window.__xxComboOff=function(){
 		}
 	}
 
-	/** one PDF, one page per GRN */
-	private byte[] buildPdf(List<Integer> ids) throws Exception {
-		StringBuilder in = new StringBuilder();
-		for (Integer id : ids) {
-			if (in.length() > 0)
-				in.append(',');
-			in.append(id.intValue()); // whole numbers only
+	private static BigDecimal grab(String d, String key) {
+		if (d == null)
+			return null;
+		Matcher m = Pattern.compile("(?:^|\\| )" + key + " (-?[0-9]+(?:\\.[0-9]+)?)").matcher(d);
+		return m.find() ? new BigDecimal(m.group(1)) : null;
+	}
+
+	private static String grabText(String d, String key) {
+		if (d == null)
+			return "";
+		Matcher m = Pattern.compile("(?:^|\\| )" + key + " ([^|]*)").matcher(d);
+		return m.find() ? m.group(1).trim() : "";
+	}
+
+	/** one row per receipt line of the GRN (the report groups by grn_id: one page or more per GRN) */
+	private List<Map<String, Object>> pdfRows(int ioId) {
+		List<Map<String, Object>> rows = new ArrayList<Map<String, Object>>();
+		MInOut io = new MInOut(Env.getCtx(), ioId, null);
+		MBPartner bp = io.getC_BPartner_ID() > 0 ? MBPartner.get(Env.getCtx(), io.getC_BPartner_ID()) : null;
+		MOrder po = io.getC_Order_ID() > 0 ? new MOrder(Env.getCtx(), io.getC_Order_ID(), null) : null;
+		MDocType dt = io.getC_DocType_ID() > 0 ? MDocType.get(Env.getCtx(), io.getC_DocType_ID()) : null;
+		MOrg org = MOrg.get(Env.getCtx(), io.getAD_Org_ID());
+		MWarehouse wh = io.getM_Warehouse_ID() > 0 ? MWarehouse.get(Env.getCtx(), io.getM_Warehouse_ID()) : null;
+		MUser usr = MUser.get(Env.getCtx(), io.getCreatedBy());
+
+		Map<String, Object> head = new HashMap<String, Object>();
+		head.put("grn_id", Integer.valueOf(ioId));
+		head.put("grn_no", io.getDocumentNo());
+		head.put("grn_date", io.getMovementDate());
+		head.put("org", org == null ? "" : org.getName());
+		head.put("doc_type", dt == null ? "" : dt.getName());
+		head.put("supplier", bp == null ? "" : bp.getName());
+		head.put("po_no", po == null ? "" : po.getDocumentNo());
+		head.put("po_date", po == null ? null : po.getDateOrdered());
+		head.put("warehouse", wh == null ? "" : wh.getName());
+		head.put("ref_no", io.getPOReference());
+		head.put("vat_no", cell(io, colVatNo));
+		head.put("vat_date", colVatDate == null || io.get_ColumnIndex(colVatDate) < 0 ? null
+				: toTs(io.get_Value(colVatDate)));
+		head.put("del_no", cell(io, colDelNo));
+		head.put("del_date", colDelDate == null || io.get_ColumnIndex(colDelDate) < 0 ? null
+				: toTs(io.get_Value(colDelDate)));
+		head.put("segment", pdfSegment);
+		head.put("tolerance", pdfTolerance);
+		head.put("note", io.getDescription());
+		head.put("prepared_by", usr == null ? "" : usr.getName());
+		head.put("prepared_date", io.getCreated());
+
+		for (MInOutLine l : io.getLines(false)) {
+			if (l.getM_Product_ID() <= 0)
+				continue;
+			Map<String, Object> r = new HashMap<String, Object>(head);
+			MProduct prod = MProduct.get(Env.getCtx(), l.getM_Product_ID());
+			MOrderLine ol = l.getC_OrderLine_ID() > 0 ? new MOrderLine(Env.getCtx(), l.getC_OrderLine_ID(), null) : null;
+			String d = l.getDescription();
+
+			BigDecimal good = nz(l.getMovementQty());
+			BigDecimal dmg = null;
+			if (colDamQty != null && l.get_ColumnIndex(colDamQty) >= 0)
+				dmg = toBd(l.get_Value(colDamQty));
+			if (dmg == null)
+				dmg = grab(d, "Dmg");
+			dmg = nz(dmg);
+			BigDecimal recv = grab(d, "Recv");
+			if (recv == null)
+				recv = good.add(dmg);
+			BigDecimal ord = grab(d, "Ord");
+			if (ord == null)
+				ord = ol != null ? ol.getQtyOrdered() : recv;
+			BigDecimal rate = grab(d, "Rate");
+			if (rate == null)
+				rate = ol != null ? nz(ol.getPriceActual()) : BigDecimal.ZERO;
+			BigDecimal value = grab(d, "Value");
+			if (value == null)
+				value = rate.multiply(recv).setScale(2, RoundingMode.HALF_UP);
+			BigDecimal eff = null;
+			if (colEffCost != null && l.get_ColumnIndex(colEffCost) >= 0)
+				eff = toBd(l.get_Value(colEffCost));
+			if (eff == null)
+				eff = grab(d, "Eff");
+			if (eff == null && good.signum() > 0)
+				eff = value.divide(good, 4, RoundingMode.HALF_UP);
+
+			MUOM uom = l.getC_UOM_ID() > 0 ? MUOM.get(Env.getCtx(), l.getC_UOM_ID()) : null;
+			MLocator loc = l.getM_Locator_ID() > 0 ? MLocator.get(Env.getCtx(), l.getM_Locator_ID()) : null;
+			boolean coded = d != null && d.startsWith("Ord ");
+
+			r.put("item_code", prod.getValue());
+			r.put("item_name", prod.getName());
+			r.put("uom", uom == null ? "" : (uom.getUOMSymbol() != null ? uom.getUOMSymbol() : uom.getName()));
+			r.put("ordered", ord);
+			r.put("challan_qty", colChQty == null || l.get_ColumnIndex(colChQty) < 0 ? null : toBd(l.get_Value(colChQty)));
+			r.put("received", recv);
+			r.put("damaged", dmg);
+			r.put("accepted", good);
+			r.put("rate", rate);
+			r.put("value", value);
+			r.put("eff_cost", eff);
+			r.put("status", grabText(d, "St"));
+			r.put("pack_size", cell(l, colPack));
+			r.put("no_of_pack", colNoPack == null || l.get_ColumnIndex(colNoPack) < 0 ? null : toBd(l.get_Value(colNoPack)));
+			r.put("locator", loc == null ? "" : loc.getValue());
+			r.put("remarks", coded ? grabText(d, "Reason") : (d == null ? "" : d));
+			rows.add(r);
 		}
+		return rows;
+	}
+
+	/** one PDF, one page (or more) per GRN */
+	private byte[] buildPdf(List<Integer> ids) throws Exception {
+		List<Map<String, ?>> rows = new ArrayList<Map<String, ?>>();
+		for (Integer id : ids)
+			rows.addAll(pdfRows(id.intValue()));
 		try (java.io.InputStream jr = WGoodsReceiptForm.class.getResourceAsStream(PDF_JRXML)) {
 			if (jr == null)
 				throw new AdempiereException(PDF_JRXML + " not found in the bundle");
 			net.sf.jasperreports.engine.JasperReport report = net.sf.jasperreports.engine.JasperCompileManager
 					.compileReport(jr);
 			Map<String, Object> params = new HashMap<String, Object>();
-			params.put("IDS", in.toString());
 			params.put("LOGO_LEFT", logoPath("/org/mycompany/requisition/rfqapproval/logo_left.png"));
 			params.put("LOGO_RIGHT", logoPath("/org/mycompany/requisition/rfqapproval/logo_right.png"));
-			java.sql.Connection conn = DB.getConnectionRO();
-			try {
-				net.sf.jasperreports.engine.JasperPrint print = net.sf.jasperreports.engine.JasperFillManager
-						.fillReport(report, params, conn);
-				return net.sf.jasperreports.engine.JasperExportManager.exportReportToPdf(print);
-			} finally {
-				try {
-					conn.close();
-				} catch (Exception ignore) {
-					// ignore
-				}
-			}
+			net.sf.jasperreports.engine.JasperPrint print = net.sf.jasperreports.engine.JasperFillManager
+					.fillReport(report, params, new net.sf.jasperreports.engine.data.JRMapCollectionDataSource(rows));
+			return net.sf.jasperreports.engine.JasperExportManager.exportReportToPdf(print);
 		}
 	}
 
