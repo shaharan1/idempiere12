@@ -86,7 +86,7 @@ public class WGoodsReceiptForm extends ADForm {
 	private static final CLogger log = CLogger.getCLogger(WGoodsReceiptForm.class);
 
 	private static final int MAX_PO = 300;
-	private static final String CSS_VERSION = "g4";
+	private static final String CSS_VERSION = "g6";
 	/** tolerance rates (custom table); its columns are found by name, see resolveColumns */
 	private static final String TOL_TABLE = "T_ToleranceRateMR";
 	private static final BigDecimal HUNDRED = new BigDecimal(100);
@@ -223,8 +223,7 @@ public class WGoodsReceiptForm extends ADForm {
 @media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
 .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(8,minmax(0,1fr)); }
 .xx-req .xx-span5 { grid-column:span 5; }
-@media (max-width:1300px) { .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(4,minmax(0,1fr)); } .xx-req .xx-span5 { grid-column:1 / -1; } }
-@media (max-width:1000px) { .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:900px) { .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(4,minmax(0,1fr)); } .xx-req .xx-span5 { grid-column:1 / -1; } }
 @media (max-width:600px)  { .xx-req .xx-grid.xx-grid8 { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span5 { grid-column:span 1; } }
 .xx-req .xx-field { min-width:0; }
 .xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
@@ -274,6 +273,8 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-req .z-listbox .z-listitem:hover > .z-listcell, .xx-reqwin .z-listbox .z-listitem:hover > .z-listcell { background:#e7f1ff; }
 .xx-req .z-listbox .z-listcell .z-decimalbox { min-height:24px; text-align:right; }
 .xx-req .z-listbox .z-listcell .z-textbox { min-height:24px; }
+/* the Receipt Line grid grows with its lines (no fixed height), so the scroll bar sits right under the last line */
+.xx-req .z-listbox.xx-lines { min-height:0; }
 .xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
 .xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
 /* Description: same size as the other fields; drag the corner to make it bigger (and smaller again) */
@@ -664,7 +665,7 @@ window.__xxComboOff=function(){
 		// row 1: Organization, PO search (dropdown + Search + Refresh + count), Attachment
 		Div bar = new Div();
 		bar.setStyle("display:flex;align-items:center;gap:8px;flex-wrap:wrap;");
-		ZKUpdateUtil.setWidth(cbPo, "380px");
+		ZKUpdateUtil.setWidth(cbPo, "300px");
 		btnSearch.setSclass("btn btn-primary");
 		btnRefresh.setSclass("btn btn-outline-primary");
 		bar.appendChild(cbPo);
@@ -701,7 +702,9 @@ window.__xxComboOff=function(){
 
 	private Div buildLineBox() {
 		Div box = new Div();
-		lineList.setHeight("300px");
+		// no fixed height: the grid grows with its lines, so the scroll bar sits right under the last line
+		lineList.setSclass("xx-lines");
+		lineList.setEmptyMessage("Select a purchase order to see its lines.");
 		Listhead lh = new Listhead();
 		lh.setSizable(true);
 		lh.appendChild(header("#", "40px"));
@@ -1678,10 +1681,19 @@ window.__xxComboOff=function(){
 			for (GLine g : toReceive)
 				anyClose |= settlePoLine(g, trxName);
 			if (anyClose) {
+				// when every line of the PO is now fully supplied (or short closed), the PO is closed with the
+				// standard Close action, which also gives back the "On Order" reservation
 				MOrder po2 = new MOrder(Env.getCtx(), selectedPoId, trxName);
-				// gives back the reservation (ordered qty) of the closed lines;
-				// remove this call if your iDempiere version does not compile it
-				po2.reserveStock(MDocType.get(Env.getCtx(), po2.getC_DocType_ID()), po2.getLines(true, null));
+				boolean allDone = true;
+				for (MOrderLine l2 : po2.getLines(true, null))
+					if (l2.getM_Product_ID() > 0 && l2.getQtyOrdered().compareTo(l2.getQtyDelivered()) > 0)
+						allDone = false;
+				if (allDone) {
+					po2.setDocAction(DocAction.ACTION_Close);
+					if (!po2.processIt(DocAction.ACTION_Close))
+						throw new AdempiereException("PO " + po2.getDocumentNo() + ": " + po2.getProcessMsg());
+					po2.saveEx();
+				}
 			}
 
 			if (!attachments.isEmpty()) {
