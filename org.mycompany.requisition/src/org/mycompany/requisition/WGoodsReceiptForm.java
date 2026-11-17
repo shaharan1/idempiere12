@@ -725,8 +725,8 @@ window.__xxComboOff=function(){
 		// row 3: partial / tolerance / damage
 		Div tol = new Div();
 		tol.appendChild(cbTolerance);
-		lblTolInfo.setSclass("xx-attach-note");
-		tol.appendChild(lblTolInfo);
+//		lblTolInfo.setSclass("xx-attach-note");
+//		tol.appendChild(lblTolInfo);
 		g.appendChild(field("Tolerance Rule", false, tol, 2));
 		g.appendChild(field("Damage / Quarantine Locator", false, cbDamLoc, 2));
 		updateAttachLabel();
