@@ -661,7 +661,7 @@ window.__xxComboOff=function(){
 		ZKUpdateUtil.setWidth(dtDel, "100%");
 		btnAttach.setSclass("btn btn-outline-primary btn-block");
 
-		// row 1: PO search (dropdown + Search + Refresh + count), Attachment, Supplier
+		// row 1: Organization, PO search (dropdown + Search + Refresh + count), Attachment
 		Div bar = new Div();
 		bar.setStyle("display:flex;align-items:center;gap:8px;flex-wrap:wrap;");
 		ZKUpdateUtil.setWidth(cbPo, "380px");
@@ -671,29 +671,30 @@ window.__xxComboOff=function(){
 		bar.appendChild(btnSearch);
 		bar.appendChild(btnRefresh);
 		bar.appendChild(lblPoCount);
-		g.appendChild(field("Search PO No. or Supplier", true, bar, 5));
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
+		g.appendChild(field("Organization", true, readonly(lblOrg), 2));
+		g.appendChild(field("Search PO No. or Supplier", true, bar, 5));
 		g.appendChild(field("Attachment", false, at, 1));
-		g.appendChild(field("Supplier", false, readonly(lblSupplier), 2));
 		// row 2
-		g.appendChild(field("PO Date", false, readonly(lblPoDate), 1));
+		g.appendChild(field("Supplier", false, readonly(lblSupplier), 3));
 		g.appendChild(field("PO Total", false, readonly(lblPoTotal), 1));
-		g.appendChild(field("Organization", true, readonly(lblOrg), 1));
-		g.appendChild(field("GRN Document", true, cbDocType, 1));
-		g.appendChild(field("Warehouse", true, cbWarehouse, 1));
-		g.appendChild(field("Locator", true, cbLocator, 1));
+		g.appendChild(field("PO Date", false, readonly(lblPoDate), 1));
 		g.appendChild(field("GRN Date", true, dtMove, 1));
-		g.appendChild(field("Challan / Supplier Ref. No.", false, txtRef, 1));
+		g.appendChild(field("GRN Document", true, cbDocType, 2));
 		// row 3
-		g.appendChild(field("VAT Challan No", false, txtVatNo, 1));
+		g.appendChild(field("Warehouse", true, cbWarehouse, 2));
+		g.appendChild(field("Locator", true, cbLocator, 2));
+		g.appendChild(field("Challan / Supplier Ref. No.", false, txtRef, 2));
+		g.appendChild(field("VAT Challan No", false, txtVatNo, 2));
+		// row 4
 		g.appendChild(field("VAT Challan Date", false, dtVat, 1));
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
 		g.appendChild(field("Tolerance Rule", false, cbTolerance, 2));
-		g.appendChild(field("Description (Note)", false, txtDesc, 2));
+		g.appendChild(field("Description (Note)", false, txtDesc, 3));
 		updateAttachLabel();
 		return g;
 	}
