@@ -1,6 +1,7 @@
 package org.mycompany.requisition;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
@@ -75,6 +76,10 @@ import org.zkoss.zul.Messagebox;
  * Dictionary (see resolveColumns); a value whose column cannot be found is not saved and the
  * user is told after saving.
  * <p>
+ * Partial / tolerance / damage: a line received for less than its pending Qty shows Partial (the PO stays open);
+ * up to the tolerance % of the rule picked (T_ToleranceRateMR) more than pending may be received; a Damaged Qty is received
+ * into the Damage / Quarantine Locator so it never joins the good stock.
+ * <p>
  * Attachments work exactly like the Requisition form: + Add File, click a name to open it,
  * the cross removes it, OK closes. Files are stored on every GRN saved in that go.
  */
@@ -85,6 +90,9 @@ public class WGoodsReceiptForm extends ADForm {
 
 	private static final int MAX_PO = 300;
 	private static final String CSS_VERSION = "g2";
+	/** tolerance rates (custom table); its columns are found by name, see resolveColumns */
+	private static final String TOL_TABLE = "T_ToleranceRateMR";
+	private static final BigDecimal HUNDRED = new BigDecimal(100);
 
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int orgId = Env.getAD_Org_ID(Env.getCtx());
@@ -94,6 +102,9 @@ public class WGoodsReceiptForm extends ADForm {
 	private Combobox cbDocType;
 	private Combobox cbWarehouse;
 	private Combobox cbLocator;
+	private Combobox cbDamLoc;
+	private Combobox cbTolerance;
+	private final Label lblTolInfo = new Label();
 	private final Datebox dtMove = new Datebox();
 	private final Textbox txtRef = new Textbox();
 	private final Textbox txtVatNo = new Textbox();
@@ -121,6 +132,8 @@ public class WGoodsReceiptForm extends ADForm {
 	private final Map<Integer, String> keepPack = new HashMap<Integer, String>();
 	private final Map<Integer, BigDecimal> keepNoPack = new HashMap<Integer, BigDecimal>();
 	private final Map<Integer, BigDecimal> keepChQty = new HashMap<Integer, BigDecimal>();
+	private final Map<Integer, BigDecimal> keepDmg = new HashMap<Integer, BigDecimal>();
+	private final Map<Integer, String> keepDmgReason = new HashMap<Integer, String>();
 	private final Map<Integer, Set<Integer>> removedByOrder = new HashMap<Integer, Set<Integer>>();
 	private Set<Integer> prevSel = new HashSet<Integer>();
 
@@ -136,6 +149,11 @@ public class WGoodsReceiptForm extends ADForm {
 	private String colPack;
 	private String colNoPack;
 	private String colChQty;
+	// columns of the tolerance table
+	private String colTolRate;
+	private String colTolFrom;
+	private String colTolDocType;
+	private String colTolSegment;
 
 	private static final class Po {
 		int id;
@@ -162,6 +180,8 @@ public class WGoodsReceiptForm extends ADForm {
 		String packSize = "";
 		BigDecimal noPack;
 		BigDecimal challanQty;
+		BigDecimal damaged;
+		String damageReason = "";
 	}
 
 	// =====================================================================
@@ -422,7 +442,10 @@ window.__xxComboOff=function(){
 	 * Read from the model (POInfo), no SQL. null when there is none.
 	 */
 	private static String findColumn(String table, String exclude, String... patterns) {
-		POInfo info = POInfo.getPOInfo(Env.getCtx(), MTable.getTable_ID(table));
+		int tableId = MTable.getTable_ID(table);
+		if (tableId <= 0)
+			return null;
+		POInfo info = POInfo.getPOInfo(Env.getCtx(), tableId);
 		if (info == null)
 			return null;
 		for (String p : patterns) {
@@ -449,6 +472,12 @@ window.__xxComboOff=function(){
 		colPack = findColumn(MInOutLine.Table_Name, null, "%pack%size%");
 		colNoPack = findColumn(MInOutLine.Table_Name, "%size%", "%no%pack%");
 		colChQty = findColumn(MInOutLine.Table_Name, null, "%challan%qty%", "%challan%quantity%");
+		colTolRate = findColumn(TOL_TABLE, "%_id%", "%rate%", "%toler%", "%percent%");
+		colTolFrom = findColumn(TOL_TABLE, null, "%valid%from%", "%date%from%", "%from%");
+		colTolDocType = findColumn(TOL_TABLE, null, "%doctype%");
+		colTolSegment = findColumn(TOL_TABLE, null, "%segment%");
+		log.info("GRN tolerance columns: Rate=" + colTolRate + " ValidFrom=" + colTolFrom + " DocType=" + colTolDocType
+				+ " Segment=" + colTolSegment);
 		log.info("GRN columns: VATNo=" + colVatNo + " VATDate=" + colVatDate + " DelNo=" + colDelNo + " DelDate="
 				+ colDelDate + " PackSize=" + colPack + " NoOfPack=" + colNoPack + " ChallanQty=" + colChQty);
 	}
@@ -492,6 +521,123 @@ window.__xxComboOff=function(){
 	}
 
 	// =====================================================================
+	// tolerance (rules of T_ToleranceRateMR, read through the model, no SQL)
+	// =====================================================================
+
+	private static Timestamp toTs(Object o) {
+		if (o instanceof Timestamp)
+			return (Timestamp) o;
+		if (o instanceof Date)
+			return new Timestamp(((Date) o).getTime());
+		return null;
+	}
+
+	private static BigDecimal toBd(Object o) {
+		if (o instanceof BigDecimal)
+			return (BigDecimal) o;
+		if (o instanceof Number)
+			return new BigDecimal(o.toString());
+		return null;
+	}
+
+	private static int toInt(Object o) {
+		return o instanceof Number ? ((Number) o).intValue() : 0;
+	}
+
+	private static String cell(PO po, String col) {
+		if (col == null || po.get_ColumnIndex(col) < 0)
+			return "";
+		Object v = po.get_Value(col);
+		return v == null ? "" : v.toString();
+	}
+
+	/**
+	 * Fills the Tolerance Rule box with the rules that are valid on the GRN date for this organization,
+	 * and picks the best one for the GRN Document (same document type first, then the newest Valid from).
+	 */
+	private void loadTolerance() {
+		while (cbTolerance.getItemCount() > 0)
+			cbTolerance.removeItemAt(0);
+		cbTolerance.setValue("");
+		Comboitem none = new Comboitem("No tolerance (0%)");
+		none.setAttribute("rate", BigDecimal.ZERO);
+		cbTolerance.appendChild(none);
+		Comboitem best = none;
+		int ruleCount = 0;
+		if (colTolRate != null) {
+			Timestamp onDate = dtMove.getValue() == null ? new Timestamp(System.currentTimeMillis())
+					: new Timestamp(dtMove.getValue().getTime());
+			int grnDocType = idOf(cbDocType);
+			int bestScore = 0;
+			Timestamp bestFrom = null;
+			try {
+				List<PO> rows = new Query(Env.getCtx(), TOL_TABLE, null, null).setClient_ID()
+						.setOnlyActiveRecords(true).list();
+				for (PO row : rows) {
+					int rowOrg = row.getAD_Org_ID();
+					if (rowOrg != 0 && orgId > 0 && rowOrg != orgId)
+						continue;
+					Timestamp from = colTolFrom == null ? null : toTs(row.get_Value(colTolFrom));
+					if (from != null && from.after(onDate))
+						continue;
+					BigDecimal rate = toBd(row.get_Value(colTolRate));
+					boolean bad = rate == null || rate.signum() < 0 || rate.compareTo(HUNDRED) > 0;
+					int rowDt = colTolDocType == null ? 0 : toInt(row.get_Value(colTolDocType));
+					String dtName = "All document types";
+					if (rowDt > 0) {
+						MDocType dt = MDocType.get(Env.getCtx(), rowDt);
+						dtName = dt == null ? "Doc type " + rowDt : dt.getName();
+					}
+					String seg = cell(row, colTolSegment);
+					String val = cell(row, "Value");
+					String label = (val.isEmpty() ? "Rule" : val) + "  |  " + (rate == null ? "?" : num(rate)) + "%  |  "
+							+ dtName + (seg.isEmpty() ? "" : "  |  " + seg)
+							+ (from == null ? "" : "  |  from " + dmy(from)) + (bad ? "  |  rate ignored" : "");
+					Comboitem ci = new Comboitem(label);
+					ci.setAttribute("rate", bad ? BigDecimal.ZERO : rate);
+					cbTolerance.appendChild(ci);
+					ruleCount++;
+					if (!bad && rate.signum() > 0 && (rowDt == 0 || rowDt == grnDocType)) {
+						int score = rowDt != 0 ? 2 : 1;
+						if (score > bestScore
+								|| (score == bestScore && from != null && (bestFrom == null || from.after(bestFrom)))) {
+							best = ci;
+							bestScore = score;
+							bestFrom = from;
+						}
+					}
+				}
+			} catch (Exception e) {
+				log.log(Level.WARNING, "tolerance rules not read: " + e.getMessage(), e);
+			}
+		}
+		// what was found, so it can be checked on screen
+		String info;
+		if (MTable.getTable_ID(TOL_TABLE) <= 0)
+			info = TOL_TABLE + " is not in the Application Dictionary: tolerance is off.";
+		else if (colTolRate == null)
+			info = TOL_TABLE + ": no Rate column found: tolerance is off.";
+		else
+			info = ruleCount + " rule(s) valid.  Columns found: Rate=" + colTolRate + ", From=" + colTolFrom + ", DocType="
+					+ colTolDocType + ", Segment=" + colTolSegment;
+		lblTolInfo.setValue(info);
+		cbTolerance.setSelectedItem(best);
+	}
+
+	/** tolerance rate (percent) of the rule picked, 0 when none */
+	private BigDecimal toleranceRate() {
+		Comboitem ci = cbTolerance.getSelectedItem();
+		Object r = ci == null ? null : ci.getAttribute("rate");
+		return r instanceof BigDecimal ? (BigDecimal) r : BigDecimal.ZERO;
+	}
+
+	/** most that may be received on a line: pending + tolerance % */
+	private BigDecimal maxReceive(BigDecimal pending) {
+		BigDecimal f = BigDecimal.ONE.add(toleranceRate().divide(HUNDRED, 8, RoundingMode.HALF_UP));
+		return pending.multiply(f).setScale(4, RoundingMode.DOWN);
+	}
+
+	// =====================================================================
 	// UI
 	// =====================================================================
 
@@ -506,6 +652,8 @@ window.__xxComboOff=function(){
 		cbDocType = newCombo("GRN Document");
 		cbWarehouse = newCombo("Warehouse");
 		cbLocator = newCombo("Locator");
+		cbDamLoc = newCombo("Damage / Quarantine Locator");
+		cbTolerance = newCombo("Tolerance Rule");
 
 		main.appendChild(card("Goods Received Note", buildHeader()));
 		main.appendChild(card("Completed Purchase Orders  (tick the PO(s) to receive)", buildPoBox()));
@@ -554,7 +702,7 @@ window.__xxComboOff=function(){
 		ZKUpdateUtil.setWidth(dtMove, "100%");
 		ZKUpdateUtil.setWidth(dtVat, "100%");
 		ZKUpdateUtil.setWidth(dtDel, "100%");
-		btnAttach.setSclass("btn btn-outline-primary 100%");
+		btnAttach.setSclass("btn btn-outline-primary btn-block");
 
 		// row 1
 		g.appendChild(field("Organization", true, readonly(lblOrg), 1));
@@ -569,13 +717,19 @@ window.__xxComboOff=function(){
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
 		g.appendChild(field("Description (Note)", false, txtDesc, 1));
-		updateAttachLabel();
 		Div at = new Div();
 		at.appendChild(btnAttach);
 		lblAttach.setSclass("xx-attach-note");
 		at.appendChild(lblAttach);
 		g.appendChild(field("Attachment", false, at, 1));
-		
+		// row 3: partial / tolerance / damage
+		Div tol = new Div();
+		tol.appendChild(cbTolerance);
+		lblTolInfo.setSclass("xx-attach-note");
+		tol.appendChild(lblTolInfo);
+		g.appendChild(field("Tolerance Rule", false, tol, 2));
+		g.appendChild(field("Damage / Quarantine Locator", false, cbDamLoc, 2));
+		updateAttachLabel();
 		return g;
 	}
 
@@ -623,6 +777,10 @@ window.__xxComboOff=function(){
 		lh.appendChild(header("Received", "90px"));
 		lh.appendChild(header("Pending", "90px"));
 		lh.appendChild(header("Receive Qty", "110px"));
+		lh.appendChild(header("Balance", "80px"));
+		lh.appendChild(header("Status", "190px"));
+		lh.appendChild(header("Damaged Qty", "105px"));
+		lh.appendChild(header("Damage Reason", "170px"));
 		lh.appendChild(header("Pack Size", "100px"));
 		lh.appendChild(header("No of Pack", "100px"));
 		lh.appendChild(header("Challan Qty", "110px"));
@@ -753,6 +911,7 @@ window.__xxComboOff=function(){
 			whs.add(new Object[] { Integer.valueOf(w.getM_Warehouse_ID()), w.getName() });
 		fillCombo(cbWarehouse, whs);
 		warehouseChanged();
+		loadTolerance();
 	}
 
 	private void warehouseChanged() {
@@ -766,6 +925,16 @@ window.__xxComboOff=function(){
 		}
 		fillCombo(cbLocator, locs);
 		selectFirst(cbLocator);
+		// the damage / quarantine locator: same warehouse; a locator called damage / quarantine / reject is taken
+		fillCombo(cbDamLoc, locs);
+		for (Object o : cbDamLoc.getItems()) {
+			Comboitem ci = (Comboitem) o;
+			String nm = ci.getLabel() == null ? "" : ci.getLabel().toLowerCase();
+			if (nm.contains("damage") || nm.contains("quarantine") || nm.contains("reject")) {
+				cbDamLoc.setSelectedItem(ci);
+				break;
+			}
+		}
 	}
 
 	private void selectWarehouse(int id) {
@@ -794,10 +963,17 @@ window.__xxComboOff=function(){
 			resolve(cbWarehouse);
 			warehouseChanged();
 		});
-		for (final Combobox c : new Combobox[] { cbDocType, cbLocator }) {
+		for (final Combobox c : new Combobox[] { cbDocType, cbLocator, cbDamLoc, cbTolerance }) {
 			c.addEventListener(Events.ON_CHANGE, ev -> resolve(c));
 			c.addEventListener(Events.ON_OK, ev -> resolve(c));
 		}
+		// the rule that fits depends on the GRN Document and the GRN Date
+		cbDocType.addEventListener(Events.ON_CHANGE, ev -> loadTolerance());
+		cbDocType.addEventListener(Events.ON_SELECT, ev -> loadTolerance());
+		dtMove.addEventListener(Events.ON_CHANGE, ev -> loadTolerance());
+		// a different rule: the allowed quantity of every line changes
+		cbTolerance.addEventListener(Events.ON_CHANGE, ev -> refreshLines());
+		cbTolerance.addEventListener(Events.ON_SELECT, ev -> refreshLines());
 		btnSearch.addEventListener(Events.ON_CLICK, ev -> loadPOs());
 		btnRefresh.addEventListener(Events.ON_CLICK, ev -> {
 			txtSearch.setValue("");
@@ -906,7 +1082,6 @@ window.__xxComboOff=function(){
 			Listcell t = new Listcell(money(po.total));
 			t.setStyle("text-align:right;");
 			li.appendChild(t);
-			
 			poList.appendChild(li);
 			if (ticked.contains(Integer.valueOf(po.id)))
 				poList.addItemToSelection(li);
@@ -953,6 +1128,8 @@ window.__xxComboOff=function(){
 			keepPack.put(k, g.packSize);
 			keepNoPack.put(k, g.noPack);
 			keepChQty.put(k, g.challanQty);
+			keepDmg.put(k, g.damaged);
+			keepDmgReason.put(k, g.damageReason);
 		}
 		Set<Integer> sel = selectedOrderIds();
 		for (Integer id : sel)
@@ -995,6 +1172,9 @@ window.__xxComboOff=function(){
 					g.packSize = kp == null ? "" : kp;
 					g.noPack = keepNoPack.get(key);
 					g.challanQty = keepChQty.get(key);
+					g.damaged = keepDmg.get(key);
+					String kr = keepDmgReason.get(key);
+					g.damageReason = kr == null ? "" : kr;
 					lines.add(g);
 				}
 			}
@@ -1025,6 +1205,36 @@ window.__xxComboOff=function(){
 			li.appendChild(right(num(g.received)));
 			li.appendChild(right(num(g.pending)));
 
+			// Balance + Status follow the Receive Qty (partial / full / over within tolerance / over the limit)
+			final Label lblBal = new Label();
+			final Label lblSt = new Label();
+			final Runnable upd = () -> {
+				BigDecimal q = g.qty == null ? BigDecimal.ZERO : g.qty;
+				BigDecimal bal = g.pending.subtract(q);
+				lblBal.setValue(num(bal.signum() < 0 ? BigDecimal.ZERO : bal));
+				String st;
+				String color;
+				if (q.signum() <= 0) {
+					st = "-";
+					color = "#6c757d";
+				} else if (q.compareTo(g.pending) < 0) {
+					st = "Partial";
+					color = "#fd7e14";
+				} else if (q.compareTo(g.pending) == 0) {
+					st = "Full";
+					color = "#198754";
+				} else if (q.compareTo(maxReceive(g.pending)) <= 0) {
+					st = "Over +" + num(q.subtract(g.pending)) + " (tolerance)";
+					color = "#0d6efd";
+				} else {
+					st = "Over limit (max " + num(maxReceive(g.pending)) + ")";
+					color = "#dc3545";
+				}
+				lblSt.setValue(st);
+				lblSt.setStyle("font-weight:600;color:" + color + ";");
+			};
+			upd.run();
+
 			// Receive Qty
 			Listcell qc = new Listcell();
 			final Decimalbox db = new Decimalbox();
@@ -1034,10 +1244,40 @@ window.__xxComboOff=function(){
 			db.addEventListener(Events.ON_CHANGE, ev -> {
 				BigDecimal v = db.getValue();
 				g.qty = v == null ? BigDecimal.ZERO : v;
+				upd.run();
 				updateTotals();
 			});
 			qc.appendChild(db);
 			li.appendChild(qc);
+
+			Listcell bc = new Listcell();
+			bc.setStyle("text-align:right;");
+			bc.appendChild(lblBal);
+			li.appendChild(bc);
+			Listcell sc = new Listcell();
+			sc.appendChild(lblSt);
+			li.appendChild(sc);
+
+			// Damaged Qty + reason (goes to the damage / quarantine locator)
+			Listcell dc = new Listcell();
+			final Decimalbox dbDmg = new Decimalbox();
+			dbDmg.setFormat("#,##0.####");
+			dbDmg.setValue(g.damaged);
+			ZKUpdateUtil.setWidth(dbDmg, "100%");
+			dbDmg.addEventListener(Events.ON_CHANGE, ev -> {
+				g.damaged = dbDmg.getValue();
+				updateTotals();
+			});
+			dc.appendChild(dbDmg);
+			li.appendChild(dc);
+			Listcell rc = new Listcell();
+			final Textbox tbRes = new Textbox();
+			tbRes.setMaxlength(100);
+			tbRes.setValue(g.damageReason == null ? "" : g.damageReason);
+			ZKUpdateUtil.setWidth(tbRes, "100%");
+			tbRes.addEventListener(Events.ON_CHANGE, ev -> g.damageReason = txt(tbRes));
+			rc.appendChild(tbRes);
+			li.appendChild(rc);
 
 			// Pack Size
 			Listcell pc = new Listcell();
@@ -1098,9 +1338,14 @@ window.__xxComboOff=function(){
 
 	private void updateTotals() {
 		BigDecimal q = BigDecimal.ZERO;
-		for (GLine g : lines)
+		BigDecimal d = BigDecimal.ZERO;
+		for (GLine g : lines) {
 			q = q.add(g.qty);
-		lblTotals.setValue(lines.size() + " line(s)   |   Total Receive Qty: " + num(q));
+			if (g.damaged != null)
+				d = d.add(g.damaged);
+		}
+		lblTotals.setValue(lines.size() + " line(s)   |   Total Receive Qty: " + num(q) + "   |   Damaged: " + num(d)
+				+ "   |   Accepted: " + num(q.subtract(d)));
 	}
 
 	// =====================================================================
@@ -1272,6 +1517,8 @@ window.__xxComboOff=function(){
 		resolve(cbDocType);
 		resolve(cbWarehouse);
 		resolve(cbLocator);
+		resolve(cbDamLoc);
+		resolve(cbTolerance);
 		final int docTypeId = idOf(cbDocType);
 		final int whId = idOf(cbWarehouse);
 		final int locId = idOf(cbLocator);
@@ -1293,14 +1540,31 @@ window.__xxComboOff=function(){
 		}
 		final Timestamp moveDate = new Timestamp(dtMove.getValue().getTime());
 
+		boolean anyDamage = false;
 		Map<Integer, List<GLine>> byOrder = new LinkedHashMap<Integer, List<GLine>>();
 		for (GLine g : lines) {
 			if (g.qty == null || g.qty.signum() <= 0)
 				continue;
-			if (g.qty.compareTo(g.pending) > 0) {
+			if (g.qty.compareTo(g.pending) > 0 && g.qty.compareTo(maxReceive(g.pending)) > 0) {
 				warn("PO " + g.poNo + " / " + g.code + ": Receive Qty " + num(g.qty) + " is more than the pending Qty "
-						+ num(g.pending) + ".");
+						+ num(g.pending)
+						+ (toleranceRate().signum() > 0
+								? " plus the tolerance (" + num(toleranceRate()) + "%, at most "
+										+ num(maxReceive(g.pending)) + ")."
+								: ". No tolerance rule is selected."));
 				return;
+			}
+			if (g.damaged != null && g.damaged.signum() > 0) {
+				if (g.damaged.compareTo(g.qty) > 0) {
+					warn("PO " + g.poNo + " / " + g.code + ": Damaged Qty " + num(g.damaged)
+							+ " is more than the Receive Qty " + num(g.qty) + ".");
+					return;
+				}
+				if (g.damageReason == null || g.damageReason.trim().isEmpty()) {
+					warn("PO " + g.poNo + " / " + g.code + ": Damage Reason is required when there is a Damaged Qty.");
+					return;
+				}
+				anyDamage = true;
 			}
 			List<GLine> l = byOrder.get(Integer.valueOf(g.orderId));
 			if (l == null) {
@@ -1313,6 +1577,20 @@ window.__xxComboOff=function(){
 			warn("Tick at least one PO and enter a Receive Qty above 0.");
 			return;
 		}
+		final int damLocId = idOf(cbDamLoc);
+		final String damLocName = cbDamLoc.getValue() == null ? "" : cbDamLoc.getValue();
+		if (anyDamage) {
+			if (damLocId <= 0) {
+				warn("Damage / Quarantine Locator is required when there is a Damaged Qty.");
+				return;
+			}
+			if (damLocId == locId) {
+				warn("Damage / Quarantine Locator must be a different locator from the normal Locator, "
+						+ "or the damaged goods would join the good stock.");
+				return;
+			}
+		}
+		final boolean damaged = anyDamage;
 
 		final String vatNo = txt(txtVatNo);
 		final String delNo = txt(txtDelNo);
@@ -1376,16 +1654,15 @@ window.__xxComboOff=function(){
 
 				for (GLine g : e.getValue()) {
 					MOrderLine ol = new MOrderLine(Env.getCtx(), g.olId, trxName);
-					MInOutLine iol = new MInOutLine(io);
-					iol.setOrderLine(ol, locId, g.qty);
-					iol.setQty(g.qty);
-					if (g.packSize != null && g.packSize.trim().length() > 0)
-						putCol(iol, colPack, g.packSize.trim());
-					if (g.noPack != null)
-						putCol(iol, colNoPack, g.noPack);
-					if (g.challanQty != null)
-						putCol(iol, colChQty, g.challanQty);
-					iol.saveEx();
+					BigDecimal dmg = g.damaged == null ? BigDecimal.ZERO : g.damaged;
+					BigDecimal accepted = g.qty.subtract(dmg);
+					// good quantity: normal locator
+					if (accepted.signum() > 0)
+						addReceiptLine(io, ol, locId, accepted, null, g, true, trxName);
+					// damaged quantity: damage / quarantine locator, kept out of the good stock
+					if (dmg.signum() > 0)
+						addReceiptLine(io, ol, damLocId, dmg, "DAMAGED: " + g.damageReason.trim(), g,
+								accepted.signum() <= 0, trxName);
 				}
 
 				io.setDocAction(DocAction.ACTION_Complete);
@@ -1408,9 +1685,10 @@ window.__xxComboOff=function(){
 			trx.commit(true);
 			resetForm();
 			loadPOs();
+			String dmNote = damaged ? "\n\nDamaged goods were received into the locator: " + damLocName + "." : "";
 			String note = notSaved.isEmpty() ? ""
 					: "\n\nNOT saved (no matching column found in the database): " + String.join(", ", notSaved) + ".";
-			Messagebox.show("GRN " + String.join(", ", nos) + " saved and completed." + note
+			Messagebox.show("GRN " + String.join(", ", nos) + " saved and completed." + dmNote + note
 					+ "\n\nDo you want to view the GRN PDF?",
 					"Goods Receipt", Messagebox.YES | Messagebox.NO, Messagebox.QUESTION,
 					(org.zkoss.zk.ui.event.Event ev) -> {
@@ -1426,12 +1704,34 @@ window.__xxComboOff=function(){
 		}
 	}
 
+	/** one receipt line linked to the PO line; the pack / challan values go on one line per product line */
+	private MInOutLine addReceiptLine(MInOut io, MOrderLine ol, int locatorId, BigDecimal qty, String descr, GLine g,
+			boolean withExtras, String trxName) {
+		MInOutLine iol = new MInOutLine(io);
+		iol.setOrderLine(ol, locatorId, qty);
+		iol.setQty(qty);
+		if (descr != null)
+			iol.setDescription(descr.length() > 255 ? descr.substring(0, 255) : descr);
+		if (withExtras) {
+			if (g.packSize != null && g.packSize.trim().length() > 0)
+				putCol(iol, colPack, g.packSize.trim());
+			if (g.noPack != null)
+				putCol(iol, colNoPack, g.noPack);
+			if (g.challanQty != null)
+				putCol(iol, colChQty, g.challanQty);
+		}
+		iol.saveEx();
+		return iol;
+	}
+
 	private void resetForm() {
 		lines.clear();
 		keepQty.clear();
 		keepPack.clear();
 		keepNoPack.clear();
 		keepChQty.clear();
+		keepDmg.clear();
+		keepDmgReason.clear();
 		removedByOrder.clear();
 		prevSel = new HashSet<Integer>();
 		attachments.clear();
