@@ -659,14 +659,19 @@ window.__xxComboOff=function(){
 		// row 1: PO search (dropdown + Search + Refresh + count)
 		Div bar = new Div();
 		bar.setStyle("display:flex;align-items:center;gap:8px;flex-wrap:wrap;");
-		ZKUpdateUtil.setWidth(cbPo, "560px");
+		ZKUpdateUtil.setWidth(cbPo, "460px");
 		btnSearch.setSclass("btn btn-primary");
 		btnRefresh.setSclass("btn btn-outline-primary");
 		bar.appendChild(cbPo);
 		bar.appendChild(btnSearch);
 		bar.appendChild(btnRefresh);
 		bar.appendChild(lblPoCount);
-		g.appendChild(field("Search PO No. or Supplier", true, bar, 6));
+		g.appendChild(field("Search PO No. or Supplier", true, bar, 4));
+		Div at = new Div();
+		at.appendChild(btnAttach);
+		lblAttach.setSclass("xx-attach-note");
+		at.appendChild(lblAttach);
+		g.appendChild(field("Attachment", false, at, 2));
 
 		// row 2: loaded from the PO
 		g.appendChild(field("Supplier", false, readonly(lblSupplier), 2));
@@ -685,13 +690,7 @@ window.__xxComboOff=function(){
 		g.appendChild(field("Delivery Challan No", false, txtDelNo, 1));
 		g.appendChild(field("Delivery Challan Date", false, dtDel, 1));
 		g.appendChild(field("Tolerance Rule", false, cbTolerance, 2));
-		Div at = new Div();
-		at.appendChild(btnAttach);
-		lblAttach.setSclass("xx-attach-note");
-		at.appendChild(lblAttach);
-		g.appendChild(field("Attachment", false, at, 2));
-		// row 5
-		g.appendChild(field("Description (Note)", false, txtDesc, 6));
+		g.appendChild(field("Description (Note)", false, txtDesc, 2));
 		updateAttachLabel();
 		return g;
 	}
@@ -753,7 +752,7 @@ window.__xxComboOff=function(){
 
 	private Div field(String text, boolean required, Component c, int span) {
 		Div d = new Div();
-		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : span == 6 ? " xx-span6" : ""));
+		d.setSclass("xx-field" + (span == 2 ? " xx-span2" : span == 3 ? " xx-span3" : span == 4 ? " xx-span4" : span == 6 ? " xx-span6" : ""));
 		Label l = new Label(text);
 		l.setSclass("form-label" + (required ? " xx-req-mark" : ""));
 		d.appendChild(l);
