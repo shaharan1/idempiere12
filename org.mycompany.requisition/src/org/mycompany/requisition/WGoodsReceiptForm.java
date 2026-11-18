@@ -707,7 +707,7 @@ window.__xxComboOff=function(){
 		lineList.setEmptyMessage("Select a purchase order to see its lines.");
 		Listhead lh = new Listhead();
 		lh.setSizable(true);
-		lh.appendChild(header("#", "20px"));
+		lh.appendChild(header("SL No", "20px"));
 		lh.appendChild(header("PO No.", "80px"));
 		lh.appendChild(header("Item Code", "100px"));
 		lh.appendChild(header("Item Name", null));
