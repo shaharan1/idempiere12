@@ -792,13 +792,13 @@ window.__xxComboOff=function(){
 		lh.appendChild(header("SL No", "20px"));
 		lh.appendChild(header("PO No.", "80px"));
 		lh.appendChild(header("Item Code", "100px"));
-		lh.appendChild(header("Item Name", null));
+		lh.appendChild(header("Item Name","150px"));
 		lh.appendChild(header("UOM", "40px"));
 		lh.appendChild(header("Ordered", "60px"));
 		lh.appendChild(header("Received", "60px"));
 		lh.appendChild(header("Pending", "60px"));
 		lh.appendChild(header("Receive Qty", "80px"));
-		lh.appendChild(header("Balance", "40px"));
+		lh.appendChild(header("Balance", "50px"));
 		lh.appendChild(header("Status", "100px"));
 		lh.appendChild(header("Damaged Qty", "80px"));
 		lh.appendChild(header("Damage Reason", "150px"));
