@@ -206,7 +206,9 @@ public class WGoodsReceiptForm extends ADForm {
 			throw new AdempiereException(e);
 		}
 	}
-
+	
+	
+	
 	private static final String CSS = """
 .xx-req { background:#f1f4f9; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
 .xx-req .xx-card { background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); margin:6px 10px 0; overflow:visible; }
@@ -267,7 +269,11 @@ public class WGoodsReceiptForm extends ADForm {
 .xx-req .xx-top-title, .xx-req .xx-top-title.z-label { font-size:.95rem; font-weight:700; color:#0a2e6b; }
 /* line tables: a visible box round every line and cell */
 .xx-req .z-listbox, .xx-reqwin .z-listbox { min-height:200px; border:1px solid #adb5bd !important; border-radius:.375rem; }
-.xx-req .z-listbox .z-listheader, .xx-reqwin .z-listbox .z-listheader { border-right:1px solid rgba(255,255,255,.45) !important; }
+/* light table header (same colours as the PDF): no dark gradient */
+.xx-req .z-listbox .z-listhead, .xx-reqwin .z-listbox .z-listhead { background:#E6EDF5 !important; background-image:none !important; }
+.xx-req .z-listbox .z-listheader, .xx-reqwin .z-listbox .z-listheader { background:#E6EDF5 !important; background-image:none !important; border-right:1px solid #C5D2E2 !important; border-bottom:1px solid #C5D2E2 !important; }
+.xx-req .z-listbox .z-listheader:hover, .xx-reqwin .z-listbox .z-listheader:hover { background:#DCE6F2 !important; }
+.xx-req .z-listbox .z-listheader-content, .xx-reqwin .z-listbox .z-listheader-content { color:#27415F !important; font-weight:700; font-size:.78rem; white-space:normal !important; line-height:1.15; }
 .xx-req .z-listbox .z-listcell, .xx-reqwin .z-listbox .z-listcell { border-right:1px solid #ced4da !important; border-bottom:1px solid #ced4da !important; }
 .xx-req .z-listbox .z-listitem:nth-child(even) > .z-listcell, .xx-reqwin .z-listbox .z-listitem:nth-child(even) > .z-listcell { background:#f8fafc; }
 .xx-req .z-listbox .z-listitem:hover > .z-listcell, .xx-reqwin .z-listbox .z-listitem:hover > .z-listcell { background:#e7f1ff; }
@@ -280,6 +286,82 @@ public class WGoodsReceiptForm extends ADForm {
 /* Description: same size as the other fields; drag the corner to make it bigger (and smaller again) */
 .xx-req textarea.xx-desc { height:26px; min-height:26px; max-height:320px; resize:vertical; overflow:auto; line-height:1.4; }
 """;
+	
+	
+
+//	private static final String CSS = """
+//.xx-req { background:#f1f4f9; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+//.xx-req .xx-card { background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); margin:6px 10px 0; overflow:visible; }
+//.xx-req .xx-card-header { display:flex; align-items:center; padding:.25rem .75rem; background:#f8f9fa; border-bottom:1px solid #dee2e6; border-radius:.5rem .5rem 0 0; font-weight:600; font-size:.82rem; color:#212529; }
+//.xx-req .xx-card-header::before { content:""; width:4px; height:1.1em; background:#0d6efd; border-radius:2px; margin-right:.6rem; }
+//.xx-req .xx-card-body { padding:.5rem .75rem .6rem; }
+//.xx-req .xx-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.4rem .6rem; text-align:left; }
+//.xx-req .xx-span2 { grid-column:span 2; }
+//.xx-req .xx-span3 { grid-column:span 3; }
+//.xx-req .xx-span4 { grid-column:span 4; }
+//.xx-req .xx-span6 { grid-column:1 / -1; }
+//@media (max-width:1500px) { .xx-req .xx-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+//@media (max-width:1000px) { .xx-req .xx-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 2; } }
+//@media (max-width:600px)  { .xx-req .xx-grid { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span2, .xx-req .xx-span3, .xx-req .xx-span4 { grid-column:span 1; } }
+//.xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(8,minmax(0,1fr)); }
+//.xx-req .xx-span5 { grid-column:span 5; }
+//@media (max-width:900px) { .xx-req .xx-grid.xx-grid8 { grid-template-columns:repeat(4,minmax(0,1fr)); } .xx-req .xx-span5 { grid-column:1 / -1; } }
+//@media (max-width:600px)  { .xx-req .xx-grid.xx-grid8 { grid-template-columns:minmax(0,1fr); } .xx-req .xx-span5 { grid-column:span 1; } }
+//.xx-req .xx-field { min-width:0; }
+//.xx-req .form-label { display:block; margin-bottom:.1rem; text-align:left; font-size:.72rem; line-height:1.2; font-weight:600; color:#495057; }
+//.xx-req .form-label.xx-req-mark { color:#dc3545; }
+//.xx-req .form-control, .xx-req .z-textbox, .xx-req .z-decimalbox, .xx-req .z-datebox-input, .xx-req .z-combobox-input {
+//  display:block; width:100%; min-height:26px; padding:.15rem .5rem; font-size:.8rem; line-height:1.4; color:#212529;
+//  background:#fff; border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:none; }
+//.xx-req .z-datebox, .xx-req .z-combobox { width:100%; display:inline-flex; align-items:stretch; }
+//.xx-req .z-datebox-input, .xx-req .z-combobox-input { flex:1 1 auto; min-width:0; border-top-right-radius:0 !important; border-bottom-right-radius:0 !important; }
+//.xx-req .z-datebox-button, .xx-req .z-combobox-button { display:flex; align-items:center; justify-content:center; width:26px; border:1px solid #ced4da !important; border-left:0 !important; border-radius:0 .375rem .375rem 0 !important; background:#e9ecef; color:#495057; cursor:pointer; }
+//.xx-req .z-datebox-button:hover, .xx-req .z-combobox-button:hover { background:#dde1e5; }
+//.xx-req .z-textbox:focus, .xx-req .z-decimalbox:focus, .xx-req .z-datebox-input:focus, .xx-req .z-combobox-input:focus {
+//  border-color:#86b7fe !important; box-shadow:0 0 0 .25rem rgba(13,110,253,.25) !important; outline:0; }
+//.xx-req .z-textbox[disabled], .xx-req .z-decimalbox[disabled], .xx-req .z-datebox-input[disabled], .xx-req .z-combobox-input[disabled] { background:#e9ecef !important; color:#6c757d; }
+//.xx-req .xx-readonly { background:#e9ecef; display:flex; align-items:center; min-height:26px; }
+//.xx-req .xx-readonly .z-label { font-size:.8rem; color:#495057; }
+//.xx-req .xx-attach-note { display:block; margin-top:.25rem; font-size:.75rem; color:#6c757d; }
+//.z-combobox-popup, .z-combobox-content { border:1px solid #ced4da !important; border-radius:.375rem !important; box-shadow:0 .5rem 1rem rgba(0,0,0,.15) !important; }
+//.z-comboitem { padding:.25rem .6rem !important; font-size:.8rem; }
+//.z-comboitem-over, .z-comboitem-over-seld { background:#e7f1ff !important; }
+//.z-comboitem-selected { background:#cfe2ff !important; }
+//.xx-form.xx-req button.z-button.btn, .xx-reqwin button.z-button.btn { display:inline-flex; align-items:center; justify-content:center; padding:.15rem .7rem; min-height:26px; font-size:.8rem; font-weight:600; line-height:1.5; border-radius:.375rem !important; text-shadow:none !important; transform:none; transition:background-color .15s,border-color .15s,box-shadow .15s; }
+//.xx-form.xx-req button.z-button.btn:hover, .xx-reqwin button.z-button.btn:hover { filter:none; transform:none; }
+//.xx-form.xx-req button.z-button.btn:focus, .xx-reqwin button.z-button.btn:focus { box-shadow:0 0 0 .25rem rgba(13,110,253,.35); outline:0; }
+//.xx-form.xx-req button.z-button.btn-block { width:100%; }
+//.xx-form.xx-req button.z-button.btn-sm, .xx-reqwin button.z-button.btn-sm { min-height:26px; padding:.1rem .5rem; font-size:.75rem; }
+//.xx-form.xx-req button.z-button.btn-primary, .xx-reqwin button.z-button.btn-primary { background:#0d6efd !important; border:1px solid #0d6efd !important; color:#fff !important; }
+//.xx-form.xx-req button.z-button.btn-primary:hover, .xx-reqwin button.z-button.btn-primary:hover { background:#0b5ed7 !important; border-color:#0a58ca !important; }
+//.xx-form.xx-req button.z-button.btn-success, .xx-reqwin button.z-button.btn-success { background:#198754 !important; border:1px solid #198754 !important; color:#fff !important; }
+//.xx-form.xx-req button.z-button.btn-success:hover, .xx-reqwin button.z-button.btn-success:hover { background:#157347 !important; border-color:#146c43 !important; }
+//.xx-form.xx-req button.z-button.btn-danger, .xx-reqwin button.z-button.btn-danger { background:#dc3545 !important; border:1px solid #dc3545 !important; color:#fff !important; }
+//.xx-form.xx-req button.z-button.btn-danger:hover, .xx-reqwin button.z-button.btn-danger:hover { background:#bb2d3b !important; border-color:#b02a37 !important; }
+//.xx-form.xx-req button.z-button.btn-outline-primary, .xx-reqwin button.z-button.btn-outline-primary { background:#fff !important; border:1px solid #0d6efd !important; color:#0d6efd !important; }
+//.xx-form.xx-req button.z-button.btn-outline-primary:hover, .xx-reqwin button.z-button.btn-outline-primary:hover { background:#0d6efd !important; color:#fff !important; }
+//.xx-form.xx-req button.z-button.btn-outline-danger, .xx-reqwin button.z-button.btn-outline-danger { background:#fff !important; border:1px solid #dc3545 !important; color:#dc3545 !important; box-shadow:none !important; }
+//.xx-form.xx-req button.z-button.btn-outline-danger:hover, .xx-reqwin button.z-button.btn-outline-danger:hover { background:#dc3545 !important; color:#fff !important; }
+//.xx-form.xx-req button.z-button.btn[disabled], .xx-reqwin button.z-button.btn[disabled] { opacity:.55; cursor:not-allowed; }
+//.xx-req .xx-main { background:#f1f4f9; }
+///* top bar: stays in view (Reload button) while the page scrolls */
+//.xx-req .xx-topbar { position:sticky; top:0; z-index:25; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .85rem; background:#f1f4f9; border-bottom:1px solid #dee2e6; box-shadow:0 2px 4px rgba(16,24,40,.06); }
+//.xx-req .xx-top-title, .xx-req .xx-top-title.z-label { font-size:.95rem; font-weight:700; color:#0a2e6b; }
+///* line tables: a visible box round every line and cell */
+//.xx-req .z-listbox, .xx-reqwin .z-listbox { min-height:200px; border:1px solid #adb5bd !important; border-radius:.375rem; }
+//.xx-req .z-listbox .z-listheader, .xx-reqwin .z-listbox .z-listheader { border-right:1px solid rgba(255,255,255,.45) !important; }
+//.xx-req .z-listbox .z-listcell, .xx-reqwin .z-listbox .z-listcell { border-right:1px solid #ced4da !important; border-bottom:1px solid #ced4da !important; }
+//.xx-req .z-listbox .z-listitem:nth-child(even) > .z-listcell, .xx-reqwin .z-listbox .z-listitem:nth-child(even) > .z-listcell { background:#f8fafc; }
+//.xx-req .z-listbox .z-listitem:hover > .z-listcell, .xx-reqwin .z-listbox .z-listitem:hover > .z-listcell { background:#e7f1ff; }
+//.xx-req .z-listbox .z-listcell .z-decimalbox { min-height:24px; text-align:right; }
+//.xx-req .z-listbox .z-listcell .z-textbox { min-height:24px; }
+///* the Receipt Line grid grows with its lines (no fixed height), so the scroll bar sits right under the last line */
+//.xx-req .z-listbox.xx-lines { min-height:0; }
+//.xx-req .xx-footer { position:sticky; bottom:0; z-index:5; display:flex; justify-content:space-between; align-items:center; gap:.5rem; padding:.4rem .75rem; margin:6px 10px; background:#fff; border:1px solid #dee2e6; border-radius:.5rem; box-shadow:0 .125rem .25rem rgba(0,0,0,.075); }
+//.xx-req .xx-foot-grp { display:flex; align-items:center; gap:.5rem; }
+///* Description: same size as the other fields; drag the corner to make it bigger (and smaller again) */
+//.xx-req textarea.xx-desc { height:26px; min-height:26px; max-height:320px; resize:vertical; overflow:auto; line-height:1.4; }
+//""";
 
 	private static final String DATE_JS = "(function(){if(window.__xxDateV==='2')return;window.__xxDateV='2';"
 			+ "function openIt(inp){var w=null;try{w=zk.Widget.$(inp);}catch(x){}if(!w)return;"
