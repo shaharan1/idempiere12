@@ -86,7 +86,7 @@ public class WGoodsReceiptForm extends ADForm {
 	private static final CLogger log = CLogger.getCLogger(WGoodsReceiptForm.class);
 
 	private static final int MAX_PO = 300;
-	private static final String CSS_VERSION = "g6";
+	private static final String CSS_VERSION = "11";
 	/** tolerance rates (custom table); its columns are found by name, see resolveColumns */
 	private static final String TOL_TABLE = "T_ToleranceRateMR";
 	private static final BigDecimal HUNDRED = new BigDecimal(100);
