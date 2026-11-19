@@ -116,8 +116,8 @@ public class WGoodsReceiptForm extends ADForm {
 	private final List<Media> attachments = new ArrayList<Media>();
 
 	// PO search
-	private final Button btnSearch = new Button("Search");
-	private final Button btnRefresh = new Button("Refresh");
+//	private final Button btnSearch = new Button("Search");
+//	private final Button btnRefresh = new Button("Refresh");
 	private final Label lblPoCount = new Label();
 	private final List<Po> pos = new ArrayList<Po>();
 	private int selectedPoId = 0;
@@ -748,11 +748,11 @@ window.__xxComboOff=function(){
 		Div bar = new Div();
 		bar.setStyle("display:flex;align-items:center;gap:8px;flex-wrap:wrap;");
 		ZKUpdateUtil.setWidth(cbPo, "300px");
-		btnSearch.setSclass("btn btn-primary");
-		btnRefresh.setSclass("btn btn-outline-primary");
+//		btnSearch.setSclass("btn btn-primary");
+//		btnRefresh.setSclass("btn btn-outline-primary");
 		bar.appendChild(cbPo);
-		bar.appendChild(btnSearch);
-		bar.appendChild(btnRefresh);
+//		bar.appendChild(btnSearch);
+//		bar.appendChild(btnRefresh);
 		bar.appendChild(lblPoCount);
 		Div at = new Div();
 		at.appendChild(btnAttach);
@@ -1010,11 +1010,11 @@ window.__xxComboOff=function(){
 				cbPo.setOpen(true);
 			}
 		});
-		btnSearch.addEventListener(Events.ON_CLICK, ev -> {
-			fillPoCombo(cbPo.getSelectedItem() != null ? "" : cbPo.getValue());
-			cbPo.setOpen(true);
-		});
-		btnRefresh.addEventListener(Events.ON_CLICK, ev -> loadPOs());
+//		btnSearch.addEventListener(Events.ON_CLICK, ev -> {
+//			fillPoCombo(cbPo.getSelectedItem() != null ? "" : cbPo.getValue());
+//			cbPo.setOpen(true);
+//		});
+//		btnRefresh.addEventListener(Events.ON_CLICK, ev -> loadPOs());
 
 		btnAttach.addEventListener(Events.ON_CLICK, ev -> openAttachments());
 		btnOk.addEventListener(Events.ON_CLICK, ev -> save());
