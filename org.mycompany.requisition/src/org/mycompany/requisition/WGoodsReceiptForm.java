@@ -1092,7 +1092,7 @@ window.__xxComboOff=function(){
 			po.pending = pending;
 			pos.add(po);
 		}
-		lblPoCount.setValue(pos.size() + " completed PO(s) waiting for receipt");
+//		lblPoCount.setValue(pos.size() + " completed PO(s) waiting for receipt");
 		// the PO that was picked may be fully received by now
 		if (selectedPoId > 0 && poById(selectedPoId) == null) {
 			selectedPoId = 0;
