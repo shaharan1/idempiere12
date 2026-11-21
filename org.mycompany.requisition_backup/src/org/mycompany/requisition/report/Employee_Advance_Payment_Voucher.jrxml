@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd"
+  name="Employee_Advance_Payment_Voucher" pageWidth="595" pageHeight="842"
+  columnWidth="555" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20">
+
+  <!-- ===== PARAMETERS ===== -->
+  <parameter name="RECORD_ID" class="java.lang.Integer"/>
+  <parameter name="LOGO_LEFT" class="java.lang.String"/>
+  <parameter name="LOGO_RIGHT" class="java.lang.String"/>
+
+  <!-- ===== QUERY (table/column name apnar DB onujayi change korben) ===== -->
+  <queryString>
+    <![CDATA[
+    SELECT i.documentno                AS doc_no,
+           i.dateinvoiced              AS doc_date,
+           o.name                      AS org_name,
+           e.emp_code                  AS emp_code,
+           e.emp_name                  AS emp_name,
+           e.designation               AS designation,
+           e.department                AS department,
+           e.section                   AS section,
+           e.date_of_join              AS join_date,
+           (SELECT name FROM ad_ref_list WHERE ad_reference_id=195 AND value=i.paymentrule) AS payment_mode,
+           (SELECT name FROM ad_ref_list WHERE ad_reference_id=131 AND value=i.docstatus)   AS payment_status,
+           i.description               AS description,
+           xx_amount_in_words(i.grandtotal) AS amount_words,
+           i.grandtotal                AS total_amount,
+           (SELECT name FROM ad_user WHERE ad_user_id=i.createdby)      AS prepared_by,
+           to_char(i.created,'DD/MM/YYYY HH12.MI AM')                   AS prepared_at,
+           NULL::text                  AS checked_by,
+           NULL::text                  AS checked_at,
+           CASE WHEN i.docstatus='CO' THEN (SELECT name FROM ad_user WHERE ad_user_id=i.updatedby) END AS approved_by,
+           CASE WHEN i.docstatus='CO' THEN to_char(i.updated,'DD/MM/YYYY HH12.MI AM') END              AS approved_at,
+           l.line::int                 AS line_no,
+           ev.value                    AS charge_code,
+           c.name                      AS charge_name,
+           s.name                      AS segment,
+           l.description               AS remark,
+           l.linenetamt                AS line_amount
+    FROM   c_invoice i
+    JOIN   c_invoiceline l   ON l.c_invoice_id = i.c_invoice_id
+    JOIN   ad_org o          ON o.ad_org_id = i.ad_org_id
+    JOIN   c_charge c        ON c.c_charge_id = l.c_charge_id
+    LEFT   JOIN c_activity s ON s.c_activity_id = l.c_activity_id
+    LEFT   JOIN xx_employee_info_v e ON e.c_bpartner_id = i.c_bpartner_id
+    LEFT   JOIN c_charge_acct ca ON ca.c_charge_id = c.c_charge_id
+           AND ca.c_acctschema_id = (SELECT MIN(c_acctschema_id) FROM c_acctschema WHERE ad_client_id = i.ad_client_id)
+    LEFT   JOIN c_validcombination vc ON vc.c_validcombination_id = ca.ch_expense_acct
+    LEFT   JOIN c_elementvalue ev ON ev.c_elementvalue_id = vc.account_id
+    WHERE  i.c_invoice_id = $P{RECORD_ID}
+    ORDER  BY l.line
+    ]]>
+  </queryString>
+
+  <field name="doc_no" class="java.lang.String"/>
+  <field name="doc_date" class="java.util.Date"/>
+  <field name="org_name" class="java.lang.String"/>
+  <field name="emp_code" class="java.lang.String"/>
+  <field name="emp_name" class="java.lang.String"/>
+  <field name="designation" class="java.lang.String"/>
+  <field name="department" class="java.lang.String"/>
+  <field name="section" class="java.lang.String"/>
+  <field name="join_date" class="java.util.Date"/>
+  <field name="payment_mode" class="java.lang.String"/>
+  <field name="payment_status" class="java.lang.String"/>
+  <field name="description" class="java.lang.String"/>
+  <field name="amount_words" class="java.lang.String"/>
+  <field name="total_amount" class="java.math.BigDecimal"/>
+  <field name="prepared_by" class="java.lang.String"/>
+  <field name="prepared_at" class="java.lang.String"/>
+  <field name="checked_by" class="java.lang.String"/>
+  <field name="checked_at" class="java.lang.String"/>
+  <field name="approved_by" class="java.lang.String"/>
+  <field name="approved_at" class="java.lang.String"/>
+  <field name="line_no" class="java.lang.Integer"/>
+  <field name="charge_code" class="java.lang.String"/>
+  <field name="charge_name" class="java.lang.String"/>
+  <field name="segment" class="java.lang.String"/>
+  <field name="remark" class="java.lang.String"/>
+  <field name="line_amount" class="java.math.BigDecimal"/>
+
+  <!-- ===== TITLE: logo + heading + employee info ===== -->
+  <title>
+    <band height="205">
+      <image onErrorType="Blank">
+        <reportElement x="0" y="0" width="200" height="45"/>
+        <imageExpression><![CDATA[$P{LOGO_LEFT}]]></imageExpression>
+      </image>
+      <image onErrorType="Blank">
+        <reportElement x="355" y="0" width="200" height="45"/>
+        <imageExpression><![CDATA[$P{LOGO_RIGHT}]]></imageExpression>
+      </image>
+
+      <rectangle>
+        <reportElement mode="Opaque" x="20" y="58" width="515" height="30" backcolor="#DDDDDD"/>
+        <graphicElement><pen lineWidth="0"/></graphicElement>
+      </rectangle>
+      <staticText>
+        <reportElement x="20" y="58" width="515" height="30"/>
+        <textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="14" isBold="true"/></textElement>
+        <text><![CDATA[EMPLOYEE ADVANCE PAYMENT VOUCHER]]></text>
+      </staticText>
+
+      <!-- left column -->
+      <staticText><reportElement x="0" y="105" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Date]]></text></staticText>
+      <textField pattern="dd/MM/yyyy"><reportElement x="90" y="105" width="190" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + new java.text.SimpleDateFormat("dd/MM/yyyy").format($F{doc_date})]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="0" y="123" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Voucher No]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="90" y="123" width="190" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{doc_no}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="0" y="141" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Employee ID]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="90" y="141" width="190" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{emp_code}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="0" y="159" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Name]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="90" y="159" width="190" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{emp_name}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="0" y="177" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Designation]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="90" y="177" width="190" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{designation}]]></textFieldExpression></textField>
+
+      <!-- right column -->
+      <staticText><reportElement x="290" y="105" width="95" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Department]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="385" y="105" width="170" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{department}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="290" y="123" width="95" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Section]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="385" y="123" width="170" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{section}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="290" y="141" width="95" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Date of Join]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="385" y="141" width="170" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + ($F{join_date} == null ? "" : new java.text.SimpleDateFormat("dd/MM/yyyy").format($F{join_date}))]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="290" y="159" width="95" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Payment Mode]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="385" y="159" width="170" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{payment_mode}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="290" y="177" width="95" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Payment Status]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="385" y="177" width="170" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{payment_status}]]></textFieldExpression></textField>
+    </band>
+  </title>
+
+  <!-- ===== COLUMN HEADER ===== -->
+  <columnHeader>
+    <band height="22">
+      <staticText><reportElement mode="Opaque" x="0" y="0" width="35" height="22" backcolor="#F0F0F0"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[SL. No]]></text></staticText>
+      <staticText><reportElement mode="Opaque" x="35" y="0" width="60" height="22" backcolor="#F0F0F0"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Code]]></text></staticText>
+      <staticText><reportElement mode="Opaque" x="95" y="0" width="170" height="22" backcolor="#F0F0F0"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Charge]]></text></staticText>
+      <staticText><reportElement mode="Opaque" x="265" y="0" width="90" height="22" backcolor="#F0F0F0"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Segment]]></text></staticText>
+      <staticText><reportElement mode="Opaque" x="355" y="0" width="100" height="22" backcolor="#F0F0F0"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Remark]]></text></staticText>
+      <staticText><reportElement mode="Opaque" x="455" y="0" width="100" height="22" backcolor="#F0F0F0"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Amount (BDT)]]></text></staticText>
+    </band>
+  </columnHeader>
+
+  <!-- ===== DETAIL ===== -->
+  <detail>
+    <band height="20">
+      <textField><reportElement stretchType="RelativeToBandHeight" x="0" y="0" width="35" height="20"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[$F{line_no}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true"><reportElement stretchType="RelativeToBandHeight" x="35" y="0" width="60" height="20"/><box><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[$F{charge_code}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true" isStretchWithOverflow="true"><reportElement stretchType="RelativeToBandHeight" x="95" y="0" width="170" height="20"/><box leftPadding="3"><pen lineWidth="0.5"/></box><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[$F{charge_name}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true" isStretchWithOverflow="true"><reportElement stretchType="RelativeToBandHeight" x="265" y="0" width="90" height="20"/><box leftPadding="3"><pen lineWidth="0.5"/></box><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[$F{segment}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true" isStretchWithOverflow="true"><reportElement stretchType="RelativeToBandHeight" x="355" y="0" width="100" height="20"/><box leftPadding="3"><pen lineWidth="0.5"/></box><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[$F{remark}]]></textFieldExpression></textField>
+      <textField pattern="#,##0.00"><reportElement stretchType="RelativeToBandHeight" x="455" y="0" width="100" height="20"/><box rightPadding="3"><pen lineWidth="0.5"/></box><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[$F{line_amount}]]></textFieldExpression></textField>
+    </band>
+  </detail>
+
+  <!-- ===== SUMMARY: total, amount in words, description ===== -->
+  <summary>
+    <band height="80">
+      <staticText><reportElement x="0" y="0" width="455" height="20"/><box rightPadding="6"><pen lineWidth="0.5"/></box><textElement textAlignment="Center" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Total]]></text></staticText>
+      <textField pattern="#,##0.00"><reportElement x="455" y="0" width="100" height="20"/><box rightPadding="3"><pen lineWidth="0.5"/></box><textElement textAlignment="Right" verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><textFieldExpression><![CDATA[$F{total_amount}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="0" y="32" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Amount In Words]]></text></staticText>
+      <textField isBlankWhenNull="true"><reportElement x="90" y="32" width="465" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + $F{amount_words}]]></textFieldExpression></textField>
+
+      <staticText><reportElement x="0" y="54" width="90" height="18"/><textElement verticalAlignment="Middle"><font fontName="Arial" size="9" isBold="true"/></textElement><text><![CDATA[Description]]></text></staticText>
+      <textField isBlankWhenNull="true" isStretchWithOverflow="true"><reportElement x="90" y="54" width="465" height="18"/><textElement verticalAlignment="Top"><font fontName="Arial" size="9"/></textElement><textFieldExpression><![CDATA[": " + ($F{description} == null ? "" : $F{description})]]></textFieldExpression></textField>
+    </band>
+  </summary>
+
+  <!-- ===== PAGE FOOTER: signatures + address ===== -->
+  <pageFooter>
+    <band height="135">
+      <!-- Prepared By -->
+      <textField isBlankWhenNull="true"><reportElement x="0" y="0" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><textFieldExpression><![CDATA[$F{prepared_by}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true"><reportElement x="0" y="14" width="135" height="14"/><box><bottomPen lineWidth="0.5"/></box><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><textFieldExpression><![CDATA[$F{prepared_at}]]></textFieldExpression></textField>
+      <staticText><reportElement x="0" y="29" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><text><![CDATA[Prepared By]]></text></staticText>
+      <!-- Checked By -->
+      <textField isBlankWhenNull="true"><reportElement x="140" y="0" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><textFieldExpression><![CDATA[$F{checked_by}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true"><reportElement x="140" y="14" width="135" height="14"/><box><bottomPen lineWidth="0.5"/></box><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><textFieldExpression><![CDATA[$F{checked_at}]]></textFieldExpression></textField>
+      <staticText><reportElement x="140" y="29" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><text><![CDATA[Checked By]]></text></staticText>
+      <!-- Approved By -->
+      <textField isBlankWhenNull="true"><reportElement x="280" y="0" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><textFieldExpression><![CDATA[$F{approved_by}]]></textFieldExpression></textField>
+      <textField isBlankWhenNull="true"><reportElement x="280" y="14" width="135" height="14"/><box><bottomPen lineWidth="0.5"/></box><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><textFieldExpression><![CDATA[$F{approved_at}]]></textFieldExpression></textField>
+      <staticText><reportElement x="280" y="29" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><text><![CDATA[Approved By]]></text></staticText>
+      <!-- Received By -->
+      <staticText><reportElement x="420" y="14" width="135" height="14"/><box><bottomPen lineWidth="0.5"/></box><text><![CDATA[]]></text></staticText>
+      <staticText><reportElement x="420" y="29" width="135" height="14"/><textElement textAlignment="Center"><font fontName="Arial" size="8"/></textElement><text><![CDATA[Received By]]></text></staticText>
+
+      <!-- address -->
+      <staticText><reportElement x="0" y="70" width="170" height="60"/><textElement><font fontName="Arial" size="6"/></textElement><text><![CDATA[Primitek Industries Limited Head Office
+Primitek Tower, House: 43/B, Road: 24 Block: CWS(B), Gulshan 1, Dhaka-1212]]></text></staticText>
+      <staticText><reportElement x="190" y="70" width="170" height="60"/><textElement><font fontName="Arial" size="6"/></textElement><text><![CDATA[Factory:
+4-6, Sector: 11, National Special Economic Zone (NSEZ)
+Mirsharai, Chattagoram, Bangladesh]]></text></staticText>
+      <staticText><reportElement x="385" y="70" width="170" height="60"/><textElement><font fontName="Arial" size="6"/></textElement><text><![CDATA[Phone: +88-0961 230 0800, +88-0961 230 0899
+Email: info@primitek.com.bd
+Web: WWW.primitekgroup.com]]></text></staticText>
+    </band>
+  </pageFooter>
+</jasperReport>
