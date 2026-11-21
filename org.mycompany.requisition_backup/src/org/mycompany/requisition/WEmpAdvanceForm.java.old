@@ -1,0 +1,349 @@
+package org.mycompany.requisition;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+
+import org.adempiere.exceptions.AdempiereException;
+import org.adempiere.webui.component.Button;
+import org.adempiere.webui.component.Datebox;
+import org.zkoss.zul.Listbox;
+import org.zkoss.zul.Textbox;
+import org.zkoss.zul.Datebox;
+import org.zkoss.zul.Combobox;
+import org.zkoss.zul.Comboitem;
+import org.zkoss.zul.Button;
+import org.zkoss.zul.Listitem;
+import org.zkoss.zul.Listhead;
+import org.zkoss.zul.Listheader;
+import org.zkoss.zul.Listcell;
+import org.adempiere.webui.panel.ADForm;
+import org.compiere.util.Env;
+import org.compiere.util.KeyNamePair;
+import org.zkoss.zk.ui.HtmlBasedComponent;
+import org.zkoss.zk.ui.event.Event;
+import org.zkoss.zk.ui.event.EventListener;
+import org.zkoss.zk.ui.event.Events;
+import org.zkoss.zul.Cell;
+import org.zkoss.zul.Column;
+import org.zkoss.zul.Columns;
+import org.zkoss.zul.Decimalbox;
+import org.zkoss.zul.Div;
+import org.zkoss.zul.Grid;
+import org.zkoss.zul.Hlayout;
+import org.zkoss.zul.Label;
+import org.zkoss.zul.ListModelList;
+import org.zkoss.zul.Messagebox;
+import org.zkoss.zul.Row;
+import org.zkoss.zul.Rows;
+import org.zkoss.zul.Vlayout;
+
+@SuppressWarnings("serial")
+public class WEmpAdvanceForm extends ADForm implements EventListener<Event> {
+
+    private final Textbox    fSearch     = new Textbox();
+    private final Button     btnSearch   = new Button("Search");
+    private final Listbox    lstEmployee = new Listbox();
+    private final Label      lblCode     = new Label();
+    private final Label      lblName     = new Label();
+    private final Label      lblDesg     = new Label();
+    private final Label      lblDept     = new Label();
+    private final Label      lblSection  = new Label();
+    private final Datebox    fDate       = new Datebox();
+    private final Listbox    cbCharge    = new Listbox();
+    private final Listbox    cbSegment   = new Listbox();
+    private final Decimalbox fAmount     = new Decimalbox();
+    private final Textbox    fRemark     = new Textbox();
+    private final Button     btnAddLine  = new Button("Add Line");
+    private final Grid       lineGrid    = new Grid();
+    private final Rows       lineRows    = new Rows();
+    private final Label      lblTotal    = new Label("0.00");
+    private final Button     btnSave     = new Button("Save");
+    private final Button     btnClear    = new Button("Clear");
+
+    private int selectedBPartnerId = 0;
+    private final List<AdvanceLine> advanceLines = new ArrayList<>();
+
+    @Override
+    protected void initForm() {
+        Properties ctx = Env.getCtx();
+        try {
+            EmpAdvanceService.ensureDefaultCharge(ctx, "Advance to Employee");
+        } catch (Exception ex) {
+            warn(ex.getMessage());
+        }
+        buildUI();
+        loadComboData(ctx);
+        fDate.setValue(new java.util.Date());
+    }
+
+    private void buildUI() {
+        Vlayout root = new Vlayout();
+        root.setHflex("1");
+        root.setSpacing("8px");
+        root.setStyle("padding:10px");
+        root.appendChild(buildSearchPanel());
+        root.appendChild(buildEmployeeInfoPanel());
+        root.appendChild(buildLineEntryPanel());
+        root.appendChild(buildLineGrid());
+        root.appendChild(buildFooter());
+        appendChild(root);
+    }
+
+    private Div buildSearchPanel() {
+        Div p = section("Employee Search");
+        fSearch.setWidth("260px");
+        fSearch.addEventListener(Events.ON_OK, this);
+        btnSearch.addEventListener(Events.ON_CLICK, this);
+        Hlayout bar = new Hlayout();
+        bar.setSpacing("4px");
+        bar.appendChild(fSearch);
+        bar.appendChild(btnSearch);
+        p.appendChild(bar);
+        lstEmployee.setWidth("520px");
+        lstEmployee.setHeight("120px");
+        lstEmployee.setCheckmark(false);
+        lstEmployee.addEventListener(Events.ON_SELECT, this);
+        p.appendChild(lstEmployee);
+        return p;
+    }
+
+    private Div buildEmployeeInfoPanel() {
+        Div p = section("Employee Details");
+        Grid g = new Grid();
+        Columns cols = new Columns();
+        for (String w : new String[]{"140px","220px","140px","220px"})
+            cols.appendChild(col(w, null));
+        g.appendChild(cols);
+        Rows rows = new Rows();
+        rows.appendChild(infoRow("Emp Code",    lblCode,    "Name",         lblName));
+        rows.appendChild(infoRow("Designation", lblDesg,    "Department",   lblDept));
+        rows.appendChild(infoRow("Section",     lblSection, "Invoice Date", fDate));
+        g.appendChild(rows);
+        p.appendChild(g);
+        return p;
+    }
+
+    private Div buildLineEntryPanel() {
+        Div p = section("Add Advance Line");
+        Grid g = new Grid();
+        Columns cols = new Columns();
+        for (String w : new String[]{"120px","220px","120px","220px"})
+            cols.appendChild(col(w, null));
+        g.appendChild(cols);
+        fAmount.setWidth("160px");
+        fRemark.setWidth("220px");
+        Rows rows = new Rows();
+        rows.appendChild(infoRow("Charge", cbCharge,  "Segment", cbSegment));
+        rows.appendChild(infoRow("Amount", fAmount,   "Remark",  fRemark));
+        g.appendChild(rows);
+        p.appendChild(g);
+        btnAddLine.addEventListener(Events.ON_CLICK, this);
+        p.appendChild(btnAddLine);
+        return p;
+    }
+
+    private Grid buildLineGrid() {
+        lineGrid.setWidth("100%");
+        Columns cols = new Columns();
+        for (String h : new String[]{"#","Charge","Segment","Amount","Remark",""})
+            cols.appendChild(col(null, h));
+        lineGrid.appendChild(cols);
+        lineGrid.appendChild(lineRows);
+        return lineGrid;
+    }
+
+    private Div buildFooter() {
+        Div p = new Div();
+        p.setStyle("margin-top:8px");
+        Hlayout hl = new Hlayout();
+        hl.setSpacing("8px");
+        Label lbl = new Label("Total: ");
+        lbl.setStyle("font-weight:bold");
+        lblTotal.setStyle("font-weight:bold; color:#1a5276; margin-right:20px");
+        btnSave.addEventListener(Events.ON_CLICK, this);
+        btnClear.addEventListener(Events.ON_CLICK, this);
+        hl.appendChild(lbl);
+        hl.appendChild(lblTotal);
+        hl.appendChild(btnSave);
+        hl.appendChild(btnClear);
+        p.appendChild(hl);
+        return p;
+    }
+
+    private void loadComboData(Properties ctx) {
+        populate(cbCharge,  EmpAdvanceService.getCharges(ctx));
+        populate(cbSegment, EmpAdvanceService.getSegments(ctx));
+    }
+
+    private static void populate(Listbox lb, List<KeyNamePair> items) {
+        lb.setMold("select");
+        lb.setWidth("220px");
+        ListModelList<KeyNamePair> m = new ListModelList<>(items);
+        lb.setModel(m);
+        lb.setItemRenderer((item, data, idx) -> {
+            item.setLabel(((KeyNamePair) data).getName());
+            item.setValue(data);
+        });
+    }
+
+    private void doEmployeeSearch(Properties ctx) {
+        List<KeyNamePair> results = EmpAdvanceService.searchEmployees(ctx, fSearch.getValue());
+        ListModelList<KeyNamePair> m = new ListModelList<>(results);
+        lstEmployee.setModel(m);
+        lstEmployee.setItemRenderer((item, data, idx) -> {
+            item.setLabel(((KeyNamePair) data).getName());
+            item.setValue(data);
+        });
+    }
+
+    @Override
+    public void onEvent(Event evt) {
+        Properties ctx = Env.getCtx();
+        Object src = evt.getTarget();
+        if (src == fSearch || src == btnSearch) {
+            doEmployeeSearch(ctx);
+        } else if (src == lstEmployee) {
+            KeyNamePair sel = selectedKNP(lstEmployee);
+            if (sel != null) {
+                selectedBPartnerId = sel.getKey();
+                fillEmployeeInfo(selectedBPartnerId);
+            }
+        } else if (src == btnAddLine) {
+            addLine();
+        } else if (src == btnSave) {
+            doSave(ctx);
+        } else if (src == btnClear) {
+            doClear();
+        } else if ("onDeleteLine".equals(evt.getName())) {
+            int idx = (Integer) evt.getData();
+            if (idx >= 0 && idx < advanceLines.size()) {
+                advanceLines.remove(idx);
+                refreshGrid();
+            }
+        }
+    }
+
+    private void fillEmployeeInfo(int bpartnerId) {
+        EmpAdvanceService.EmpInfo e = EmpAdvanceService.getEmployee(bpartnerId);
+        lblCode.setValue(nvl(e.code));
+        lblName.setValue(nvl(e.name));
+        lblDesg.setValue(nvl(e.designation));
+        lblDept.setValue(nvl(e.department));
+        lblSection.setValue(nvl(e.section));
+    }
+
+    private void addLine() {
+        KeyNamePair charge  = selectedKNP(cbCharge);
+        KeyNamePair segment = selectedKNP(cbSegment);
+        BigDecimal  amount  = fAmount.getValue();
+        if (charge == null) { warn("Select a charge"); return; }
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            warn("Enter a positive amount"); return;
+        }
+        AdvanceLine line = new AdvanceLine(
+                charge.getKey(), charge.getName(),
+                segment != null ? segment.getKey()  : 0,
+                segment != null ? segment.getName() : "",
+                amount, nvl(fRemark.getValue()));
+        advanceLines.add(line);
+        fAmount.setValue((BigDecimal) null);
+        fRemark.setValue("");
+        refreshGrid();
+    }
+
+    private void refreshGrid() {
+        lineRows.getChildren().clear();
+        for (int i = 0; i < advanceLines.size(); i++) {
+            AdvanceLine l = advanceLines.get(i);
+            Row row = new Row();
+            row.appendChild(cell(String.valueOf(i + 1)));
+            row.appendChild(cell(l.chargeName));
+            row.appendChild(cell(l.segmentName));
+            row.appendChild(cell(String.format("%,.2f", l.amount)));
+            row.appendChild(cell(nvl(l.remark)));
+            Button del = new Button("X");
+            del.setStyle("color:red; font-weight:bold");
+            final int idx = i;
+            del.addEventListener(Events.ON_CLICK,
+                    e -> onEvent(new Event("onDeleteLine", del, idx)));
+            Cell c = new Cell();
+            c.appendChild(del);
+            row.appendChild(c);
+            lineRows.appendChild(row);
+        }
+        lblTotal.setValue(String.format("%,.2f", EmpAdvanceService.sum(advanceLines)));
+    }
+
+    private void doSave(Properties ctx) {
+        if (selectedBPartnerId <= 0) { warn("Please select an employee first."); return; }
+        if (advanceLines.isEmpty())  { warn("Add at least one advance line."); return; }
+        Timestamp date = fDate.getValue() != null
+                ? new Timestamp(fDate.getValue().getTime())
+                : new Timestamp(System.currentTimeMillis());
+        try {
+            String docNo = EmpAdvanceService.createApInvoice(
+                    ctx, selectedBPartnerId, date, advanceLines);
+            Messagebox.show("AP Invoice created: " + docNo);
+            doClear();
+        } catch (AdempiereException ex) {
+            warn(ex.getMessage());
+        }
+    }
+
+    private void doClear() {
+        selectedBPartnerId = 0;
+        advanceLines.clear();
+        fSearch.setValue("");
+        lstEmployee.getItems().clear();
+        lblCode.setValue(""); lblName.setValue("");
+        lblDesg.setValue(""); lblDept.setValue(""); lblSection.setValue("");
+        fDate.setValue(new java.util.Date());
+        refreshGrid();
+    }
+
+    private static Div section(String title) {
+        Div d = new Div();
+        d.setStyle("border:1px solid #bdc3c7; border-radius:4px; padding:10px; margin-bottom:10px; background:#fafafa");
+        Label lbl = new Label(title);
+        lbl.setStyle("font-weight:bold; display:block; margin-bottom:6px; color:#2c3e50");
+        d.appendChild(lbl);
+        return d;
+    }
+
+    private static Column col(String width, String label) {
+        Column c = new Column(label == null ? "" : label);
+        if (width != null) c.setWidth(width);
+        return c;
+    }
+
+    private static Cell cell(String val) {
+        Cell c = new Cell();
+        c.appendChild(new Label(val == null ? "" : val));
+        return c;
+    }
+
+    private static Row infoRow(String l1, HtmlBasedComponent v1,
+                               String l2, HtmlBasedComponent v2) {
+        Row r = new Row();
+        Label lb1 = new Label(l1); lb1.setStyle("font-weight:bold");
+        Label lb2 = new Label(l2); lb2.setStyle("font-weight:bold");
+        r.appendChild(lb1); r.appendChild(v1);
+        r.appendChild(lb2); r.appendChild(v2);
+        return r;
+    }
+
+    private static KeyNamePair selectedKNP(Listbox lb) {
+        if (lb.getSelectedItem() == null) return null;
+        Object v = lb.getSelectedItem().getValue();
+        return v instanceof KeyNamePair ? (KeyNamePair) v : null;
+    }
+
+    private static String nvl(String s) { return s == null ? "" : s; }
+
+    private void warn(String msg) {
+        try { Messagebox.show(msg); } catch (Exception e) { /* ignore */ }
+    }
+}

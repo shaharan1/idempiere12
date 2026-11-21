@@ -1,0 +1,483 @@
+package org.mycompany.requisition;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.logging.Level;
+
+import org.adempiere.webui.panel.ADForm;
+import org.adempiere.webui.session.SessionManager;
+import org.compiere.util.CLogger;
+import org.compiere.util.Env;
+import org.compiere.util.KeyNamePair;
+import org.zkoss.zk.ui.Component;
+import org.zkoss.zk.ui.event.Event;
+import org.zkoss.zk.ui.event.EventListener;
+import org.zkoss.zk.ui.event.Events;
+import org.zkoss.zk.ui.event.InputEvent;
+import org.zkoss.zk.ui.util.Clients;
+import org.zkoss.zul.Button;
+import org.zkoss.zul.Combobox;
+import org.zkoss.zul.Comboitem;
+import org.zkoss.zul.Datebox;
+import org.zkoss.zul.Decimalbox;
+import org.zkoss.zul.Div;
+import org.zkoss.zul.Label;
+import org.zkoss.zul.Listbox;
+import org.zkoss.zul.Listcell;
+import org.zkoss.zul.Listhead;
+import org.zkoss.zul.Listheader;
+import org.zkoss.zul.Listitem;
+import org.zkoss.zul.Textbox;
+
+/**
+ * Employee Advance Payment form -> creates an AP Invoice (charge lines).
+ * AD_Form.Classname = org.mycompany.requisition.WEmpAdvanceForm
+ */
+public class WEmpAdvanceForm extends ADForm implements EventListener<Event> {
+
+	private static final long serialVersionUID = 2L;
+	private static final CLogger log = CLogger.getCLogger(WEmpAdvanceForm.class);
+	private static final String DEFAULT_CHARGE = "Advance to Employee";
+	private static final DecimalFormat AMT_FMT = new DecimalFormat("#,##0.00");
+
+	// ---- look & feel (inline CSS, no external files needed)
+	private static final String CARD = "background:#fff;border:1px solid #e5e7eb;border-radius:10px;"
+			+ "padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);";
+	private static final String CAP = "font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;"
+			+ "letter-spacing:.4px;margin-bottom:4px;display:block;";
+	private static final String CARD_TITLE = "font-size:14px;font-weight:700;color:#111827;display:block;margin-bottom:12px;";
+	private static final String BTN_PRIMARY = "background:#2563eb;color:#fff;border:0;border-radius:6px;"
+			+ "padding:8px 20px;font-weight:600;cursor:pointer;";
+	private static final String BTN_GHOST = "background:#fff;color:#374151;border:1px solid #d1d5db;"
+			+ "border-radius:6px;padding:8px 20px;font-weight:600;cursor:pointer;";
+
+	// banner
+	private final Label orgLabel = new Label();
+	private final Label deptLabel = new Label();
+
+	// selection
+	private final Datebox dateBox = new Datebox();
+	private final Combobox empCombo = new Combobox();
+
+	// profile
+	private final Label avatarLabel = new Label("?");
+	private final Label nameLabel = new Label("No employee selected");
+	private final Label codeLabel = new Label("Search an employee to load the profile");
+	private final Label desigLabel = new Label("-");
+	private final Label empDeptLabel = new Label("-");
+	private final Label sectionLabel = new Label("-");
+	private final Label joinLabel = new Label("-");
+
+	// line entry
+	private final Listbox segmentList = new Listbox();
+	private final Listbox chargeList = new Listbox();
+	private final Textbox remarkBox = new Textbox();
+	private final Decimalbox amountBox = new Decimalbox();
+	private final Button addBtn = new Button("+ Add");
+
+	// list + footer
+	private final Listbox lineList = new Listbox();
+	private final Label countLabel = new Label("0 line(s)");
+	private final Label totalLabel = new Label("0.00");
+	private final Button okBtn = new Button("Create AP Invoice");
+	private final Button cancelBtn = new Button("Close");
+
+	private int selectedEmpId = 0;
+
+	@Override
+	protected void initForm() {
+		try {
+			buildUI();
+			loadDefaults();
+		} catch (Exception e) {
+			log.log(Level.SEVERE, e.getMessage(), e);
+			notify(e, "error");
+		}
+	}
+
+	// =================================================================== UI
+
+	private void buildUI() {
+		Div root = div("background:#f3f4f6;padding:16px;");
+		appendChild(root);
+
+		// ---------- banner
+		Div banner = div("background:linear-gradient(90deg,#1e3a8a,#2563eb);border-radius:10px;padding:16px 20px;"
+				+ "display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;");
+		Div titles = div("");
+		Label t = new Label("Employee Advance Payment");
+		t.setStyle("font-size:20px;font-weight:700;color:#fff;display:block;");
+		Label st = new Label("Creates an AP Invoice with charge lines");
+		st.setStyle("font-size:12px;color:#dbeafe;display:block;");
+		titles.appendChild(t);
+		titles.appendChild(st);
+		Div pills = div("display:flex;gap:8px;");
+		String pill = "background:rgba(255,255,255,.18);color:#fff;padding:4px 12px;border-radius:999px;font-size:12px;";
+		orgLabel.setStyle(pill);
+		deptLabel.setStyle(pill);
+		pills.appendChild(orgLabel);
+		pills.appendChild(deptLabel);
+		banner.appendChild(titles);
+		banner.appendChild(pills);
+		root.appendChild(banner);
+
+		// ---------- selection + profile
+		Div row = div("display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;");
+		root.appendChild(row);
+
+		Div sel = card("Employee Selection");
+		sel.setStyle(CARD + "flex:1;min-width:300px;");
+		dateBox.setFormat("dd/MM/yyyy");
+		dateBox.setWidth("100%");
+		empCombo.setAutodrop(true);
+		empCombo.setButtonVisible(true);
+		empCombo.setPlaceholder("Type employee ID or name...");
+		empCombo.setWidth("100%");
+		empCombo.addEventListener(Events.ON_CHANGING, this);
+		empCombo.addEventListener(Events.ON_SELECT, this);
+		sel.appendChild(field("Date *", dateBox, "none"));
+		sel.appendChild(spacer(10));
+		sel.appendChild(field("Employee ID / Name *", empCombo, "none"));
+		row.appendChild(sel);
+
+		Div prof = card("Employee Profile");
+		prof.setStyle(CARD + "flex:2;min-width:420px;");
+		Div who = div("display:flex;gap:14px;align-items:center;");
+		Div avatar = div("width:56px;height:56px;border-radius:50%;background:#dbeafe;color:#1d4ed8;font-weight:700;"
+				+ "font-size:20px;display:flex;align-items:center;justify-content:center;flex:none;");
+		avatarLabel.setStyle("color:#1d4ed8;font-weight:700;font-size:20px;");
+		avatar.appendChild(avatarLabel);
+		Div ident = div("");
+		nameLabel.setStyle("font-size:16px;font-weight:700;color:#111827;display:block;");
+		codeLabel.setStyle("font-size:12px;color:#6b7280;display:block;");
+		ident.appendChild(nameLabel);
+		ident.appendChild(codeLabel);
+		who.appendChild(avatar);
+		who.appendChild(ident);
+		prof.appendChild(who);
+		Div tiles = div("display:flex;gap:28px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid #f3f4f6;");
+		tiles.appendChild(tile("Designation", desigLabel));
+		tiles.appendChild(tile("Department", empDeptLabel));
+		tiles.appendChild(tile("Section", sectionLabel));
+		tiles.appendChild(tile("Date of Join", joinLabel));
+		prof.appendChild(tiles);
+		row.appendChild(prof);
+
+		// ---------- lines
+		Div lines = card("Advance Lines");
+		lines.setStyle(CARD + "margin-top:16px;");
+		segmentList.setMold("select");
+		segmentList.setWidth("100%");
+		chargeList.setMold("select");
+		chargeList.setWidth("100%");
+		remarkBox.setPlaceholder("Remark");
+		remarkBox.setWidth("100%");
+		amountBox.setFormat("#,##0.00");
+		amountBox.setPlaceholder("0.00");
+		amountBox.setWidth("100%");
+		amountBox.addEventListener(Events.ON_OK, this); // Enter = Add
+		addBtn.setStyle(BTN_PRIMARY);
+		addBtn.addEventListener(Events.ON_CLICK, this);
+
+		Div entry = div("display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;");
+		entry.appendChild(field("Segment", segmentList, "1.2 1 160px"));
+		entry.appendChild(field("Charge *", chargeList, "1.6 1 200px"));
+		entry.appendChild(field("Remark", remarkBox, "2 1 200px"));
+		entry.appendChild(field("Amount *", amountBox, "1 1 130px"));
+		entry.appendChild(addBtn);
+		lines.appendChild(entry);
+
+		Listhead head = new Listhead();
+		head.appendChild(header("SL", "55px"));
+		head.appendChild(header("Segment", "20%"));
+		head.appendChild(header("Charge", "28%"));
+		head.appendChild(header("Remark", null));
+		head.appendChild(header("Amount", "130px"));
+		head.appendChild(header("", "50px"));
+		lineList.appendChild(head);
+		lineList.setEmptyMessage("No lines added yet - fill the fields above and press Add");
+		lineList.setHeight("220px");
+		lineList.setWidth("100%");
+		lineList.setStyle("margin-top:14px;");
+		lines.appendChild(lineList);
+		root.appendChild(lines);
+
+		// ---------- footer
+		Div foot = div(CARD + "margin-top:16px;display:flex;justify-content:space-between;align-items:center;"
+				+ "flex-wrap:wrap;gap:12px;");
+		countLabel.setStyle("color:#6b7280;font-size:13px;");
+		Div right = div("display:flex;align-items:center;gap:24px;");
+		Div tot = div("text-align:right;");
+		Label tc = new Label("GRAND TOTAL");
+		tc.setStyle(CAP + "margin-bottom:0;");
+		totalLabel.setStyle("font-size:24px;font-weight:700;color:#1e3a8a;display:block;");
+		tot.appendChild(tc);
+		tot.appendChild(totalLabel);
+		okBtn.setStyle(BTN_PRIMARY);
+		cancelBtn.setStyle(BTN_GHOST);
+		okBtn.addEventListener(Events.ON_CLICK, this);
+		cancelBtn.addEventListener(Events.ON_CLICK, this);
+		right.appendChild(tot);
+		right.appendChild(cancelBtn);
+		right.appendChild(okBtn);
+		foot.appendChild(countLabel);
+		foot.appendChild(right);
+		root.appendChild(foot);
+	}
+
+	private Div div(String style) {
+		Div d = new Div();
+		if (style != null && !style.isEmpty())
+			d.setStyle(style);
+		return d;
+	}
+
+	private Div spacer(int px) {
+		return div("height:" + px + "px;");
+	}
+
+	private Div card(String title) {
+		Div c = div(CARD);
+		Label l = new Label(title);
+		l.setStyle(CARD_TITLE);
+		c.appendChild(l);
+		return c;
+	}
+
+	private Div field(String caption, Component input, String flex) {
+		Div d = div("display:flex;flex-direction:column;min-width:120px;" + (flex.equals("none") ? "" : "flex:" + flex + ";"));
+		Label l = new Label(caption);
+		l.setStyle(CAP);
+		d.appendChild(l);
+		d.appendChild(input);
+		return d;
+	}
+
+	private Div tile(String caption, Label value) {
+		Div d = div("min-width:110px;");
+		Label c = new Label(caption);
+		c.setStyle(CAP + "margin-bottom:2px;");
+		value.setStyle("font-size:14px;font-weight:600;color:#111827;display:block;");
+		d.appendChild(c);
+		d.appendChild(value);
+		return d;
+	}
+
+	private Listheader header(String text, String width) {
+		Listheader h = new Listheader(text);
+		if (width != null)
+			h.setWidth(width);
+		return h;
+	}
+
+	// ============================================================== defaults
+
+	private void loadDefaults() {
+		orgLabel.setValue("Org: " + EmpAdvanceService.getOrgName(Env.getCtx()));
+		deptLabel.setValue("Dept: " + EmpAdvanceService.getLoginUserDepartment(Env.getCtx()));
+		dateBox.setValue(new Date());
+
+		try {
+			EmpAdvanceService.ensureDefaultCharge(Env.getCtx(), DEFAULT_CHARGE);
+		} catch (Exception e) {
+			log.log(Level.WARNING, "Default charge not created: " + e.getMessage());
+		}
+		fill(segmentList, EmpAdvanceService.getSegments(Env.getCtx()), true, null);
+		fill(chargeList, EmpAdvanceService.getCharges(Env.getCtx()), false, DEFAULT_CHARGE);
+		reloadEmployees("");
+	}
+
+	private void fill(Listbox lb, List<KeyNamePair> data, boolean blankFirst, String defaultPrefix) {
+		while (lb.getItemCount() > 0)
+			lb.removeItemAt(0);
+		if (blankFirst)
+			lb.appendChild(new Listitem("", Integer.valueOf(0)));
+		Listitem def = null;
+		for (KeyNamePair kp : data) {
+			Listitem li = new Listitem(kp.getName(), Integer.valueOf(kp.getKey()));
+			lb.appendChild(li);
+			if (def == null && defaultPrefix != null && kp.getName().startsWith(defaultPrefix))
+				def = li;
+		}
+		if (def != null)
+			lb.setSelectedItem(def);
+		else if (lb.getItemCount() > 0)
+			lb.setSelectedIndex(0);
+	}
+
+	// ================================================================ events
+
+	@Override
+	public void onEvent(Event e) {
+		Component c = e.getTarget();
+		try {
+			if (c == empCombo && Events.ON_CHANGING.equals(e.getName())) {
+				reloadEmployees(((InputEvent) e).getValue());
+			} else if (c == empCombo && Events.ON_SELECT.equals(e.getName())) {
+				onEmployeeSelected();
+			} else if (c == addBtn || (c == amountBox && Events.ON_OK.equals(e.getName()))) {
+				addLine();
+			} else if (c == okBtn) {
+				save();
+			} else if (c == cancelBtn) {
+				SessionManager.getAppDesktop().closeActiveWindow();
+			}
+		} catch (Exception ex) {
+			log.log(Level.SEVERE, ex.getMessage(), ex);
+			notify(ex, "error");
+		}
+	}
+
+	private void reloadEmployees(String text) {
+		empCombo.getChildren().clear();
+		for (KeyNamePair kp : EmpAdvanceService.searchEmployees(Env.getCtx(), text)) {
+			Comboitem ci = new Comboitem(kp.getName());
+			ci.setValue(Integer.valueOf(kp.getKey()));
+			empCombo.appendChild(ci);
+		}
+	}
+
+	private void onEmployeeSelected() {
+		Comboitem ci = empCombo.getSelectedItem();
+		if (ci == null)
+			return;
+		selectedEmpId = (Integer) ci.getValue();
+		EmpAdvanceService.EmpInfo e = EmpAdvanceService.getEmployee(selectedEmpId);
+		nameLabel.setValue(nz(e.name));
+		codeLabel.setValue("ID: " + nz(e.code));
+		avatarLabel.setValue(initials(e.name));
+		desigLabel.setValue(dash(e.designation));
+		empDeptLabel.setValue(dash(e.department));
+		sectionLabel.setValue(dash(e.section));
+		joinLabel.setValue(e.joinDate == null ? "-" : new SimpleDateFormat("dd/MM/yyyy").format(e.joinDate));
+	}
+
+	private void addLine() {
+		if (selectedEmpId <= 0)
+			throw new IllegalStateException("Please select an Employee first");
+		Listitem chg = chargeList.getSelectedItem();
+		if (chg == null || (Integer) chg.getValue() <= 0)
+			throw new IllegalStateException("Charge is required");
+		BigDecimal amt = amountBox.getValue();
+		if (amt == null || amt.signum() <= 0)
+			throw new IllegalStateException("Amount must be greater than zero");
+
+		Listitem seg = segmentList.getSelectedItem();
+		int segId = seg == null ? 0 : (Integer) seg.getValue();
+		String segName = seg == null ? "" : seg.getLabel();
+
+		AdvanceLine line = new AdvanceLine(segId, segName, (Integer) chg.getValue(), chg.getLabel(),
+				remarkBox.getValue(), amt);
+
+		final Listitem li = new Listitem();
+		li.setValue(line);
+		li.appendChild(new Listcell(String.valueOf(lineList.getItemCount() + 1)));
+		li.appendChild(new Listcell(segName));
+		li.appendChild(new Listcell(line.chargeName));
+		li.appendChild(new Listcell(nz(line.remark)));
+		Listcell ac = new Listcell(AMT_FMT.format(amt));
+		ac.setStyle("text-align:right;font-weight:600;");
+		li.appendChild(ac);
+
+		Button del = new Button("\u2715");
+		del.setStyle("background:#fee2e2;color:#b91c1c;border:0;border-radius:4px;padding:2px 8px;cursor:pointer;");
+		del.addEventListener(Events.ON_CLICK, new EventListener<Event>() {
+			@Override
+			public void onEvent(Event event) {
+				lineList.removeChild(li);
+				renumber();
+				refreshTotal();
+			}
+		});
+		Listcell dc = new Listcell();
+		dc.appendChild(del);
+		li.appendChild(dc);
+		lineList.appendChild(li);
+
+		remarkBox.setValue("");
+		amountBox.setValue((BigDecimal) null);
+		refreshTotal();
+	}
+
+	private void renumber() {
+		int n = 1;
+		for (Listitem item : lineList.getItems())
+			((Listcell) item.getFirstChild()).setLabel(String.valueOf(n++));
+	}
+
+	private List<AdvanceLine> collectLines() {
+		List<AdvanceLine> lines = new ArrayList<>();
+		for (Listitem li : lineList.getItems())
+			lines.add((AdvanceLine) li.getValue());
+		return lines;
+	}
+
+	private void refreshTotal() {
+		List<AdvanceLine> l = collectLines();
+		totalLabel.setValue(AMT_FMT.format(EmpAdvanceService.sum(l)));
+		countLabel.setValue(l.size() + " line(s)");
+	}
+
+	private void save() {
+		if (dateBox.getValue() == null)
+			throw new IllegalStateException("Date is required");
+		if (selectedEmpId <= 0)
+			throw new IllegalStateException("Employee is required");
+		List<AdvanceLine> lines = collectLines();
+		if (lines.isEmpty())
+			throw new IllegalStateException("Add at least one line");
+
+		String docNo = EmpAdvanceService.createApInvoice(Env.getCtx(), selectedEmpId,
+				new Timestamp(dateBox.getValue().getTime()), lines);
+
+		Clients.showNotification("AP Invoice created: " + docNo, "info", null, "middle_center", 4000);
+		resetForm();
+	}
+
+	private void resetForm() {
+		selectedEmpId = 0;
+		empCombo.setValue("");
+		avatarLabel.setValue("?");
+		nameLabel.setValue("No employee selected");
+		codeLabel.setValue("Search an employee to load the profile");
+		desigLabel.setValue("-");
+		empDeptLabel.setValue("-");
+		sectionLabel.setValue("-");
+		joinLabel.setValue("-");
+		remarkBox.setValue("");
+		amountBox.setValue((BigDecimal) null);
+		while (lineList.getItemCount() > 0)
+			lineList.removeItemAt(0);
+		refreshTotal();
+	}
+
+	// ================================================================ helpers
+
+	private void notify(Exception e, String type) {
+		String msg = e.getMessage() == null ? e.toString() : e.getMessage();
+		Clients.showNotification(msg, type, null, "middle_center", 5000);
+	}
+
+	private static String initials(String name) {
+		if (name == null || name.trim().isEmpty())
+			return "?";
+		String[] p = name.trim().split("\\s+");
+		String s = p[0].substring(0, 1);
+		if (p.length > 1)
+			s += p[p.length - 1].substring(0, 1);
+		return s.toUpperCase();
+	}
+
+	private static String nz(String s) {
+		return s == null ? "" : s;
+	}
+
+	private static String dash(String s) {
+		return (s == null || s.trim().isEmpty()) ? "-" : s;
+	}
+}
