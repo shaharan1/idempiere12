@@ -45,6 +45,10 @@ public class RequisitionFormFactory implements IFormFactory {
 
         if ("org.mycompany.requisition.rfqpo.WCreatePOFromCS".equals(className))
             return new org.mycompany.requisition.rfqpo.WCreatePOFromCS();
+        
+        
+        if ("org.mycompany.requisition.WRequisitionAssignForm".equals(className))
+            return new WRequisitionAssignForm();
 
         return null;
     }
