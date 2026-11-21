@@ -51,6 +51,8 @@ import org.zkoss.zul.Messagebox;
  * who it is assigned to) and it can be assigned from there with the Assign button.
  * Not Assigned requisitions get the user chosen in "Assign To" (date = today); Assigned ones can be moved to another
  * user with "Re-Assign To". The ticked rows can still be saved together with OK (as before).
+ * Not Assigned lines show a dropdown in the "SCM Assigned" column (same user list as Assign To).
+ * If the filter returns exactly one requisition it is loaded into the master panel automatically.
  * Print = requisition PDF, PO "View" = purchase order PDF, Close = closes the requisition.
  * Storage: M_Requisition.XX_AssignedTo_ID, XX_AssignedDate, XX_DeliveryDate, XX_ReassignedTo_ID, XX_ReassignedDate
  * (created by db/25_requisition_assignment.sql).
@@ -97,9 +99,11 @@ public class WRequisitionAssignForm extends ADForm {
 		String docNo, org, user, cat, prio, status, assignedName, reName, loc, seg;
 		Timestamp dateDoc, dateReq, assignedDate, deliveryDate;
 		int assignedId, reId, deptId;
+		Listitem item;
 		Checkbox chk = new Checkbox();
 		Button print = new Button("Print");
 		Datebox delivery = new Datebox();
+		Combobox assignTo = new Combobox(); // SCM Assigned dropdown (only for not-assigned lines)
 		Combobox reassign = new Combobox();
 		Button view = new Button("View");
 		Button close = new Button("Close");
@@ -269,8 +273,15 @@ public class WRequisitionAssignForm extends ADForm {
 		txtCat.addEventListener(Events.ON_OK, ev -> reload());
 		txtReq.addEventListener(Events.ON_SELECT, ev -> reload());
 		txtCat.addEventListener(Events.ON_SELECT, ev -> reload());
+		txtReq.addEventListener(Events.ON_CHANGE, ev -> reload());
+		txtCat.addEventListener(Events.ON_CHANGE, ev -> reload());
 		btnOk.addEventListener(Events.ON_CLICK, ev -> save());
 		btnAssign.addEventListener(Events.ON_CLICK, ev -> assignCurrent());
+		// master panel "Assign To" changed: the dropdown of the line follows
+		cbAssignTo.addEventListener(Events.ON_SELECT, ev -> {
+			if (current != null && current.assignedId <= 0)
+				selectById(current.assignTo, val(cbAssignTo));
+		});
 		btnClear.addEventListener(Events.ON_CLICK, ev -> clearMaster());
 		btnCancel.addEventListener(Events.ON_CLICK, ev -> {
 			try {
@@ -342,7 +353,10 @@ public class WRequisitionAssignForm extends ADForm {
 	private void selectRow(Row r) {
 		if (current == r)
 			return;
+		Row prev = current;
 		current = r;
+		if (r.item != null)
+			list.setSelectedItem(r.item);
 		MRequisition req = new MRequisition(Env.getCtx(), r.id, null);
 		boolean closed = "CL".equals(r.status);
 		boolean assigned = r.assignedId > 0;
@@ -405,6 +419,12 @@ public class WRequisitionAssignForm extends ADForm {
 		cbReassign.setDisabled(closed || !assigned);
 		dtDelivery.setDisabled(closed);
 		btnAssign.setDisabled(closed);
+
+		// dropdown of the previously selected line is switched off (unless it is ticked), the new line's is switched on
+		if (prev != null && prev != r && !prev.chk.isChecked())
+			prev.assignTo.setDisabled(true);
+		r.assignTo.setDisabled(closed || assigned);
+		selectById(cbAssignTo, val(r.assignTo));
 	}
 
 	/** the Assign button of the master panel: assigns (or re-assigns) the requisition that is loaded */
@@ -418,6 +438,8 @@ public class WRequisitionAssignForm extends ADForm {
 			return;
 		}
 		int to = intOf(cbAssignTo);
+		if (to <= 0)
+			to = intOf(current.assignTo);
 		int re = intOf(cbReassign);
 		Timestamp dv = dtDelivery.getValue() == null ? null : new Timestamp(dtDelivery.getValue().getTime());
 		String err;
@@ -484,6 +506,22 @@ public class WRequisitionAssignForm extends ADForm {
 			return Integer.parseInt(val(cb));
 		} catch (Exception e) {
 			return 0;
+		}
+	}
+
+	/** select the item of a combo by its "id" attribute */
+	private static void selectById(Combobox cb, String id) {
+		if (id == null || id.isEmpty()) {
+			cb.setSelectedItem(null);
+			cb.setValue("");
+			return;
+		}
+		for (Object o : cb.getItems()) {
+			Comboitem ci = (Comboitem) o;
+			if (id.equals(String.valueOf(ci.getAttribute("id")))) {
+				cb.setSelectedItem(ci);
+				return;
+			}
 		}
 	}
 
@@ -682,7 +720,7 @@ public class WRequisitionAssignForm extends ADForm {
 			list.appendChild(buildItem(rows.get(i), i + 1));
 		lblInfo.setValue(rows.size() + " requisition(s)");
 		clearMaster();
-		// filter-e ekta-i requisition pele seta nijei master panel-e load hobe
+		// filter returned exactly one requisition: load it into the master panel automatically
 		if (rows.size() == 1)
 			selectRow(rows.get(0));
 	}
@@ -707,6 +745,7 @@ public class WRequisitionAssignForm extends ADForm {
 
 	private Listitem buildItem(final Row r, int sl) {
 		Listitem li = new Listitem();
+		r.item = li;
 		boolean assigned = r.assignedId > 0;
 		boolean closed = "CL".equals(r.status);
 
@@ -719,7 +758,25 @@ public class WRequisitionAssignForm extends ADForm {
 		li.appendChild(new Listcell(r.org));
 		li.appendChild(new Listcell(dmy(r.dateReq)));
 		li.appendChild(new Listcell(r.user == null ? "" : r.user));
-		li.appendChild(new Listcell(r.assignedName == null ? "" : r.assignedName));
+
+		// SCM Assigned: name when already assigned (or closed), otherwise a dropdown to assign a user
+		if (assigned || closed) {
+			li.appendChild(new Listcell(r.assignedName == null ? "" : r.assignedName));
+		} else {
+			r.assignTo.setAutodrop(true);
+			r.assignTo.setButtonVisible(true);
+			r.assignTo.setDisabled(true); // enabled when the line is selected / ticked
+			r.assignTo.setPlaceholder("Assign To");
+			ZKUpdateUtil.setWidth(r.assignTo, "100%");
+			fill(r.assignTo, userRows, true);
+			li.appendChild(cell(r.assignTo));
+			// user chosen in the line dropdown is also set in the master panel's Assign To
+			r.assignTo.addEventListener(Events.ON_SELECT, ev -> {
+				selectRow(r);
+				selectById(cbAssignTo, val(r.assignTo));
+			});
+		}
+
 		li.appendChild(new Listcell(dmy(r.assignedDate)));
 
 		r.delivery.setFormat("dd/MM/yyyy");
@@ -754,6 +811,7 @@ public class WRequisitionAssignForm extends ADForm {
 			r.close.setDisabled(!on || !canEdit);
 			r.delivery.setDisabled(!on || !canEdit);
 			r.reassign.setDisabled(!on || !canEdit || !isAssigned);
+			r.assignTo.setDisabled(!(on || current == r) || !canEdit || isAssigned);
 			if (on)
 				selectRow(r);
 		});
@@ -801,7 +859,7 @@ public class WRequisitionAssignForm extends ADForm {
 		return null;
 	}
 
-	/** OK: saves every ticked line (a Not Assigned one goes to the user chosen in the panel's Assign To) */
+	/** OK: saves every ticked line (a Not Assigned one goes to its own dropdown user, else the panel's Assign To) */
 	private void save() {
 		int to = intOf(cbAssignTo);
 		int done = 0;
@@ -811,7 +869,10 @@ public class WRequisitionAssignForm extends ADForm {
 				if (!r.chk.isChecked() || "CL".equals(r.status))
 					continue;
 				Timestamp dv = r.delivery.getValue() == null ? null : new Timestamp(r.delivery.getValue().getTime());
-				String err = applyAssign(r, to, intOf(r.reassign), dv);
+				int rowTo = intOf(r.assignTo);
+				if (rowTo <= 0)
+					rowTo = to;
+				String err = applyAssign(r, rowTo, intOf(r.reassign), dv);
 				if (err != null)
 					skipped.append(err).append(' ');
 				else
