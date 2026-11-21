@@ -267,7 +267,7 @@ public class WRequisitionAssignForm extends ADForm {
 		}
 	}
 
-	private List<Object[]> query(String sql, Object... p) {
+	private List<Object[]> dbQuery(String sql, Object... p) {
 		List<Object[]> out = new ArrayList<Object[]>();
 		java.sql.PreparedStatement ps = null;
 		java.sql.ResultSet rs = null;
@@ -287,7 +287,7 @@ public class WRequisitionAssignForm extends ADForm {
 	}
 
 	private void loadCombos() {
-		List<Object[]> orgs = query("SELECT AD_Org_ID, Name FROM AD_Org WHERE IsActive='Y' AND IsSummary='N' AND AD_Org_ID>0 "
+		List<Object[]> orgs = dbQuery("SELECT AD_Org_ID, Name FROM AD_Org WHERE IsActive='Y' AND IsSummary='N' AND AD_Org_ID>0 "
 				+ "AND AD_Client_ID=? AND (EXISTS (SELECT 1 FROM AD_Role ro WHERE ro.AD_Role_ID=? AND ro.IsAccessAllOrgs='Y') "
 				+ "OR AD_Org_ID IN (SELECT oa.AD_Org_ID FROM AD_Role_OrgAccess oa WHERE oa.AD_Role_ID=? AND oa.IsActive='Y')) ORDER BY Name",
 				clientId, userRoleId, userRoleId);
@@ -301,17 +301,17 @@ public class WRequisitionAssignForm extends ADForm {
 		if (cbOrg.getSelectedItem() == null && orgs.size() == 1)
 			cbOrg.setSelectedIndex(1);
 
-		userRows = query("SELECT AD_User_ID, Name FROM AD_User WHERE IsActive='Y' AND AD_Client_ID=? ORDER BY Name", clientId);
+		userRows = dbQuery("SELECT AD_User_ID, Name FROM AD_User WHERE IsActive='Y' AND AD_Client_ID=? ORDER BY Name", clientId);
 		fill(cbUser, userRows, true);
 		fill(cbAssignTo, userRows, true);
 
-		fill(cbPriority, query("SELECT Value, Name FROM AD_Ref_List WHERE AD_Reference_ID=154 AND IsActive='Y' ORDER BY Value"),
+		fill(cbPriority, dbQuery("SELECT Value, Name FROM AD_Ref_List WHERE AD_Reference_ID=154 AND IsActive='Y' ORDER BY Value"),
 				true);
-		fill(cbLocation, query("SELECT l.Value, l.Name FROM AD_Ref_List l JOIN AD_Reference r ON r.AD_Reference_ID=l.AD_Reference_ID "
+		fill(cbLocation, dbQuery("SELECT l.Value, l.Name FROM AD_Ref_List l JOIN AD_Reference r ON r.AD_Reference_ID=l.AD_Reference_ID "
 				+ "WHERE r.Name='XX Requisition Location' AND l.IsActive='Y' ORDER BY l.Name"), true);
-		fill(cbSegment, query("SELECT l.Value, l.Name FROM AD_Ref_List l JOIN AD_Reference r ON r.AD_Reference_ID=l.AD_Reference_ID "
+		fill(cbSegment, dbQuery("SELECT l.Value, l.Name FROM AD_Ref_List l JOIN AD_Reference r ON r.AD_Reference_ID=l.AD_Reference_ID "
 				+ "WHERE r.Name='XX Requisition Segment' AND l.IsActive='Y' ORDER BY l.Name"), true);
-		fill(cbDocType, query("SELECT C_DocType_ID, Name FROM C_DocType WHERE DocBaseType='POR' AND IsActive='Y' AND AD_Client_ID=? "
+		fill(cbDocType, dbQuery("SELECT C_DocType_ID, Name FROM C_DocType WHERE DocBaseType='POR' AND IsActive='Y' AND AD_Client_ID=? "
 				+ "ORDER BY Name", clientId), true);
 		List<Object[]> st = new ArrayList<Object[]>();
 		st.add(new Object[] { "A", "Assigned" });
@@ -647,7 +647,7 @@ public class WRequisitionAssignForm extends ADForm {
 
 	/** View PO: one PO opens directly, several PO give a small list to choose from */
 	private void viewPo(Row r) {
-		List<Object[]> pos = query("SELECT DISTINCT o.C_Order_ID, o.DocumentNo FROM M_RequisitionLine l "
+		List<Object[]> pos = dbQuery("SELECT DISTINCT o.C_Order_ID, o.DocumentNo FROM M_RequisitionLine l "
 				+ "JOIN C_OrderLine ol ON ol.C_OrderLine_ID=l.C_OrderLine_ID JOIN C_Order o ON o.C_Order_ID=ol.C_Order_ID "
 				+ "WHERE l.M_Requisition_ID=? ORDER BY o.DocumentNo", r.id);
 		if (pos.isEmpty()) {
