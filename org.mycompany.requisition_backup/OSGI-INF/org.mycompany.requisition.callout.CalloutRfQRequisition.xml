@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scr:component xmlns:scr="http://www.osgi.org/xmlns/scr/v1.1.0" name="org.mycompany.requisition.callout.CalloutRfQRequisition">
+   <implementation class="org.mycompany.requisition.callout.CalloutRfQRequisition"/>
+   <property name="service.ranking" type="Integer" value="100"/>
+   <reference name="IColumnCalloutFactory" interface="org.adempiere.base.IColumnCalloutFactory" cardinality="1..1" policy="static" bind="bindEventManager" unbind="unbindEventManager"/>
+</scr:component>
