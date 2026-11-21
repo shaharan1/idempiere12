@@ -1,0 +1,233 @@
+package org.mycompany.requisition;
+
+import java.math.BigDecimal;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+
+import org.adempiere.exceptions.AdempiereException;
+import org.compiere.model.MBPartner;
+import org.compiere.model.MCharge;
+import org.compiere.model.MDocType;
+import org.compiere.model.MInvoice;
+import org.compiere.model.MInvoiceLine;
+import org.compiere.model.MPriceList;
+import org.compiere.process.DocAction;
+import org.compiere.util.DB;
+import org.compiere.util.Env;
+import org.compiere.util.KeyNamePair;
+import org.compiere.util.Trx;
+
+/**
+ * All SQL + AP Invoice creation lives here, so the form class stays UI-only.
+ * Employee data comes from the DB view XX_Employee_Info_V (see sql/01_*.sql).
+ */
+public final class EmpAdvanceService {
+
+	/** true = AP Invoice is completed on save, false = left in Drafted */
+	public static final boolean COMPLETE_ON_SAVE = false;
+
+	private EmpAdvanceService() {
+	}
+
+	/** Employee master info */
+	public static class EmpInfo {
+		public String code, name, designation, department, section;
+		public Timestamp joinDate;
+	}
+
+	// ------------------------------------------------------------------ queries
+
+	public static List<KeyNamePair> queryKeyNames(String sql, Object... params) {
+		List<KeyNamePair> list = new ArrayList<>();
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement(sql, null);
+			for (int i = 0; i < params.length; i++)
+				ps.setObject(i + 1, params[i]);
+			rs = ps.executeQuery();
+			while (rs.next())
+				list.add(new KeyNamePair(rs.getInt(1), rs.getString(2)));
+		} catch (SQLException e) {
+			throw new AdempiereException(e.getMessage(), e);
+		} finally {
+			DB.close(rs, ps);
+		}
+		return list;
+	}
+
+	public static List<KeyNamePair> searchEmployees(Properties ctx, String text) {
+		String t = "%" + (text == null ? "" : text.trim().toUpperCase()) + "%";
+		return queryKeyNames(
+				"SELECT c_bpartner_id, emp_code || ' - ' || emp_name FROM xx_employee_info_v "
+						+ "WHERE ad_client_id=? AND (UPPER(emp_code) LIKE ? OR UPPER(emp_name) LIKE ?) "
+						+ "ORDER BY emp_code FETCH FIRST 30 ROWS ONLY",
+				Env.getAD_Client_ID(ctx), t, t);
+	}
+
+	/** Segment list. Change the SQL if your "Segment" is a different table/element. */
+	public static List<KeyNamePair> getSegments(Properties ctx) {
+		return queryKeyNames("SELECT C_Activity_ID, Name FROM C_Activity "
+				+ "WHERE AD_Client_ID=? AND IsActive='Y' AND IsSummary='N' ORDER BY Name",
+				Env.getAD_Client_ID(ctx));
+	}
+
+	public static List<KeyNamePair> getCharges(Properties ctx) {
+		return queryKeyNames("SELECT C_Charge_ID, Name FROM C_Charge "
+				+ "WHERE AD_Client_ID IN (0,?) AND IsActive='Y' ORDER BY Name",
+				Env.getAD_Client_ID(ctx));
+	}
+
+	public static EmpInfo getEmployee(int bpartnerId) {
+		EmpInfo e = new EmpInfo();
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement("SELECT emp_code, emp_name, designation, department, section, date_of_join "
+					+ "FROM xx_employee_info_v WHERE c_bpartner_id=?", null);
+			ps.setInt(1, bpartnerId);
+			rs = ps.executeQuery();
+			if (rs.next()) {
+				e.code = rs.getString(1);
+				e.name = rs.getString(2);
+				e.designation = rs.getString(3);
+				e.department = rs.getString(4);
+				e.section = rs.getString(5);
+				e.joinDate = rs.getTimestamp(6);
+			}
+		} catch (SQLException ex) {
+			throw new AdempiereException(ex.getMessage(), ex);
+		} finally {
+			DB.close(rs, ps);
+		}
+		return e;
+	}
+
+	public static String getOrgName(Properties ctx) {
+		int orgId = Env.getAD_Org_ID(ctx);
+		String n = DB.getSQLValueString(null, "SELECT Name FROM AD_Org WHERE AD_Org_ID=?", orgId);
+		return n == null ? "*" : n;
+	}
+
+	/** Default department = department of the logged-in user's business partner */
+	public static String getLoginUserDepartment(Properties ctx) {
+		String d = DB.getSQLValueString(null,
+				"SELECT department FROM xx_employee_info_v WHERE c_bpartner_id="
+						+ "(SELECT c_bpartner_id FROM ad_user WHERE ad_user_id=?)",
+				Env.getAD_User_ID(ctx));
+		if (d == null || d.isEmpty())
+			d = getOrgName(ctx); // GardenWorld demo user has no employee record -> use Org
+		return d;
+	}
+
+	/**
+	 * GardenWorld has no "Advance to Employee" charge. Create it once (with default
+	 * charge accounts) so the form's default value works out of the box.
+	 */
+	public static void ensureDefaultCharge(Properties ctx, String name) {
+		int id = DB.getSQLValue(null, "SELECT C_Charge_ID FROM C_Charge WHERE AD_Client_ID IN (0,?) "
+				+ "AND IsActive='Y' AND Name LIKE ? FETCH FIRST 1 ROW ONLY", Env.getAD_Client_ID(ctx), name + "%");
+		if (id > 0)
+			return;
+		int taxCat = DB.getSQLValue(null, "SELECT C_TaxCategory_ID FROM C_TaxCategory WHERE AD_Client_ID=? "
+				+ "AND IsActive='Y' ORDER BY IsDefault DESC, C_TaxCategory_ID FETCH FIRST 1 ROW ONLY",
+				Env.getAD_Client_ID(ctx));
+		if (taxCat <= 0)
+			throw new AdempiereException("No Tax Category found - create charge '" + name + "' manually");
+		MCharge ch = new MCharge(ctx, 0, null);
+		ch.setAD_Org_ID(0);
+		ch.setName(name);
+		ch.setC_TaxCategory_ID(taxCat);
+		ch.saveEx();
+	}
+
+	// ------------------------------------------------------------ AP Invoice
+
+	/**
+	 * Creates one AP Invoice (charge lines) for the employee.
+	 * Requirements: employee BP has a location; charges have a tax category / tax rule;
+	 * login org is not "*".
+	 * @return document no of the new invoice
+	 */
+	public static String createApInvoice(Properties ctx, int bpartnerId, Timestamp date,
+			List<AdvanceLine> lines) {
+		if (lines == null || lines.isEmpty())
+			throw new AdempiereException("No lines");
+
+		String trxName = Trx.createTrxName("EmpAdv");
+		Trx trx = Trx.get(trxName, true);
+		try {
+			MBPartner bp = new MBPartner(ctx, bpartnerId, trxName);
+
+			MInvoice inv = new MInvoice(ctx, 0, trxName);
+			int orgId = Env.getAD_Org_ID(ctx);
+			if (orgId <= 0)
+				orgId = DB.getSQLValue(trxName, "SELECT MIN(AD_Org_ID) FROM AD_Org WHERE AD_Org_ID>0 AND AD_Client_ID=? AND IsActive='Y'", Env.getAD_Client_ID(ctx));
+			inv.setAD_Org_ID(orgId);
+			inv.setIsSOTrx(false);
+			inv.setC_DocTypeTarget_ID(MDocType.DOCBASETYPE_APInvoice);
+			inv.setBPartner(bp);
+			inv.setDateInvoiced(date);
+			inv.setDateAcct(date);
+			inv.setDescription("Employee Advance - " + bp.getName());
+
+			if (inv.getM_PriceList_ID() <= 0) {
+				MPriceList pl = MPriceList.getDefault(ctx, false);
+				if (pl == null)
+					throw new AdempiereException("No default purchase price list found");
+				inv.setM_PriceList_ID(pl.get_ID());
+			}
+			MPriceList pl = MPriceList.get(ctx, inv.getM_PriceList_ID(), trxName);
+			inv.setC_Currency_ID(pl.getC_Currency_ID());
+
+			if (inv.getC_PaymentTerm_ID() <= 0) {
+				int pt = DB.getSQLValue(trxName, "SELECT MIN(C_PaymentTerm_ID) FROM C_PaymentTerm "
+						+ "WHERE AD_Client_ID=? AND IsActive='Y' AND IsDefault='Y'", Env.getAD_Client_ID(ctx));
+				if (pt > 0)
+					inv.setC_PaymentTerm_ID(pt);
+			}
+			inv.saveEx();
+
+			for (AdvanceLine l : lines) {
+				MInvoiceLine il = new MInvoiceLine(inv);
+				il.setAD_Org_ID(inv.getAD_Org_ID());
+				il.setC_Charge_ID(l.chargeId);
+				il.setQty(Env.ONE);
+				il.setPrice(l.amount);
+				il.setDescription(l.remark);
+				if (l.segmentId > 0)
+					il.setC_Activity_ID(l.segmentId);
+				il.saveEx();
+			}
+
+			if (COMPLETE_ON_SAVE) {
+				inv.setDocAction(DocAction.ACTION_Complete);
+				if (!inv.processIt(DocAction.ACTION_Complete))
+					throw new AdempiereException(inv.getProcessMsg());
+				inv.saveEx();
+			}
+
+			trx.commit(true);
+			return inv.getDocumentNo();
+		} catch (Exception e) {
+			trx.rollback();
+			if (e instanceof RuntimeException)
+				throw (RuntimeException) e;
+			throw new AdempiereException(e.getMessage(), e);
+		} finally {
+			trx.close();
+		}
+	}
+
+	public static BigDecimal sum(List<AdvanceLine> lines) {
+		BigDecimal t = BigDecimal.ZERO;
+		for (AdvanceLine l : lines)
+			t = t.add(l.amount);
+		return t;
+	}
+}
