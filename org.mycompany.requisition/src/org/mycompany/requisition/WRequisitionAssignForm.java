@@ -3,8 +3,10 @@ package org.mycompany.requisition;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 
 import org.adempiere.exceptions.AdempiereException;
@@ -14,7 +16,15 @@ import org.adempiere.webui.component.Label;
 import org.adempiere.webui.panel.ADForm;
 import org.adempiere.webui.session.SessionManager;
 import org.adempiere.webui.util.ZKUpdateUtil;
+import org.compiere.model.MActivity;
+import org.compiere.model.MDocType;
+import org.compiere.model.MOrder;
+import org.compiere.model.MOrderLine;
+import org.compiere.model.MProduct;
 import org.compiere.model.MRequisition;
+import org.compiere.model.MRequisitionLine;
+import org.compiere.model.MUOM;
+import org.compiere.model.MWarehouse;
 import org.compiere.print.ReportEngine;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
@@ -36,10 +46,12 @@ import org.zkoss.zul.Messagebox;
 /**
  * Requisition Assignment Form.
  * <p>
- * Lists completed requisitions (filters on top). Tick a row to enable Print, Delivery Date, Re-Assigned and Close.
+ * Lists completed requisitions (filters on top). Click a requisition (or tick it) in the Requisition Assignment Line:
+ * all its data is loaded into the "Requisition Assignment" master panel (header, delivery, products of the requisition,
+ * who it is assigned to) and it can be assigned from there with the Assign button.
+ * Not Assigned requisitions get the user chosen in "Assign To" (date = today); Assigned ones can be moved to another
+ * user with "Re-Assign To". The ticked rows can still be saved together with OK (as before).
  * Print = requisition PDF, PO "View" = purchase order PDF, Close = closes the requisition.
- * OK saves: Not Assigned rows get the user chosen in "Assign To" (date = today); Assigned rows
- * can be moved to another user with the Re-Assigned box.
  * Storage: M_Requisition.XX_AssignedTo_ID, XX_AssignedDate, XX_DeliveryDate, XX_ReassignedTo_ID, XX_ReassignedDate
  * (created by db/25_requisition_assignment.sql).
  */
@@ -53,7 +65,8 @@ public class WRequisitionAssignForm extends ADForm {
 	private final int clientId = Env.getAD_Client_ID(Env.getCtx());
 	private final int userRoleId = Env.getAD_Role_ID(Env.getCtx());
 
-	private Combobox cbOrg, cbUser, cbPriority, cbLocation, cbAssignTo, cbSegment, cbDocType, cbStatus, cbPo;
+	// filters
+	private Combobox cbOrg, cbUser, cbPriority, cbLocation, cbFAssigned, cbSegment, cbDocType, cbStatus, cbPo;
 	private final Combobox txtReq = combo();
 	private final Combobox txtCat = combo();
 	private final Datebox dtFrom = new Datebox();
@@ -66,11 +79,24 @@ public class WRequisitionAssignForm extends ADForm {
 	private final List<Row> rows = new ArrayList<Row>();
 	private List<Object[]> userRows = new ArrayList<Object[]>();
 
+	// master panel: the requisition that was clicked
+	private Row current;
+	private final Label lblSelected = new Label();
+	private final Label mNo = mv(), mDate = mv(), mReq = mv(), mOrg = mv(), mType = mv(), mPrio = mv(), mLoc = mv(),
+			mSeg = mv(), mDept = mv(), mUser = mv(), mWh = mv(), mCat = mv(), mStatus = mv(), mPo = mv(),
+			mCurAssign = mv();
+	private Combobox cbAssignTo;
+	private Combobox cbReassign;
+	private final Datebox dtDelivery = new Datebox();
+	private final Button btnAssign = new Button("Assign");
+	private final Button btnClear = new Button("Clear Selection");
+	private final Listbox mLines = new Listbox();
+
 	private static final class Row {
 		int id;
-		String docNo, org, user, cat, prio, status, assignedName, reName;
+		String docNo, org, user, cat, prio, status, assignedName, reName, loc, seg;
 		Timestamp dateDoc, dateReq, assignedDate, deliveryDate;
-		int assignedId, reId;
+		int assignedId, reId, deptId;
 		Checkbox chk = new Checkbox();
 		Button print = new Button("Print");
 		Datebox delivery = new Datebox();
@@ -110,6 +136,24 @@ public class WRequisitionAssignForm extends ADForm {
 		return cb;
 	}
 
+	/** a value label of the master panel */
+	private static Label mv() {
+		Label l = new Label();
+		l.setStyle("font-weight:600;color:#1F2937");
+		return l;
+	}
+
+	private Grid newGrid(String sclass, org.zkoss.zul.Rows rs) {
+		Grid g = new Grid();
+		g.setSclass(sclass);
+		org.zkoss.zul.Columns cols = new org.zkoss.zul.Columns();
+		for (int i = 0; i < 6; i++)
+			cols.appendChild(new org.zkoss.zul.Column());
+		g.appendChild(cols);
+		g.appendChild(rs);
+		return g;
+	}
+
 	private void buildUi() {
 		Div main = new Div();
 		main.setStyle("height:100%;display:flex;flex-direction:column;box-sizing:border-box;overflow:auto;padding:6px 10px;");
@@ -121,40 +165,74 @@ public class WRequisitionAssignForm extends ADForm {
 		cbUser = combo();
 		cbPriority = combo();
 		cbLocation = combo();
-		cbAssignTo = combo();
+		cbFAssigned = combo();
 		cbSegment = combo();
 		cbDocType = combo();
 		cbStatus = combo();
 		cbPo = combo();
+		cbAssignTo = combo();
+		cbReassign = combo();
 		dtFrom.setFormat("dd/MM/yyyy");
 		dtTo.setFormat("dd/MM/yyyy");
+		dtDelivery.setFormat("dd/MM/yyyy");
 
-		Grid g = new Grid();
-		g.setSclass("xx-assign-filter");
-		org.zkoss.zul.Columns cols = new org.zkoss.zul.Columns();
-		for (int i = 0; i < 6; i++)
-			cols.appendChild(new org.zkoss.zul.Column());
-		g.appendChild(cols);
-		org.zkoss.zul.Rows rs = new org.zkoss.zul.Rows();
-		g.appendChild(rs);
-
+		// ---- search / filter
+		org.zkoss.zul.Rows fr = new org.zkoss.zul.Rows();
+		Grid g = newGrid("xx-assign-filter", fr);
 		Div dates = new Div();
 		dates.setStyle("display:flex;gap:4px");
 		dates.appendChild(dtFrom);
 		dates.appendChild(dtTo);
-
-		frow(rs, "Organization", cbOrg, "Priority", cbPriority, "Date Range", dates);
-		frow(rs, "User", cbUser, "Location", cbLocation, "Status", cbStatus);
-		frow(rs, "Requisition", txtReq, "Category", txtCat, "PO Created", cbPo);
-		frow(rs, "Assign To", cbAssignTo, "Segment", cbSegment, "Document Type", cbDocType);
+		frow(fr, "Organization", cbOrg, "Priority", cbPriority, "Date Range", dates);
+		frow(fr, "User", cbUser, "Location", cbLocation, "Status", cbStatus);
+		frow(fr, "Requisition", txtReq, "Category", txtCat, "PO Created", cbPo);
+		frow(fr, "Assigned To", cbFAssigned, "Segment", cbSegment, "Document Type", cbDocType);
 		Div br = new Div();
 		br.setStyle("text-align:right;padding:4px 0");
 		btnReload.setSclass("btn btn-primary");
 		br.appendChild(btnReload);
 
-		main.appendChild(title("Requisition Assignment"));
+		main.appendChild(title("Search Requisition"));
 		main.appendChild(g);
 		main.appendChild(br);
+
+		// ---- master: the requisition that was clicked in the line below
+		main.appendChild(title("Requisition Assignment"));
+		lblSelected.setStyle("display:block;padding:4px 8px;margin-bottom:4px;border-radius:6px;background:#E6EDF5;color:#27415F;font-weight:600");
+		main.appendChild(lblSelected);
+		org.zkoss.zul.Rows mr = new org.zkoss.zul.Rows();
+		Grid mg = newGrid("xx-assign-master", mr);
+		frow(mr, "Requisition No", mNo, "Requisition Date", mDate, "Date Required", mReq);
+		frow(mr, "Organization", mOrg, "Requisition Type", mType, "Priority", mPrio);
+		frow(mr, "Location", mLoc, "Segment", mSeg, "Department", mDept);
+		frow(mr, "Requested By", mUser, "Warehouse", mWh, "Category", mCat);
+		frow(mr, "Status", mStatus, "Purchase Order", mPo, "Currently Assigned", mCurAssign);
+		ZKUpdateUtil.setWidth(dtDelivery, "100%");
+		frow(mr, "Assign To", cbAssignTo, "Delivery Date", dtDelivery, "Re-Assign To", cbReassign);
+		main.appendChild(mg);
+		Div ab = new Div();
+		ab.setStyle("text-align:right;padding:4px 0");
+		btnAssign.setSclass("btn btn-success");
+		btnClear.setSclass("btn btn-outline-primary");
+		btnClear.setStyle("margin-left:6px");
+		ab.appendChild(btnAssign);
+		ab.appendChild(btnClear);
+		main.appendChild(ab);
+
+		// products of the requisition that was clicked
+		Listhead mh = new Listhead();
+		String[][] mc = { { "S/N", "50px" }, { "Item Code", "130px" }, { "Item Name", "300px" }, { "UOM", "70px" },
+				{ "Qty", "90px" }, { "Specification", "300px" } };
+		for (String[] x : mc) {
+			Listheader h = new Listheader(x[0]);
+			h.setHflex(x[1].replace("px", ""));
+			mh.appendChild(h);
+		}
+		mLines.appendChild(mh);
+		mLines.setEmptyMessage("Click a requisition below to see its products.");
+		mLines.setStyle("max-height:200px");
+		main.appendChild(mLines);
+
 		main.appendChild(title("Requisition Assignment Line"));
 
 		Listhead lh = new Listhead();
@@ -171,9 +249,8 @@ public class WRequisitionAssignForm extends ADForm {
 			lh.appendChild(lhd);
 		}
 		list.appendChild(lh);
-		list.setVflex("1");
 		list.setHflex("1");
-		list.setStyle("min-height:260px;flex:1 1 auto;");
+		list.setStyle("min-height:260px;");
 		main.appendChild(list);
 
 		Div foot = new Div();
@@ -193,6 +270,8 @@ public class WRequisitionAssignForm extends ADForm {
 		txtReq.addEventListener(Events.ON_SELECT, ev -> reload());
 		txtCat.addEventListener(Events.ON_SELECT, ev -> reload());
 		btnOk.addEventListener(Events.ON_CLICK, ev -> save());
+		btnAssign.addEventListener(Events.ON_CLICK, ev -> assignCurrent());
+		btnClear.addEventListener(Events.ON_CLICK, ev -> clearMaster());
 		btnCancel.addEventListener(Events.ON_CLICK, ev -> {
 			try {
 				SessionManager.getAppDesktop().closeActiveWindow();
@@ -200,6 +279,7 @@ public class WRequisitionAssignForm extends ADForm {
 				reload();
 			}
 		});
+		clearMaster();
 	}
 
 	private static Label title(String t) {
@@ -224,6 +304,143 @@ public class WRequisitionAssignForm extends ADForm {
 		Label l = new Label(t);
 		l.setStyle("font-weight:700");
 		return l;
+	}
+
+	// ------------------------------------------------------------ master panel (read through the model)
+
+	/** name of a list entry (the combo that was filled from the list: attribute "id" = value, label = name) */
+	private static String labelOf(Combobox cb, String value) {
+		if (value == null || value.isEmpty())
+			return "";
+		for (Object o : cb.getItems()) {
+			Comboitem ci = (Comboitem) o;
+			if (value.equals(String.valueOf(ci.getAttribute("id"))))
+				return ci.getLabel();
+		}
+		return value;
+	}
+
+	/** nothing selected: the master panel is empty and its inputs are off */
+	private void clearMaster() {
+		current = null;
+		lblSelected.setValue("No requisition selected. Click a requisition in the Requisition Assignment Line.");
+		for (Label l : new Label[] { mNo, mDate, mReq, mOrg, mType, mPrio, mLoc, mSeg, mDept, mUser, mWh, mCat, mStatus,
+				mPo, mCurAssign })
+			l.setValue("");
+		cbAssignTo.setValue("");
+		cbReassign.setValue("");
+		dtDelivery.setValue(null);
+		cbAssignTo.setDisabled(true);
+		cbReassign.setDisabled(true);
+		dtDelivery.setDisabled(true);
+		btnAssign.setDisabled(true);
+		while (mLines.getItemCount() > 0)
+			mLines.removeItemAt(0);
+	}
+
+	/** a requisition of the line was clicked / ticked: load all its data into the master panel */
+	private void selectRow(Row r) {
+		if (current == r)
+			return;
+		current = r;
+		MRequisition req = new MRequisition(Env.getCtx(), r.id, null);
+		boolean closed = "CL".equals(r.status);
+		boolean assigned = r.assignedId > 0;
+
+		lblSelected.setValue("Selected requisition: " + r.docNo
+				+ (closed ? "   (closed: view only)" : assigned ? "   (assigned: use Re-Assign To to move it)"
+						: "   (not assigned yet: choose Assign To)"));
+		mNo.setValue(r.docNo);
+		mDate.setValue(dmy(r.dateDoc));
+		mReq.setValue(dmy(r.dateReq));
+		mOrg.setValue(r.org == null ? "" : r.org);
+		MDocType dt = req.getC_DocType_ID() > 0 ? MDocType.get(Env.getCtx(), req.getC_DocType_ID()) : null;
+		mType.setValue(dt == null ? "" : dt.getName());
+		mPrio.setValue(prioName(r.prio));
+		mLoc.setValue(labelOf(cbLocation, r.loc));
+		mSeg.setValue(labelOf(cbSegment, r.seg));
+		mDept.setValue(r.deptId > 0 ? new MActivity(Env.getCtx(), r.deptId, null).getName() : "");
+		mUser.setValue(r.user == null ? "" : r.user);
+		MWarehouse wh = req.getM_Warehouse_ID() > 0 ? MWarehouse.get(Env.getCtx(), req.getM_Warehouse_ID()) : null;
+		mWh.setValue(wh == null ? "" : wh.getName());
+		mCat.setValue(r.cat == null ? "" : r.cat);
+		mStatus.setValue(closed ? "Closed" : assigned ? "Assigned" : "Not Assigned");
+		String cur = "";
+		if (assigned)
+			cur = r.assignedName + (r.assignedDate == null ? "" : "  (" + dmy(r.assignedDate) + ")");
+		if (r.reName != null && !r.reName.isEmpty())
+			cur += "  \u2192 re-assigned to " + r.reName;
+		mCurAssign.setValue(cur);
+
+		// products of the requisition and the purchase orders made from it
+		while (mLines.getItemCount() > 0)
+			mLines.removeItemAt(0);
+		Set<String> poNos = new LinkedHashSet<String>();
+		int n = 0;
+		for (MRequisitionLine l : req.getLines()) {
+			n++;
+			MProduct prod = l.getM_Product_ID() > 0 ? MProduct.get(Env.getCtx(), l.getM_Product_ID()) : null;
+			MUOM uom = prod != null && prod.getC_UOM_ID() > 0 ? MUOM.get(Env.getCtx(), prod.getC_UOM_ID()) : null;
+			Listitem li = new Listitem();
+			li.appendChild(new Listcell(String.valueOf(n)));
+			li.appendChild(new Listcell(prod == null ? "" : prod.getValue()));
+			li.appendChild(new Listcell(prod == null ? "" : prod.getName()));
+			li.appendChild(new Listcell(uom == null ? "" : uom.getName()));
+			li.appendChild(new Listcell(l.getQty() == null ? "" : l.getQty().stripTrailingZeros().toPlainString()));
+			li.appendChild(new Listcell(l.getDescription() == null ? "" : l.getDescription()));
+			mLines.appendChild(li);
+			if (l.getC_OrderLine_ID() > 0) {
+				MOrderLine ol = new MOrderLine(Env.getCtx(), l.getC_OrderLine_ID(), null);
+				if (ol.getC_Order_ID() > 0)
+					poNos.add(new MOrder(Env.getCtx(), ol.getC_Order_ID(), null).getDocumentNo());
+			}
+		}
+		mPo.setValue(poNos.isEmpty() ? "Pending (no PO yet)" : String.join(", ", poNos));
+
+		// inputs of the panel
+		cbAssignTo.setValue("");
+		cbReassign.setValue("");
+		dtDelivery.setValue(r.deliveryDate);
+		cbAssignTo.setDisabled(closed);
+		cbReassign.setDisabled(closed || !assigned);
+		dtDelivery.setDisabled(closed);
+		btnAssign.setDisabled(closed);
+	}
+
+	/** the Assign button of the master panel: assigns (or re-assigns) the requisition that is loaded */
+	private void assignCurrent() {
+		if (current == null) {
+			warn("Click a requisition in the Requisition Assignment Line first.");
+			return;
+		}
+		if ("CL".equals(current.status)) {
+			warn("Requisition " + current.docNo + " is closed.");
+			return;
+		}
+		int to = intOf(cbAssignTo);
+		int re = intOf(cbReassign);
+		Timestamp dv = dtDelivery.getValue() == null ? null : new Timestamp(dtDelivery.getValue().getTime());
+		String err;
+		try {
+			err = applyAssign(current, to, re, dv);
+		} catch (Exception e) {
+			log.log(Level.SEVERE, e.getMessage(), e);
+			warn("Save failed:\n" + e.getMessage());
+			return;
+		}
+		if (err != null) {
+			warn("Not saved: " + err);
+			return;
+		}
+		final int id = current.id;
+		Messagebox.show("Requisition " + current.docNo + " saved.", "Requisition Assignment", Messagebox.OK,
+				Messagebox.INFORMATION);
+		reload();
+		for (Row r : rows)
+			if (r.id == id) {
+				selectRow(r);
+				break;
+			}
 	}
 
 	// ------------------------------------------------------------ combos
@@ -310,7 +527,9 @@ public class WRequisitionAssignForm extends ADForm {
 		fill(txtCat, dbQuery("SELECT M_Product_Category_ID, Name FROM M_Product_Category WHERE AD_Client_ID IN (0,?) "
 				+ "AND IsActive='Y' AND IsSummary='N' ORDER BY Name", clientId), true);
 		fill(cbUser, userRows, true);
+		fill(cbFAssigned, userRows, true);
 		fill(cbAssignTo, userRows, true);
+		fill(cbReassign, userRows, true);
 
 		fill(cbPriority, dbQuery("SELECT Value, Name FROM AD_Ref_List WHERE AD_Reference_ID=154 AND IsActive='Y' ORDER BY Value"),
 				true);
@@ -335,12 +554,19 @@ public class WRequisitionAssignForm extends ADForm {
 	private void reload() {
 		list.getItems().clear();
 		rows.clear();
+		current = null;
 		StringBuilder sql = new StringBuilder(
 				"SELECT r.M_Requisition_ID, r.DocumentNo, r.DateDoc, r.DateRequired, r.PriorityRule, r.DocStatus, o.Name, u.Name, "
 						+ "(SELECT pc.Name FROM M_RequisitionLine l JOIN M_Product p ON p.M_Product_ID=l.M_Product_ID "
 						+ " JOIN M_Product_Category pc ON pc.M_Product_Category_ID=p.M_Product_Category_ID "
 						+ " WHERE l.M_Requisition_ID=r.M_Requisition_ID ORDER BY l.Line, l.M_RequisitionLine_ID LIMIT 1), "
-						+ "r.XX_AssignedTo_ID, au.Name, r.XX_AssignedDate, r.XX_DeliveryDate, r.XX_ReassignedTo_ID, ru.Name "
+						+ "r.XX_AssignedTo_ID, au.Name, r.XX_AssignedDate, r.XX_DeliveryDate, r.XX_ReassignedTo_ID, ru.Name, "
+						// location, segment and department of the requisition: shown in the master panel
+						+ "r.XX_Location, "
+						+ "(SELECT l.XX_Segment FROM M_RequisitionLine l WHERE l.M_Requisition_ID=r.M_Requisition_ID "
+						+ " ORDER BY l.Line, l.M_RequisitionLine_ID LIMIT 1), "
+						+ "(SELECT l.XX_Department_ID FROM M_RequisitionLine l WHERE l.M_Requisition_ID=r.M_Requisition_ID "
+						+ " ORDER BY l.Line, l.M_RequisitionLine_ID LIMIT 1) "
 						+ "FROM M_Requisition r JOIN AD_Org o ON o.AD_Org_ID=r.AD_Org_ID "
 						+ "LEFT JOIN AD_User u ON u.AD_User_ID=r.AD_User_ID "
 						+ "LEFT JOIN AD_User au ON au.AD_User_ID=r.XX_AssignedTo_ID "
@@ -390,7 +616,7 @@ public class WRequisitionAssignForm extends ADForm {
 			sql.append("AND r.C_DocType_ID=? ");
 			p.add(dt);
 		}
-		int at = intOf(cbAssignTo);
+		int at = intOf(cbFAssigned);
 		if (at > 0) {
 			sql.append("AND COALESCE(r.XX_ReassignedTo_ID, r.XX_AssignedTo_ID)=? ");
 			p.add(at);
@@ -440,6 +666,9 @@ public class WRequisitionAssignForm extends ADForm {
 				r.deliveryDate = rs.getTimestamp(13);
 				r.reId = rs.getInt(14);
 				r.reName = rs.getString(15);
+				r.loc = rs.getString(16);
+				r.seg = rs.getString(17);
+				r.deptId = rs.getInt(18);
 				rows.add(r);
 			}
 		} catch (Exception e) {
@@ -452,6 +681,7 @@ public class WRequisitionAssignForm extends ADForm {
 		for (int i = 0; i < rows.size(); i++)
 			list.appendChild(buildItem(rows.get(i), i + 1));
 		lblInfo.setValue(rows.size() + " requisition(s)");
+		clearMaster();
 	}
 
 	private static String dmy(Timestamp t) {
@@ -521,9 +751,13 @@ public class WRequisitionAssignForm extends ADForm {
 			r.close.setDisabled(!on || !canEdit);
 			r.delivery.setDisabled(!on || !canEdit);
 			r.reassign.setDisabled(!on || !canEdit || !isAssigned);
+			if (on)
+				selectRow(r);
 		});
+		// a click on the line loads it into the Requisition Assignment panel above
+		li.addEventListener(Events.ON_CLICK, ev -> selectRow(r));
 		r.print.addEventListener(Events.ON_CLICK, ev -> printRequisition(r));
-		r.view.addEventListener(Events.ON_CLICK, ev -> printRequisition(r));
+		r.view.addEventListener(Events.ON_CLICK, ev -> viewPo(r));
 		r.close.addEventListener(Events.ON_CLICK, ev -> closeRequisition(r));
 		return li;
 	}
@@ -540,6 +774,31 @@ public class WRequisitionAssignForm extends ADForm {
 		Messagebox.show(msg, "Requisition Assignment", Messagebox.OK, Messagebox.EXCLAMATION);
 	}
 
+	/**
+	 * Writes the assignment of one requisition. Not assigned: "to" is required. Assigned: "re" moves it to another user.
+	 * Returns a reason when nothing could be saved, null when it was saved.
+	 * (XX_ columns are plain columns that are not in the Application Dictionary, so they are written here.)
+	 */
+	private String applyAssign(Row r, int to, int re, Timestamp dv) {
+		int me = Env.getAD_User_ID(Env.getCtx());
+		if (r.assignedId <= 0) {
+			if (to <= 0)
+				return r.docNo + " (choose Assign To)";
+			DB.executeUpdateEx("UPDATE M_Requisition SET XX_AssignedTo_ID=?, XX_AssignedDate=?, XX_DeliveryDate=?, "
+					+ "Updated=now(), UpdatedBy=? WHERE M_Requisition_ID=?",
+					new Object[] { to, new Timestamp(System.currentTimeMillis()), dv, me, r.id }, null);
+		} else if (re > 0 && re != r.reId) {
+			DB.executeUpdateEx("UPDATE M_Requisition SET XX_ReassignedTo_ID=?, XX_ReassignedDate=?, "
+					+ "XX_DeliveryDate=?, Updated=now(), UpdatedBy=? WHERE M_Requisition_ID=?",
+					new Object[] { re, new Timestamp(System.currentTimeMillis()), dv, me, r.id }, null);
+		} else {
+			DB.executeUpdateEx("UPDATE M_Requisition SET XX_DeliveryDate=?, Updated=now(), UpdatedBy=? "
+					+ "WHERE M_Requisition_ID=?", new Object[] { dv, me, r.id }, null);
+		}
+		return null;
+	}
+
+	/** OK: saves every ticked line (a Not Assigned one goes to the user chosen in the panel's Assign To) */
 	private void save() {
 		int to = intOf(cbAssignTo);
 		int done = 0;
@@ -549,30 +808,11 @@ public class WRequisitionAssignForm extends ADForm {
 				if (!r.chk.isChecked() || "CL".equals(r.status))
 					continue;
 				Timestamp dv = r.delivery.getValue() == null ? null : new Timestamp(r.delivery.getValue().getTime());
-				if (r.assignedId <= 0) {
-					if (to <= 0) {
-						skipped.append(r.docNo).append(" (choose Assign To) ");
-						continue;
-					}
-					DB.executeUpdateEx("UPDATE M_Requisition SET XX_AssignedTo_ID=?, XX_AssignedDate=?, XX_DeliveryDate=?, "
-							+ "Updated=now(), UpdatedBy=? WHERE M_Requisition_ID=?",
-							new Object[] { to, new Timestamp(System.currentTimeMillis()), dv, Env.getAD_User_ID(Env.getCtx()), r.id },
-							null);
+				String err = applyAssign(r, to, intOf(r.reassign), dv);
+				if (err != null)
+					skipped.append(err).append(' ');
+				else
 					done++;
-				} else {
-					int re = intOf(r.reassign);
-					if (re > 0 && re != r.reId) {
-						DB.executeUpdateEx("UPDATE M_Requisition SET XX_ReassignedTo_ID=?, XX_ReassignedDate=?, "
-								+ "XX_DeliveryDate=?, Updated=now(), UpdatedBy=? WHERE M_Requisition_ID=?",
-								new Object[] { re, new Timestamp(System.currentTimeMillis()), dv,
-										Env.getAD_User_ID(Env.getCtx()), r.id },
-								null);
-					} else {
-						DB.executeUpdateEx("UPDATE M_Requisition SET XX_DeliveryDate=?, Updated=now(), UpdatedBy=? "
-								+ "WHERE M_Requisition_ID=?", new Object[] { dv, Env.getAD_User_ID(Env.getCtx()), r.id }, null);
-					}
-					done++;
-				}
 			}
 		} catch (Exception e) {
 			log.log(Level.SEVERE, e.getMessage(), e);
@@ -651,17 +891,25 @@ public class WRequisitionAssignForm extends ADForm {
 		}
 	}
 
-	/** View PO: one PO opens directly, several PO give a small list to choose from */
+	/** View PO: one PO opens directly, several PO give a small list to choose from (read through the model) */
 	private void viewPo(Row r) {
-		List<Object[]> pos = dbQuery("SELECT DISTINCT o.C_Order_ID, o.DocumentNo FROM M_RequisitionLine l "
-				+ "JOIN C_OrderLine ol ON ol.C_OrderLine_ID=l.C_OrderLine_ID JOIN C_Order o ON o.C_Order_ID=ol.C_Order_ID "
-				+ "WHERE l.M_Requisition_ID=? ORDER BY o.DocumentNo", r.id);
+		MRequisition req = new MRequisition(Env.getCtx(), r.id, null);
+		final Map<Integer, String> pos = new java.util.LinkedHashMap<Integer, String>();
+		for (MRequisitionLine l : req.getLines()) {
+			if (l.getC_OrderLine_ID() <= 0)
+				continue;
+			MOrderLine ol = new MOrderLine(Env.getCtx(), l.getC_OrderLine_ID(), null);
+			if (ol.getC_Order_ID() > 0 && !pos.containsKey(Integer.valueOf(ol.getC_Order_ID())))
+				pos.put(Integer.valueOf(ol.getC_Order_ID()),
+						new MOrder(Env.getCtx(), ol.getC_Order_ID(), null).getDocumentNo());
+		}
 		if (pos.isEmpty()) {
 			warn("No purchase order has been created from " + r.docNo + " yet.");
 			return;
 		}
 		if (pos.size() == 1) {
-			showPo(((Number) pos.get(0)[0]).intValue(), String.valueOf(pos.get(0)[1]));
+			Map.Entry<Integer, String> e = pos.entrySet().iterator().next();
+			showPo(e.getKey().intValue(), e.getValue());
 			return;
 		}
 		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
@@ -671,9 +919,9 @@ public class WRequisitionAssignForm extends ADForm {
 		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
 		Div body = new Div();
 		body.setStyle("padding:10px");
-		for (Object[] po : pos) {
-			final int id = ((Number) po[0]).intValue();
-			final String no = String.valueOf(po[1]);
+		for (Map.Entry<Integer, String> po : pos.entrySet()) {
+			final int id = po.getKey().intValue();
+			final String no = po.getValue();
 			Button b = new Button(no);
 			b.setStyle("display:block;width:100%;margin-bottom:6px");
 			b.addEventListener(Events.ON_CLICK, ev -> showPo(id, no));
