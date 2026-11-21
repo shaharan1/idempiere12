@@ -54,8 +54,8 @@ public class WRequisitionAssignForm extends ADForm {
 	private final int userRoleId = Env.getAD_Role_ID(Env.getCtx());
 
 	private Combobox cbOrg, cbUser, cbPriority, cbLocation, cbAssignTo, cbSegment, cbDocType, cbStatus, cbPo;
-	private final org.adempiere.webui.component.Textbox txtReq = new org.adempiere.webui.component.Textbox();
-	private final org.adempiere.webui.component.Textbox txtCat = new org.adempiere.webui.component.Textbox();
+	private final Combobox txtReq = combo();
+	private final Combobox txtCat = combo();
 	private final Datebox dtFrom = new Datebox();
 	private final Datebox dtTo = new Datebox();
 	private final Button btnReload = new Button("Reload");
@@ -112,7 +112,7 @@ public class WRequisitionAssignForm extends ADForm {
 
 	private void buildUi() {
 		Div main = new Div();
-		main.setStyle("height:100%;overflow:auto;padding:6px 10px;");
+		main.setStyle("height:100%;display:flex;flex-direction:column;box-sizing:border-box;overflow:auto;padding:6px 10px;");
 		appendChild(main);
 		ZKUpdateUtil.setWidth(this, "99%");
 		ZKUpdateUtil.setHeight(this, "100%");
@@ -159,20 +159,21 @@ public class WRequisitionAssignForm extends ADForm {
 
 		Listhead lh = new Listhead();
 		lh.setSizable(true);
-		String[][] h = { { "Select", "55px" }, { "SL No.", "50px" }, { "Print", "75px" }, { "Requisition Date", "95px" },
+		String[][] h = { { "Select", "55px" }, { "Print", "75px" }, { "Requisition Date", "95px" },
 				{ "Requisition No", "150px" }, { "Category", "150px" }, { "Organization", "140px" },
 				{ "Date Required", "95px" }, { "User", "110px" }, { "SCM Assigned", "130px" },
 				{ "Assigned Date", "105px" }, { "Delivery Date", "120px" }, { "Priority", "70px" },
 				{ "Re-Assigned", "140px" }, { "PO No", "75px" }, { "Close", "75px" } };
 		for (String[] x : h) {
 			Listheader lhd = new Listheader(x[0]);
-			lhd.setWidth(x[1]);
+			lhd.setHflex(x[1].replace("px", ""));
+			lhd.setStyle("white-space:nowrap");
 			lh.appendChild(lhd);
 		}
 		list.appendChild(lh);
-		list.setHeight("430px");
-		list.setSizedByContent(false);
-		list.setSpan(false);
+		list.setVflex("1");
+		list.setHflex("1");
+		list.setStyle("min-height:260px;flex:1 1 auto;");
 		main.appendChild(list);
 
 		Div foot = new Div();
@@ -189,6 +190,8 @@ public class WRequisitionAssignForm extends ADForm {
 		btnReload.addEventListener(Events.ON_CLICK, ev -> reload());
 		txtReq.addEventListener(Events.ON_OK, ev -> reload());
 		txtCat.addEventListener(Events.ON_OK, ev -> reload());
+		txtReq.addEventListener(Events.ON_SELECT, ev -> reload());
+		txtCat.addEventListener(Events.ON_SELECT, ev -> reload());
 		btnOk.addEventListener(Events.ON_CLICK, ev -> save());
 		btnCancel.addEventListener(Events.ON_CLICK, ev -> {
 			try {
@@ -302,6 +305,10 @@ public class WRequisitionAssignForm extends ADForm {
 			cbOrg.setSelectedIndex(1);
 
 		userRows = dbQuery("SELECT AD_User_ID, Name FROM AD_User WHERE IsActive='Y' AND AD_Client_ID=? ORDER BY Name", clientId);
+		fill(txtReq, dbQuery("SELECT M_Requisition_ID, DocumentNo FROM M_Requisition WHERE AD_Client_ID=? AND IsActive='Y' "
+				+ "AND DocStatus IN ('CO','CL') ORDER BY DateDoc DESC, M_Requisition_ID DESC LIMIT 2000", clientId), true);
+		fill(txtCat, dbQuery("SELECT M_Product_Category_ID, Name FROM M_Product_Category WHERE AD_Client_ID IN (0,?) "
+				+ "AND IsActive='Y' AND IsSummary='N' ORDER BY Name", clientId), true);
 		fill(cbUser, userRows, true);
 		fill(cbAssignTo, userRows, true);
 
@@ -471,7 +478,6 @@ public class WRequisitionAssignForm extends ADForm {
 		boolean closed = "CL".equals(r.status);
 
 		li.appendChild(cell(r.chk));
-		li.appendChild(new Listcell(String.valueOf(sl)));
 		r.print.setDisabled(true);
 		li.appendChild(cell(r.print));
 		li.appendChild(new Listcell(dmy(r.dateDoc)));
@@ -517,7 +523,7 @@ public class WRequisitionAssignForm extends ADForm {
 			r.reassign.setDisabled(!on || !canEdit || !isAssigned);
 		});
 		r.print.addEventListener(Events.ON_CLICK, ev -> printRequisition(r));
-		r.view.addEventListener(Events.ON_CLICK, ev -> viewPo(r));
+		r.view.addEventListener(Events.ON_CLICK, ev -> printRequisition(r));
 		r.close.addEventListener(Events.ON_CLICK, ev -> closeRequisition(r));
 		return li;
 	}
