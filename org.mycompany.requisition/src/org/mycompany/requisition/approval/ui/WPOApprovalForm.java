@@ -34,6 +34,8 @@ import org.zkoss.zul.Vlayout;
 import org.mycompany.requisition.rfqapproval.RfQApprovalService;
 
 public class WPOApprovalForm extends ADForm {
+    private final org.mycompany.requisition.service.DocumentPdfService pdfService =
+        new org.mycompany.requisition.service.DocumentPdfService();
 
     private static final long serialVersionUID = 1L;
 
@@ -387,6 +389,16 @@ public class WPOApprovalForm extends ADForm {
 
         if (origin.tableId > 0 && origin.recordId > 0) {
             try {
+                // Requisition and Purchase Order open as a PDF
+                byte[] pdf = pdfService.build(origin.tableId, origin.recordId);
+                if (pdf != null) {
+                    showPdf(origin.typeName + " " + origin.documentNo, origin.documentNo, pdf);
+                    return;
+                }
+            } catch (Exception e) {
+                log.warning("View PDF: " + origin.documentNo + ": " + e.getMessage());
+            }
+            try {
                 // opens the document in its own window: Requisition, Sales Order,
                 // Purchase Order or RFQ, whichever the row really is
                 AEnv.zoom(origin.tableId, origin.recordId);
@@ -396,6 +408,40 @@ public class WPOApprovalForm extends ADForm {
             }
         }
         showDetails(origin.typeName, origin.documentNo, created, createdBy, checkedBy, status);
+    }
+
+    /** PDF viewer window (UI only; the PDF itself comes from DocumentPdfService) */
+    private void showPdf(String title, String docNo, byte[] pdf) {
+        final org.zkoss.util.media.AMedia media = new org.zkoss.util.media.AMedia(
+            (docNo == null ? "document" : docNo) + ".pdf", "pdf", "application/pdf", pdf);
+        final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
+        win.setTitle(title);
+        win.setWidth("900px");
+        win.setHeight("92%");
+        win.setClosable(true);
+        win.setSizable(true);
+        win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY,
+            org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
+        org.zkoss.zul.Div body = new org.zkoss.zul.Div();
+        body.setStyle("height:100%;display:flex;flex-direction:column;");
+        org.zkoss.zul.Iframe frame = new org.zkoss.zul.Iframe();
+        frame.setContent(media);
+        frame.setStyle("flex:1 1 auto;width:100%;min-height:500px;border:1px solid #dee2e6;");
+        org.adempiere.webui.util.ZKUpdateUtil.setHflex(frame, "1");
+        org.adempiere.webui.util.ZKUpdateUtil.setVflex(frame, "1");
+        org.zkoss.zul.Div bar = new org.zkoss.zul.Div();
+        bar.setStyle("text-align:right;padding:8px 0 0;");
+        Button dl = new Button("Download");
+        dl.addEventListener(Events.ON_CLICK, ev -> org.zkoss.zul.Filedownload.save(media));
+        Button cl = new Button("Close");
+        cl.setStyle("margin-left:6px;");
+        cl.addEventListener(Events.ON_CLICK, ev -> win.detach());
+        bar.appendChild(dl);
+        bar.appendChild(cl);
+        body.appendChild(frame);
+        body.appendChild(bar);
+        win.appendChild(body);
+        AEnv.showCenterScreen(win);
     }
 
     private void showDetails(
