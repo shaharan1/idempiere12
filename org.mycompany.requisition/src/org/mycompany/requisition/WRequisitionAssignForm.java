@@ -682,6 +682,9 @@ public class WRequisitionAssignForm extends ADForm {
 			list.appendChild(buildItem(rows.get(i), i + 1));
 		lblInfo.setValue(rows.size() + " requisition(s)");
 		clearMaster();
+		// filter-e ekta-i requisition pele seta nijei master panel-e load hobe
+		if (rows.size() == 1)
+			selectRow(rows.get(0));
 	}
 
 	private static String dmy(Timestamp t) {
