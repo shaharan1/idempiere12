@@ -43,7 +43,9 @@ import org.zkoss.zul.Messagebox;
  * A Not Assigned line has a dropdown in the "SCM Assigned" column: the user chosen there is also shown in the
  * header "Assign To", and the other way round.
  * Tick a row to enable Print, Delivery Date, Re-Assigned and Close.
- * Print = requisition PDF, PO "View" = purchase order PDF, Close = closes the requisition.
+ * Print = requisition PDF, Close = closes the requisition.
+ * "View" is shown only when a purchase order of the requisition is completed: it opens the requisition / PO history.
+ * An empty Delivery Date opens its calendar when the field gets the focus.
  * OK saves: Not Assigned rows get the user chosen (date = today); Assigned rows can be moved to another user
  * with the Re-Assigned box. When nothing is ticked, OK saves the clicked line.
  * Storage: M_Requisition.XX_AssignedTo_ID, XX_AssignedDate, XX_DeliveryDate, XX_ReassignedTo_ID, XX_ReassignedDate
@@ -82,6 +84,7 @@ public class WRequisitionAssignForm extends ADForm {
 		Timestamp dateDoc, dateReq, assignedDate, deliveryDate;
 		int assignedId, reId, orgId, userId, docTypeId;
 		boolean hasPo;
+		boolean poDone; // a purchase order made from it is completed (View button is shown)
 		Listitem item;
 		Checkbox chk = new Checkbox();
 		Button print = new Button("Print");
@@ -431,7 +434,10 @@ public class WRequisitionAssignForm extends ADForm {
 						+ "(SELECT l.XX_Segment FROM M_RequisitionLine l WHERE l.M_Requisition_ID=r.M_Requisition_ID "
 						+ " ORDER BY l.Line, l.M_RequisitionLine_ID LIMIT 1), "
 						+ "r.C_DocType_ID, r.AD_Org_ID, r.AD_User_ID, "
-						+ "CASE WHEN " + hasPoSql + "THEN 1 ELSE 0 END "
+						+ "CASE WHEN " + hasPoSql + "THEN 1 ELSE 0 END, "
+						+ "CASE WHEN EXISTS (SELECT 1 FROM M_RequisitionLine l JOIN C_OrderLine ol ON ol.C_OrderLine_ID=l.C_OrderLine_ID "
+						+ " JOIN C_Order po ON po.C_Order_ID=ol.C_Order_ID WHERE l.M_Requisition_ID=r.M_Requisition_ID "
+						+ " AND po.DocStatus IN ('CO','CL')) THEN 1 ELSE 0 END "
 						+ "FROM M_Requisition r JOIN AD_Org o ON o.AD_Org_ID=r.AD_Org_ID "
 						+ "LEFT JOIN AD_User u ON u.AD_User_ID=r.AD_User_ID "
 						+ "LEFT JOIN AD_User au ON au.AD_User_ID=r.XX_AssignedTo_ID "
@@ -536,6 +542,7 @@ public class WRequisitionAssignForm extends ADForm {
 				r.orgId = rs.getInt(19);
 				r.userId = rs.getInt(20);
 				r.hasPo = rs.getInt(21) == 1;
+				r.poDone = rs.getInt(22) == 1;
 				rows.add(r);
 			}
 		} catch (Exception e) {
@@ -610,6 +617,9 @@ public class WRequisitionAssignForm extends ADForm {
 		if (r.deliveryDate != null)
 			r.delivery.setValue(r.deliveryDate);
 		r.delivery.setDisabled(true);
+		// empty Delivery Date: the calendar opens when the field gets the focus (Tab or click)
+		r.delivery.setWidgetListener("onFocus",
+				"var w=this; if(!w.getValue()){setTimeout(function(){try{w.open();}catch(e){}},50);}");
 		li.appendChild(cell(r.delivery));
 
 		li.appendChild(new Listcell(prioName(r.prio)));
@@ -624,6 +634,7 @@ public class WRequisitionAssignForm extends ADForm {
 		li.appendChild(cell(r.reassign));
 
 		r.view.setDisabled(true);
+		r.view.setVisible(r.poDone);
 		li.appendChild(cell(r.view));
 		r.close.setDisabled(true);
 		r.close.setStyle("color:#dc3545;font-weight:600");
@@ -788,36 +799,128 @@ public class WRequisitionAssignForm extends ADForm {
 		}
 	}
 
-	/** View PO: one PO opens directly, several PO give a small list to choose from */
+	/** View: history of the requisition and of its (completed) purchase orders */
 	private void viewPo(Row r) {
-		List<Object[]> pos = dbQuery("SELECT DISTINCT o.C_Order_ID, o.DocumentNo FROM M_RequisitionLine l "
-				+ "JOIN C_OrderLine ol ON ol.C_OrderLine_ID=l.C_OrderLine_ID JOIN C_Order o ON o.C_Order_ID=ol.C_Order_ID "
-				+ "WHERE l.M_Requisition_ID=? ORDER BY o.DocumentNo", r.id);
-		if (pos.isEmpty()) {
-			warn("No purchase order has been created from " + r.docNo + " yet.");
-			return;
+		java.text.DecimalFormat money = new java.text.DecimalFormat("#,##0.00");
+		java.math.BigDecimal reqTotal = DB.getSQLValueBD(null,
+				"SELECT COALESCE(SUM(LineNetAmt),0) FROM M_RequisitionLine WHERE M_Requisition_ID=?", r.id);
+		if (reqTotal == null)
+			reqTotal = java.math.BigDecimal.ZERO;
+
+		final Listbox lb = new Listbox();
+		Listhead head = new Listhead();
+		String[][] hc = { { "PO No", "13" }, { "PO Date", "9" }, { "Vendor Code- Name", "17" }, { "Product Code", "10" },
+				{ "Product Name", "17" }, { "UOM", "5" }, { "PO Qty", "9" }, { "PO Rate", "9" }, { "Amount", "11" },
+				{ "MRN Qty", "9" } };
+		for (String[] x : hc) {
+			Listheader lhd = new Listheader(x[0]);
+			lhd.setHflex(x[1]);
+			lhd.setStyle("white-space:nowrap");
+			head.appendChild(lhd);
 		}
-		if (pos.size() == 1) {
-			showPo(((Number) pos.get(0)[0]).intValue(), String.valueOf(pos.get(0)[1]));
+		lb.appendChild(head);
+		lb.setEmptyMessage("No purchase order found.");
+		lb.setStyle("max-height:380px;overflow:auto");
+
+		java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+		String sql = "SELECT o.C_Order_ID, o.DocumentNo, o.DateOrdered, bp.Value, bp.Name, p.Value, p.Name, u.Name, "
+				+ "ol.QtyOrdered, ol.PriceActual, ol.LineNetAmt, ol.QtyDelivered "
+				+ "FROM M_RequisitionLine l JOIN C_OrderLine ol ON ol.C_OrderLine_ID=l.C_OrderLine_ID "
+				+ "JOIN C_Order o ON o.C_Order_ID=ol.C_Order_ID JOIN C_BPartner bp ON bp.C_BPartner_ID=o.C_BPartner_ID "
+				+ "LEFT JOIN M_Product p ON p.M_Product_ID=ol.M_Product_ID LEFT JOIN C_UOM u ON u.C_UOM_ID=ol.C_UOM_ID "
+				+ "WHERE l.M_Requisition_ID=? AND o.DocStatus IN ('CO','CL') "
+				+ "ORDER BY o.DocumentNo, ol.Line, ol.C_OrderLine_ID";
+		java.sql.PreparedStatement ps = null;
+		java.sql.ResultSet rs = null;
+		try {
+			ps = DB.prepareStatement(sql, null);
+			ps.setInt(1, r.id);
+			rs = ps.executeQuery();
+			while (rs.next()) {
+				final int orderId = rs.getInt(1);
+				final String poNo = rs.getString(2);
+				java.math.BigDecimal amt = rs.getBigDecimal(11);
+				if (amt == null)
+					amt = java.math.BigDecimal.ZERO;
+				total = total.add(amt);
+				String vendor = (rs.getString(4) == null ? "" : rs.getString(4) + "_") + rs.getString(5);
+				Listitem li = new Listitem();
+				li.appendChild(new Listcell(poNo));
+				li.appendChild(new Listcell(dmy(rs.getTimestamp(3))));
+				li.appendChild(new Listcell(vendor));
+				li.appendChild(new Listcell(rs.getString(6) == null ? "" : rs.getString(6)));
+				li.appendChild(new Listcell(rs.getString(7) == null ? "" : rs.getString(7)));
+				Listcell uc = new Listcell(rs.getString(8) == null ? "" : rs.getString(8));
+				uc.setStyle("text-align:center");
+				li.appendChild(uc);
+				li.appendChild(numCell(money, rs.getBigDecimal(9)));
+				li.appendChild(numCell(money, rs.getBigDecimal(10)));
+				li.appendChild(numCell(money, amt));
+				li.appendChild(numCell(money, rs.getBigDecimal(12)));
+				// double click on a PO line opens the purchase order PDF
+				li.addEventListener(Events.ON_DOUBLE_CLICK, ev -> showPo(orderId, poNo));
+				lb.appendChild(li);
+			}
+		} catch (Exception e) {
+			log.log(Level.SEVERE, sql, e);
+			warn("Could not load the PO history.\n" + e.getMessage());
 			return;
+		} finally {
+			DB.close(rs, ps);
 		}
+
 		final org.adempiere.webui.component.Window win = new org.adempiere.webui.component.Window();
-		win.setTitle("Purchase orders of " + r.docNo);
-		win.setWidth("320px");
+		win.setTitle("Requisition / PO History");
+		win.setWidth("1100px");
 		win.setClosable(true);
+		win.setSizable(true);
 		win.setAttribute(org.adempiere.webui.component.Window.MODE_KEY, org.adempiere.webui.component.Window.MODE_HIGHLIGHTED);
 		Div body = new Div();
-		body.setStyle("padding:10px");
-		for (Object[] po : pos) {
-			final int id = ((Number) po[0]).intValue();
-			final String no = String.valueOf(po[1]);
-			Button b = new Button(no);
-			b.setStyle("display:block;width:100%;margin-bottom:6px");
-			b.addEventListener(Events.ON_CLICK, ev -> showPo(id, no));
-			body.appendChild(b);
-		}
+		body.setStyle("padding:8px 10px");
+
+		// requisition
+		body.appendChild(title("Requisition"));
+		Grid hg = new Grid();
+		org.zkoss.zul.Columns hcols = new org.zkoss.zul.Columns();
+		for (int i = 0; i < 6; i++)
+			hcols.appendChild(new org.zkoss.zul.Column());
+		hg.appendChild(hcols);
+		org.zkoss.zul.Rows hr = new org.zkoss.zul.Rows();
+		hg.appendChild(hr);
+		frow(hr, "Requisition No", new Label(r.docNo), "Requisition Date", new Label(dmy(r.dateDoc)), "Total",
+				new Label(money.format(reqTotal)));
+		body.appendChild(hg);
+
+		// purchase orders
+		body.appendChild(title("PO Detail"));
+		body.appendChild(lb);
+		Div foot = new Div();
+		foot.setStyle("text-align:right;padding:8px 4px;font-weight:700");
+		foot.appendChild(new Label("Total   " + money.format(total)));
+		body.appendChild(foot);
+
+		Div bar = new Div();
+		bar.setStyle("text-align:right;padding:4px 0");
+		Button ok = new Button("✔");
+		ok.setSclass("btn btn-success");
+		Button cl = new Button("✖");
+		cl.setSclass("btn btn-danger");
+		cl.setStyle("margin-left:6px");
+		ok.addEventListener(Events.ON_CLICK, ev -> win.detach());
+		cl.addEventListener(Events.ON_CLICK, ev -> win.detach());
+		bar.appendChild(ok);
+		bar.appendChild(cl);
+		body.appendChild(bar);
+
 		win.appendChild(body);
 		org.adempiere.webui.apps.AEnv.showCenterScreen(win);
+	}
+
+	/** right aligned number cell */
+	private static Listcell numCell(java.text.DecimalFormat f, java.math.BigDecimal v) {
+		Listcell c = new Listcell(v == null ? "" : f.format(v));
+		c.setStyle("text-align:right");
+		return c;
 	}
 
 	private void showPo(int orderId, String docNo) {
