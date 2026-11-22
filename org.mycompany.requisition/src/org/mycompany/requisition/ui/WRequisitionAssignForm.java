@@ -488,6 +488,7 @@ public class WRequisitionAssignForm extends ADForm {
 			sql.append("AND r.C_DocType_ID=? ");
 			p.add(dt);
 		}
+//		git test
 		int at = intOf(cbAssignTo);
 		if (at > 0) {
 			sql.append("AND COALESCE(r.XX_ReassignedTo_ID, r.XX_AssignedTo_ID)=? ");
