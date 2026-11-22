@@ -508,6 +508,7 @@ public class WRequisitionAssignForm extends ADForm {
 			sql.append("AND r.DateDoc>=? ");
 			p.add(new Timestamp(dtFrom.getValue().getTime()));
 		}
+//		Kamran Vai
 		if (dtTo.getValue() != null) {
 			sql.append("AND r.DateDoc<=? ");
 			p.add(new Timestamp(dtTo.getValue().getTime()));
